@@ -135,7 +135,7 @@ function showTimeline({ route_id, s1, s2 }) {
 }
 function renderTimeline(nextIdx) {
   $("timeline").innerHTML = chain.map((s, i) =>
-    `<li class="${i < nextIdx ? "done" : i === nextIdx ? "next" : ""}">${esc(s.name)} <small>${esc(s.code)}</small></li>`).join("");
+    `<li class="${i < nextIdx ? "done" : i === nextIdx ? "next" : ""}">${esc(s.name)} <small>${esc(s.code)}</small><b class="dist"></b></li>`).join("");
 }
 $("routes").onchange = e => showOption(e.target._o[e.target.value]);
 autocomplete($("from"), $("fromDd"));
@@ -164,47 +164,113 @@ $("csv").onclick = () => {
 };
 
 let stopLocation, engine, wakeLock;
+const setText = (id, t) => { $(id).textContent = t; };
 
-// Native app: background-geolocation plugin (foreground service). Browser: navigator.geolocation.
-async function startLocation(onFix, onError) {
+// Native app: background-geolocation plugin (foreground service). Falls back to the web
+// Geolocation API if the plugin errors, returns empty coordinates, or gives no fix in time.
+async function startLocation(onFix, onStatus) {
+  const cleanups = [];
+  let gotFix = false, webStarted = false, timer;
+  const fix = (lat, lon, speedMs, accuracy) => {
+    if (lat == null || lon == null) return false;
+    gotFix = true;
+    onFix({ lat, lon, speedMs, accuracy });
+    return true;
+  };
+  const startWeb = async reason => {
+    if (webStarted) return;
+    webStarted = true;
+    onStatus(`GPS: Searching... (${reason})`);
+    if (!navigator.geolocation) return onStatus("GPS: not supported on this device");
+    const id = navigator.geolocation.watchPosition(
+      p => fix(p.coords.latitude, p.coords.longitude, p.coords.speed, p.coords.accuracy),
+      e => onStatus(`GPS error: ${e.message}`), { enableHighAccuracy: true, maximumAge: 1000, timeout: 30000 });
+    cleanups.push(() => navigator.geolocation.clearWatch(id));
+    try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
+  };
+
+  onStatus("GPS: Searching...");
   const BG = window.Capacitor?.isNativePlatform?.() && Capacitor.registerPlugin("BackgroundGeolocation");
   if (BG) {
-    const id = await BG.addWatcher({
-      backgroundTitle: "RailTrack",
-      backgroundMessage: "Tracking your train journey",
-      requestPermissions: true, stale: false, distanceFilter: 0,
-    }, (loc, err) => {
-      if (err) return onError(err.code === "NOT_AUTHORIZED" ? "Location permission denied" : err.message);
-      onFix({ lat: loc.latitude, lon: loc.longitude, speedMs: loc.speed });
-    });
-    return () => BG.removeWatcher({ id });
+    try {
+      // requestPermissions makes the plugin ask for fine/coarse location before starting.
+      const id = await BG.addWatcher({
+        backgroundTitle: "RailTrack",
+        backgroundMessage: "Tracking your train journey",
+        requestPermissions: true, stale: false, distanceFilter: 0,
+      }, (loc, err) => {
+        if (err) {
+          if (err.code === "NOT_AUTHORIZED") {
+            onStatus('Location permission denied. Open app settings, choose Location → "Allow all the time".');
+            if (confirm("Location permission is needed. Open app settings?")) BG.openSettings();
+          } else onStatus(`Native GPS error: ${err.message}`);
+          return startWeb("native error");
+        }
+        if (!fix(loc?.latitude, loc?.longitude, loc?.speed, loc?.accuracy)) startWeb("empty coordinates");
+      });
+      cleanups.push(() => BG.removeWatcher({ id }));
+      timer = setTimeout(() => { if (!gotFix) startWeb("no native fix after 20 s"); }, 20000);
+    } catch (e) {
+      onStatus(`Native GPS failed: ${e.message || e}`);
+      await startWeb("native failed");
+    }
+  } else {
+    await startWeb("browser");
   }
-  const id = navigator.geolocation.watchPosition(
-    p => onFix({ lat: p.coords.latitude, lon: p.coords.longitude, speedMs: p.coords.speed }),
-    e => onError(e.message), { enableHighAccuracy: true, maximumAge: 1000 });
-  try { wakeLock = await navigator.wakeLock?.request("screen"); } catch {}
-  return () => navigator.geolocation.clearWatch(id);
+  return () => { clearTimeout(timer); cleanups.forEach(f => f()); };
+}
+
+function markNext(i) {
+  document.querySelectorAll("#timeline li").forEach((li, k) => {
+    li.classList.toggle("next", k === i);
+    li.classList.toggle("done", k < i);
+    li.classList.remove("here");
+    li.querySelector(".dist").textContent = "";
+  });
 }
 
 $("start").onclick = async () => {
-  if (!chain.length) return;
-  engine?.stop();
-  await stopLocation?.();
-  engine = new GeofenceEngine(chain, {
-    onDistance: (s, d, v) => $("status").textContent = `Next: ${s.name} — ${Math.round(d)} m, ${v.toFixed(0)} km/h`,
-    onArrival: s => $("status").textContent = `ARRIVED ${s.name}`,
-    onTick: (s, ms) => $("status").textContent = `Halt at ${s.name}: ${dur(ms)}`,
-    onDeparture: (s, a, d, ms) => {
-      db.run("INSERT INTO trips(station_code,station_name,arrival,departure,halt_ms) VALUES(?,?,?,?,?)",
-        [s.code, s.name, a, d, ms]);
-      renderLog(); renderTimeline(engine.idx);
-    },
-  });
-  renderTimeline(0);
-  stopLocation = await startLocation(fix => engine.update(fix), m => $("status").textContent = m);
-  $("stop").hidden = false;
+  try {
+    if (!chain.length) return setText("gps", "Pick origin and destination first");
+    engine?.stop();
+    await stopLocation?.();
+    stopLocation = null;
+    setText("speed", "Current Speed: 0 km/h");
+    setText("acc", "Accuracy: --");
+    setText("status", "");
+    engine = new GeofenceEngine(chain, {
+      onDistance: (s, d, v) => {
+        setText("speed", `Current Speed: ${v.toFixed(0)} km/h`);
+        const el = document.querySelector("#timeline li.next .dist");
+        if (el) el.textContent = ` ${d >= 1000 ? (d / 1000).toFixed(1) + " km" : Math.round(d) + " m"}`;
+        setText("status", `Next: ${s.name}`);
+      },
+      onArrival: s => {
+        const li = document.querySelector("#timeline li.next");
+        li?.classList.remove("next");
+        li?.classList.add("here");
+        setText("status", `ARRIVED ${s.name}`);
+      },
+      onTick: (s, ms) => setText("status", `Halt at ${s.name}: ${dur(ms)}`),
+      onDeparture: (s, a, d, ms) => {
+        db.run("INSERT INTO trips(station_code,station_name,arrival,departure,halt_ms) VALUES(?,?,?,?,?)",
+          [s.code, s.name, a, d, ms]);
+        renderLog();
+        markNext(engine.idx);
+      },
+    });
+    renderTimeline(0);
+    $("stop").hidden = false;
+    stopLocation = await startLocation(fix => {
+      setText("gps", "GPS: Fix acquired");
+      if (fix.accuracy != null) setText("acc", `Accuracy: ±${Math.round(fix.accuracy)} meters`);
+      engine.update(fix);
+    }, m => setText("gps", m));
+  } catch (e) {
+    setText("gps", `Could not start tracking: ${e.message || e}`);
+  }
 };
 $("stop").onclick = async () => {
   await stopLocation?.(); stopLocation = null; engine?.stop(); wakeLock?.release();
-  $("status").textContent = "Stopped";
+  setText("gps", "GPS: Stopped");
 };

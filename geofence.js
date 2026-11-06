@@ -38,9 +38,10 @@ export class GeofenceEngine {
       this.cb.onArrival?.(st, this.arrival);
     } else if (this.arrival && d > DEPART_M && kmh > DEPART_KMH) {
       clearInterval(this.timer);
+      const arrival = this.arrival;
       const dep = Date.now();
-      this.cb.onDeparture?.(st, this.arrival, dep, dep - this.arrival);
       this.arrival = null; this.idx++;
+      this.cb.onDeparture?.(st, arrival, dep, dep - arrival);
     }
   }
   stop() { clearInterval(this.timer); }

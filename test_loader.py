@@ -35,5 +35,7 @@ def connected(a, b):
 
 for a, b in [("BRWD", "MGS"), ("NDLS", "HWH"), ("CSTM", "MAS"), ("PNBE", "GAYA")]:
     assert connected(a, b), f"{a} -> {b} not connected"
-assert c.execute("SELECT COUNT(*) FROM subroute_stations WHERE route_id='CIC_BRWD_MGS'").fetchone()[0] == 4
+cic = [r[0] for r in c.execute("SELECT station_code FROM subroute_stations WHERE route_id='CIC_BRWD_MGS' ORDER BY sequence_order")]
+assert len(cic) >= 35 and cic[0] == "BRWD" and cic[-1] == "MGS", cic
+assert all(k in cic for k in ("DTO", "LBT", "GHD", "HDN", "SEB", "DOS", "SSM", "KTQ", "GAQ")), cic
 print("ok")

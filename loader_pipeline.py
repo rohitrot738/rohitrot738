@@ -31,8 +31,6 @@ MAX_EDGE_KM = 700       # edges longer than this are timetable errors
 
 # Hand-written named routes that are kept alongside the generated network.
 CURATED_ROUTES = [
-    ("CIC_BRWD_MGS", "CIC Line - Barwadih - Garwa Road - Son Nagar - Mughal Sarai", "MAIN",
-     ["BRWD", "GHD", "SEB", "MGS"]),
     ("SUB_ARA_SSM", "Ara - Piro - Bikramganj - Sasaram Branch Line", "BRANCH",
      ["ARA", "GADH", "CRQ", "PIRO", "HBS", "XBKJ", "MANI", "SJV", "GQN", "BMHT", "SSM"]),
     ("SUB_DLN_TRG", "Dildarnagar - Tarighat Branch Line", "BRANCH", ["DLN", "NXR", "SAHA", "TRG"]),
@@ -46,6 +44,13 @@ CURATED_ROUTES = [
      ["PNBE", "PRBZ", "PNUG", "PPN", "TEA", "JHD", "BELA", "GAYA"]),
     ("CHORD_DDU_GAYA", "DDU - Sasaram - Dehri On Sone - Gaya Grand Chord", "CHORD",
      ["MGS", "CDMR", "BBU", "KTQ", "SSM", "DOS", "AUBR", "RFJ", "GRRU", "GAYA"]),
+]
+
+# Corridors resolved through the station graph: the shortest path between consecutive waypoints
+# lists every halt the timetable knows about.
+CORRIDOR_ROUTES = [
+    ("CIC_BRWD_MGS", "CIC Line - Barwadih - Garwa Road - Son Nagar - Mughal Sarai", "MAIN",
+     ["BRWD", "GHD", "SEB", "MGS"]),
 ]
 
 # Halts missing from DataMeet. Coordinates are approximate.
@@ -269,6 +274,40 @@ def build_chains(links, coords):
 
 # ---------------------------------------------------------------- output
 
+def path_through(links, waypoints):
+    """Concatenated shortest paths (by track metres) between consecutive waypoints."""
+    nbrs = defaultdict(dict)
+    for (a, b), d in links.items():
+        nbrs[a][b] = d
+        nbrs[b][a] = d
+
+    def leg(a, b):
+        dist, prev, heap = {a: 0.0}, {}, [(0.0, a)]
+        while heap:
+            d, u = heapq.heappop(heap)
+            if u == b:
+                out = [b]
+                while out[-1] != a:
+                    out.append(prev[out[-1]])
+                return out[::-1]
+            if d > dist[u]:
+                continue
+            for v, w in nbrs[u].items():
+                if d + w < dist.get(v, math.inf):
+                    dist[v] = d + w
+                    prev[v] = u
+                    heapq.heappush(heap, (d + w, v))
+        return None
+
+    path = [waypoints[0]]
+    for a, b in zip(waypoints, waypoints[1:]):
+        seg = leg(a, b)
+        if seg is None:
+            return None
+        path += seg[1:]
+    return path
+
+
 def write_routes(conn, chains, links, names):
     print("[5/5] Writing routes...")
     cur = conn.cursor()
@@ -288,6 +327,13 @@ def write_routes(conn, chains, links, names):
     def link_dist(a, b):
         d = links.get((a, b) if a < b else (b, a))
         return d if d is not None else haversine_m(*known[a], *known[b])
+
+    for r_id, r_name, l_type, via in CORRIDOR_ROUTES:
+        codes = path_through(links, via)
+        if codes:
+            insert(r_id, r_name, l_type, codes, link_dist)
+        else:
+            print(f" !! no graph path for corridor {r_id}", file=sys.stderr)
 
     for r_id, r_name, l_type, codes in CURATED_ROUTES:
         codes = [c for c in codes if c in known]
