@@ -43,7 +43,7 @@ let graph;
 
 function loadGraph() {
   graph = new Map();
-  for (const l of rows("SELECT station_a, station_b, distance_km FROM station_links")) {
+  for (const l of rows("SELECT station_a, station_b, distance_km FROM station_edges")) {
     for (const [x, y] of [[l.station_a, l.station_b], [l.station_b, l.station_a]]) {
       if (!graph.has(x)) graph.set(x, []);
       graph.get(x).push([y, l.distance_km]);
@@ -261,8 +261,10 @@ $("start").onclick = async () => {
     });
     renderTimeline(0);
     $("stop").hidden = false;
+    $("start").textContent = "Tracking Active... (GPS Searching)";
     stopLocation = await startLocation(fix => {
       setText("gps", "GPS: Fix acquired");
+      $("start").textContent = "Tracking Active... (GPS Locked)";
       if (fix.accuracy != null) setText("acc", `Accuracy: ±${Math.round(fix.accuracy)} meters`);
       engine.update(fix);
     }, m => setText("gps", m));
@@ -272,5 +274,6 @@ $("start").onclick = async () => {
 };
 $("stop").onclick = async () => {
   await stopLocation?.(); stopLocation = null; engine?.stop(); wakeLock?.release();
+  $("start").textContent = "Start tracking";
   setText("gps", "GPS: Stopped");
 };
