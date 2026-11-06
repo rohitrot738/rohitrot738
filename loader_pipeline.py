@@ -1,15 +1,14 @@
 """
-Indian Railways network pipeline.
+Indian Railways network pipeline (timetable based).
 
 1. Stations: DataMeet stations.json (+ manual fallback halts).
-2. Track geometry: OpenStreetMap railway ways (Overpass API). DataMeet publishes no
-   lines.geojson, so OSM is the line source.
-3. Each station is snapped to the nearest track vertex within SNAP_M (1.5 km).
-4. Walking the track graph from every station finds the neighbouring stations, which gives
-   a station graph. The graph is split into sequential chains (main lines, loops, branches),
-   and each chain becomes a row in rail_subroutes + rows in subroute_stations.
-
-Set OSM_FIXTURE=<file.json> to read Overpass-style JSON from disk instead of the network.
+2. Timetable: DataMeet schedules.json. Each train's stops, ordered by day and time, give a
+   topologically correct station sequence, so no track geometry is needed.
+3. Consecutive stops of every train become station-graph edges. Express "skip" edges that
+   are covered by a finer chain of shorter edges are pruned, so paths list every halt.
+4. The graph is split into sequential chains (main lines, loops, branches) stored in
+   rail_subroutes + subroute_stations; the edges are stored in station_links for the app's
+   shortest-path search.
 """
 
 import heapq
@@ -18,25 +17,17 @@ import math
 import os
 import sqlite3
 import sys
-import time
-import urllib.parse
 import urllib.request
 from collections import defaultdict
 
 DB_FILE = os.environ.get("RAIL_DB", "indian_railways_complete.db")
 STATIONS_URL = "https://raw.githubusercontent.com/datameet/railways/master/stations.json"
-OVERPASS_URLS = [
-    "https://overpass-api.de/api/interpreter",
-    "https://overpass.kumi.systems/api/interpreter",
-    "https://overpass.private.coffee/api/interpreter",
-]
-CACHE_DIR = os.environ.get("OSM_CACHE", "osm_cache")
+SCHEDULES_URL = os.environ.get(
+    "SCHEDULES_URL", "https://raw.githubusercontent.com/datameet/railways/master/schedules.json")
 
-SNAP_M = 1500          # max station-to-track distance
-MAX_HOP_M = 100_000    # max track distance between neighbouring stations
-DENSIFY_M = 150        # insert vertices so snapping isn't limited by sparse geometry
 MIN_STRAIGHT_DEG = 110  # at junctions, only join edges that continue fairly straight
-TILE_DEG = 1
+PRUNE_DETOUR = 1.6      # drop an edge if a chain of other edges covers it within this factor
+MAX_EDGE_KM = 700       # edges longer than this are timetable errors
 
 # Hand-written named routes that are kept alongside the generated network.
 CURATED_ROUTES = [
@@ -80,7 +71,7 @@ def haversine_m(lat1, lon1, lat2, lon2):
 # ---------------------------------------------------------------- stations
 
 def init_database(conn):
-    print("[1/6] Preparing SQLite schema...")
+    print("[1/5] Preparing SQLite schema...")
     cur = conn.cursor()
     cur.executescript('''
     CREATE TABLE IF NOT EXISTS stations (
@@ -107,7 +98,7 @@ def init_database(conn):
 
 
 def fetch_and_load_stations(conn):
-    print("[2/6] Downloading station data from DataMeet...")
+    print("[2/5] Downloading station data from DataMeet...")
     req = urllib.request.Request(STATIONS_URL, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         features = json.loads(resp.read().decode("utf-8")).get("features", [])
@@ -134,150 +125,88 @@ def fetch_and_load_stations(conn):
     print(f" -> {inserted} stations saved.")
 
 
-# ---------------------------------------------------------------- OSM
+# ---------------------------------------------------------------- timetable
 
-def _overpass(query, label):
-    body = urllib.parse.urlencode({"data": query}).encode()
-    last = None
-    for attempt in range(8):
-        url = OVERPASS_URLS[attempt % len(OVERPASS_URLS)]
-        try:
-            req = urllib.request.Request(url, data=body, headers={
-                "User-Agent": "railtrack-loader/1.0 (https://github.com/rohitrot738/rohitrot738)"})
-            with urllib.request.urlopen(req, timeout=300) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except Exception as e:  # rate limit, timeout, bad JSON from an overloaded server
-            last = e
-            wait = min(120, 10 * 2 ** min(attempt, 4))
-            print(f"   {label}: {url.split('/')[2]} failed ({e}); retry in {wait}s", flush=True)
-            time.sleep(wait)
-    raise RuntimeError(f"Overpass failed after retries: {last}")
+def _secs(t):
+    if not t or t == "None":
+        return None
+    h, m, s = t.split(":")
+    return int(h) * 3600 + int(m) * 60 + int(s)
 
 
-def load_osm_ways(station_coords):
-    """Returns {way_id: [(lat, lon), ...]} for railway track in India."""
-    fixture = os.environ.get("OSM_FIXTURE")
-    if fixture:
-        with open(fixture, encoding="utf-8") as f:
-            return _parse_ways(json.load(f))
-    print("[3/6] Downloading railway track geometry from OpenStreetMap...")
-    os.makedirs(CACHE_DIR, exist_ok=True)
-    ways = {}
-    # Only tiles that contain a station; ocean and foreign tiles are skipped.
-    tiles = sorted({(math.floor(la / TILE_DEG) * TILE_DEG, math.floor(lo / TILE_DEG) * TILE_DEG)
-                    for la, lo in station_coords})
-    failed = []
-    for i, (s, w) in enumerate(tiles, 1):
-        path = os.path.join(CACHE_DIR, f"tile_{s}_{w}.json")
-        try:
-            if os.path.exists(path):
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-            else:
-                q = (f'[out:json][timeout:240][maxsize:2147483648];'
-                     f'way["railway"~"^(rail|narrow_gauge)$"][!"service"]'
-                     f'({s},{w},{s + TILE_DEG},{w + TILE_DEG});out geom qt;')
-                data = _overpass(q, f"tile ({s},{w})")
-                with open(path, "w", encoding="utf-8") as f:
-                    json.dump(data, f)
-                time.sleep(2)
-        except RuntimeError as e:
-            failed.append((s, w))
-            print(f"   tile {i}/{len(tiles)} ({s},{w}) SKIPPED: {e}", flush=True)
-            continue
-        ways.update(_parse_ways(data))
-        print(f"   tile {i}/{len(tiles)} ({s},{w}): {len(ways)} ways so far", flush=True)
-    if len(failed) > max(2, len(tiles) // 33):
-        sys.exit(f"Too many OSM tiles failed ({len(failed)}/{len(tiles)}): {failed}")
-    if failed:
-        print(f" !! {len(failed)} tiles missing, network incomplete there: {failed}")
-    return ways
+def load_schedules():
+    print("[3/5] Downloading train schedules from DataMeet (~80 MB)...")
+    local = os.environ.get("SCHEDULES_FILE")
+    if local:
+        with open(local, encoding="utf-8") as f:
+            return json.load(f)
+    req = urllib.request.Request(SCHEDULES_URL, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=300) as resp:
+        return json.loads(resp.read().decode("utf-8"))
 
 
-def _parse_ways(data):
-    out = {}
-    for el in data.get("elements", []):
-        if el.get("type") == "way" and el.get("geometry") and len(el["geometry"]) > 1:
-            out[el["id"]] = [(p["lat"], p["lon"]) for p in el["geometry"]]
-    return out
-
-
-# ---------------------------------------------------------------- graph
-
-def _key(lat, lon):
-    return (round(lat, 6), round(lon, 6))
-
-
-def build_track_graph(ways):
-    """Node = rounded coordinate. Shared coordinates join ways into one graph."""
-    adj = defaultdict(dict)
-    for pts in ways.values():
+def build_station_graph(schedules, coords):
+    """Returns {(a, b): metres} for consecutive stops of every train (a < b)."""
+    trains = defaultdict(list)
+    for r in schedules:
+        code = (r.get("station_code") or "").strip().upper()
+        if code in coords:  # stops without coordinates can't be placed on the map
+            t = _secs(r.get("arrival"))
+            if t is None:
+                t = _secs(r.get("departure"))
+            trains[r["train_number"]].append((r.get("day") or 1, t or 0, code))
+    edges = {}
+    for stops in trains.values():
+        stops.sort()
         prev = None
-        for lat, lon in pts:
-            if prev is not None:
-                seg = haversine_m(prev[0], prev[1], lat, lon)
-                n = max(1, int(seg // DENSIFY_M) + 1)
-                last = prev
-                for k in range(1, n + 1):
-                    cur = (lat, lon) if k == n else (prev[0] + (lat - prev[0]) * k / n,
-                                                     prev[1] + (lon - prev[1]) * k / n)
-                    a, b = _key(*last), _key(*cur)
-                    if a != b:
-                        d = haversine_m(last[0], last[1], cur[0], cur[1])
-                        adj[a][b] = d
-                        adj[b][a] = d
-                    last = cur
-            prev = (lat, lon)
-    return adj
+        for _, _, code in stops:
+            if prev and prev != code:
+                pair = (prev, code) if prev < code else (code, prev)
+                if pair not in edges:
+                    d = haversine_m(*coords[pair[0]], *coords[pair[1]])
+                    if d <= MAX_EDGE_KM * 1000:
+                        edges[pair] = d
+            prev = code
+    return edges
 
 
-def snap_stations(stations, adj):
-    """stations: {code: (lat, lon)} -> {node: code}, nearest station per track node."""
-    cell = 0.02
-    grid = defaultdict(list)
-    for node in adj:
-        grid[(int(node[0] // cell), int(node[1] // cell))].append(node)
-    best = {}
-    for code, (lat, lon) in stations.items():
-        cx, cy = int(lat // cell), int(lon // cell)
-        near, near_d = None, SNAP_M
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                for node in grid.get((cx + dx, cy + dy), ()):
-                    d = haversine_m(lat, lon, node[0], node[1])
-                    if d <= near_d:
-                        near, near_d = node, d
-        if near is None:
-            continue
-        if near not in best or near_d < best[near][1]:
-            best[near] = (code, near_d)
-    return {node: code for node, (code, _) in best.items()}
-
-
-def station_links(adj, node_station):
-    """Dijkstra from each station over track; stop at the next stations."""
-    links = {}
-    for start, a in node_station.items():
-        dist = {start: 0.0}
-        heap = [(0.0, start)]
-        while heap:
-            d, node = heapq.heappop(heap)
-            if d > dist.get(node, math.inf):
+def prune_skip_edges(edges):
+    """Drops long express hops that a chain of shorter edges already covers."""
+    nbrs = defaultdict(dict)
+    for (a, b), d in edges.items():
+        nbrs[a][b] = d
+        nbrs[b][a] = d
+    removed = 0
+    for (a, b), d in sorted(edges.items(), key=lambda kv: -kv[1]):
+        limit = d * PRUNE_DETOUR
+        dist = {a: 0.0}
+        heap = [(0.0, a)]
+        found = False
+        while heap and not found:
+            du, u = heapq.heappop(heap)
+            if du > dist.get(u, math.inf):
                 continue
-            b = node_station.get(node)
-            if b is not None and node != start:
-                if b != a:
-                    pair = (a, b) if a < b else (b, a)
-                    if d < links.get(pair, math.inf):
-                        links[pair] = d
-                continue  # stations block the walk so only adjacent stations link
-            for nxt, w in adj[node].items():
-                nd = d + w
-                if nd <= MAX_HOP_M and nd < dist.get(nxt, math.inf):
-                    dist[nxt] = nd
-                    heapq.heappush(heap, (nd, nxt))
-    return links
+            for v, w in nbrs[u].items():
+                if u == a and v == b:
+                    continue  # the edge itself
+                nd = du + w
+                if nd > limit or nd >= dist.get(v, math.inf):
+                    continue
+                if v == b:
+                    found = True
+                    break
+                dist[v] = nd
+                heapq.heappush(heap, (nd, v))
+        if found:
+            del nbrs[a][b]
+            del nbrs[b][a]
+            removed += 1
+    pruned = {(a, b): d for (a, b), d in edges.items() if b in nbrs[a]}
+    print(f" -> pruned {removed} express skip edges; {len(pruned)} edges remain.")
+    return pruned
 
+
+# ---------------------------------------------------------------- chains
 
 def build_chains(links, coords):
     """Splits the station graph into sequential chains; at junctions the straightest edges join."""
@@ -341,7 +270,7 @@ def build_chains(links, coords):
 # ---------------------------------------------------------------- output
 
 def write_routes(conn, chains, links, names):
-    print("[5/6] Writing routes...")
+    print("[5/5] Writing routes...")
     cur = conn.cursor()
     known = {c: (la, lo) for c, la, lo in cur.execute("SELECT station_code, latitude, longitude FROM stations")}
 
@@ -378,7 +307,7 @@ def write_routes(conn, chains, links, names):
 
 
 def export_json(conn):
-    print("[6/6] Exporting JSON...")
+    print("Exporting JSON...")
     routes = []
     for r in conn.execute("SELECT route_id, route_name, line_type, origin_code, destination_code, "
                           "total_distance_km FROM rail_subroutes").fetchall():
@@ -399,18 +328,17 @@ def main():
     conn = sqlite3.connect(DB_FILE)
     init_database(conn)
     fetch_and_load_stations(conn)
-    station_coords = [(la, lo) for la, lo in conn.execute("SELECT latitude, longitude FROM stations")]
-    ways = load_osm_ways(station_coords)
-    if not ways:
-        sys.exit("No OSM track data loaded; refusing to produce an empty network.")
-
-    print("[4/6] Matching stations to track and building the network...")
-    adj = build_track_graph(ways)
     coords = {c: (la, lo) for c, la, lo in conn.execute("SELECT station_code, latitude, longitude FROM stations")}
     names = dict(conn.execute("SELECT station_code, station_name FROM stations"))
-    node_station = snap_stations(coords, adj)
-    print(f" -> {len(adj)} track nodes, {len(node_station)}/{len(coords)} stations within {SNAP_M} m of track.")
-    links = station_links(adj, node_station)
+    schedules = load_schedules()
+    if not schedules:
+        sys.exit("No schedule data loaded; refusing to produce an empty network.")
+
+    print("[4/5] Building the station network from train stops...")
+    edges = build_station_graph(schedules, coords)
+    del schedules
+    print(f" -> {len(edges)} unique consecutive-stop edges.")
+    links = prune_skip_edges(edges)
     chains, _ = build_chains(links, coords)
     write_routes(conn, chains, links, names)
     export_json(conn)

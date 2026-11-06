@@ -1,47 +1,39 @@
-"""Offline test: builds a fixture OSM network from real station coordinates and runs the pipeline."""
-import json
+"""Runs the pipeline into a temp DB and checks the network is sane and connected."""
 import os
 import sqlite3
 import subprocess
 import sys
 import tempfile
-
-MAIN = ["MGS", "KCA", "SLD", "DLN", "BXR", "ARA", "DNR", "PNBE"]
-BRANCH = ["ARA", "PIRO", "XBKJ"]  # splits off at ARA
-SRC = "indian_railways_complete.db"
-
-src = sqlite3.connect(SRC)
-xy = lambda c: src.execute("SELECT latitude, longitude FROM stations WHERE station_code=?", (c,)).fetchone()
-
-
-def way(i, codes):
-    # track passes ~50 m from each station
-    return {"type": "way", "id": i,
-            "geometry": [{"lat": xy(c)[0] + 0.0005, "lon": xy(c)[1]} for c in codes]}
-
+from collections import defaultdict
 
 tmp = tempfile.mkdtemp()
-fx = os.path.join(tmp, "osm.json")
-json.dump({"elements": [way(1, MAIN), way(2, BRANCH)]}, open(fx, "w"))
 db = os.path.join(tmp, "t.db")
-env = dict(os.environ, OSM_FIXTURE=fx, RAIL_DB=db, RAIL_JSON=os.path.join(tmp, "r.json"))
+env = dict(os.environ, RAIL_DB=db, RAIL_JSON=os.path.join(tmp, "r.json"))
 subprocess.run([sys.executable, "loader_pipeline.py"], env=env, check=True)
 
 c = sqlite3.connect(db)
-links = {tuple(r[:2]) for r in c.execute("SELECT station_a, station_b FROM station_links")}
-print("links:", sorted(links))
-assert ("ARA", "UWNR") in links and ("PIRO", "UWNR") in links, "branch not linked"
-nets = c.execute("SELECT route_id, route_name FROM rail_subroutes WHERE route_id LIKE 'NET_%'").fetchall()
-print(nets)
-assert nets, "no generated routes"
-# some generated route must contain both ends of the main line
-ok = c.execute("""SELECT route_id FROM subroute_stations WHERE station_code IN ('KCA','BXR','ARA','PNBE')
-                  AND route_id LIKE 'NET_%' GROUP BY route_id HAVING COUNT(*)=4""").fetchall()
-assert ok, "main line not a single chain"
-br = c.execute("""SELECT route_id FROM subroute_stations WHERE station_code IN ('PIRO','XBKJ')
-                  AND route_id LIKE 'NET_%' GROUP BY route_id HAVING COUNT(*)=2""").fetchall()
-assert br, "branch not a chain"
-unresolved = c.execute("""SELECT COUNT(*) FROM subroute_stations ss LEFT JOIN stations s USING(station_code)
-                          WHERE s.station_code IS NULL""").fetchone()[0]
-assert unresolved == 0
+n_routes = c.execute("SELECT COUNT(*) FROM rail_subroutes").fetchone()[0]
+assert n_routes > 500, n_routes
+assert c.execute("""SELECT COUNT(*) FROM subroute_stations ss LEFT JOIN stations s USING(station_code)
+                    WHERE s.station_code IS NULL""").fetchone()[0] == 0, "unresolved stations"
+
+g = defaultdict(set)
+for a, b in c.execute("SELECT station_a, station_b FROM station_links"):
+    g[a].add(b)
+    g[b].add(a)
+
+
+def connected(a, b):
+    seen, stack = {a}, [a]
+    while stack:
+        for v in g[stack.pop()]:
+            if v not in seen:
+                seen.add(v)
+                stack.append(v)
+    return b in seen
+
+
+for a, b in [("BRWD", "MGS"), ("NDLS", "HWH"), ("CSTM", "MAS"), ("PNBE", "GAYA")]:
+    assert connected(a, b), f"{a} -> {b} not connected"
+assert c.execute("SELECT COUNT(*) FROM subroute_stations WHERE route_id='CIC_BRWD_MGS'").fetchone()[0] == 4
 print("ok")

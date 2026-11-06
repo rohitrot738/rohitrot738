@@ -39,56 +39,91 @@ function autocomplete(input, dd) {
 }
 
 let chain = [];
+let graph;
+
+function loadGraph() {
+  graph = new Map();
+  for (const l of rows("SELECT station_a, station_b, distance_km FROM station_links")) {
+    for (const [x, y] of [[l.station_a, l.station_b], [l.station_b, l.station_a]]) {
+      if (!graph.has(x)) graph.set(x, []);
+      graph.get(x).push([y, l.distance_km]);
+    }
+  }
+}
+
+// Dijkstra over the station graph with a binary min-heap. Returns station codes and km.
+function shortestPath(a, b) {
+  if (!graph) loadGraph();
+  const dist = new Map([[a, 0]]), prev = new Map(), heap = [[0, a]];
+  const push = it => {
+    heap.push(it);
+    for (let i = heap.length - 1; i > 0;) {
+      const p = (i - 1) >> 1;
+      if (heap[p][0] <= heap[i][0]) break;
+      [heap[p], heap[i]] = [heap[i], heap[p]]; i = p;
+    }
+  };
+  const pop = () => {
+    const top = heap[0], last = heap.pop();
+    if (heap.length) {
+      heap[0] = last;
+      for (let i = 0; ;) {
+        let m = i; const l = 2 * i + 1, r = l + 1;
+        if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+        if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+        if (m === i) break;
+        [heap[m], heap[i]] = [heap[i], heap[m]]; i = m;
+      }
+    }
+    return top;
+  };
+  while (heap.length) {
+    const [d, u] = pop();
+    if (u === b) {
+      const codes = [b];
+      while (codes[0] !== a) codes.unshift(prev.get(codes[0]));
+      return { codes, km: d };
+    }
+    if (d > dist.get(u)) continue;
+    for (const [v, w] of graph.get(u) || []) {
+      if (!dist.has(v) || d + w < dist.get(v)) { dist.set(v, d + w); prev.set(v, u); push([d + w, v]); }
+    }
+  }
+  return null;
+}
+
+function stationsByCodes(codes) {
+  const m = new Map(rows(`SELECT station_code AS code, station_name AS name, latitude AS lat, longitude AS lon
+    FROM stations WHERE station_code IN (${codes.map(() => "?").join(",")})`, codes).map(s => [s.code, s]));
+  return codes.map(c => m.get(c));
+}
+
 function findRoutes() {
   const a = $("from").dataset.code, b = $("to").dataset.code;
   if (!a || !b || a === b) return;
-  const r = rows(`SELECT x.route_id, rs.route_name, x.sequence_order AS s1, y.sequence_order AS s2
+  const options = [];
+  const path = shortestPath(a, b);
+  if (path) options.push({ label: `Shortest path (${path.codes.length} stations, ${Math.round(path.km)} km)`, codes: path.codes });
+  // Named lines that contain both stations, as alternatives.
+  for (const x of rows(`SELECT x.route_id, rs.route_name, x.sequence_order AS s1, y.sequence_order AS s2
     FROM subroute_stations x
     JOIN subroute_stations y ON x.route_id = y.route_id AND y.sequence_order <> x.sequence_order
     JOIN rail_subroutes rs ON rs.route_id = x.route_id
     WHERE x.station_code = ? AND y.station_code = ?
-    ORDER BY ABS(x.sequence_order - y.sequence_order) LIMIT 20`, [a, b]);
+    ORDER BY ABS(x.sequence_order - y.sequence_order) LIMIT 20`, [a, b]))
+    options.push({ label: `${x.route_name} (${Math.abs(x.s2 - x.s1) + 1} stations)`, route: x });
   const sel = $("routes");
   sel.innerHTML = "";
-  r.forEach((x, i) => sel.add(new Option(`${x.route_name} (${Math.abs(x.s2 - x.s1) + 1} stations)`, i)));
-  sel.hidden = !r.length;
-  sel._r = r;
-  $("start").hidden = !r.length;
-  if (r.length) { showTimeline(r[0]); return; }
-  // No single line covers both stations: take the shortest path across connected lines.
-  chain = shortestPath(a, b);
-  $("start").hidden = !chain.length;
-  if (chain.length) renderTimeline(0);
-  else $("timeline").innerHTML = "<li>No route found</li>";
+  options.forEach((o, i) => sel.add(new Option(o.label, i)));
+  sel.hidden = options.length < 2;
+  sel._o = options;
+  $("start").hidden = !options.length;
+  if (options.length) showOption(options[0]);
+  else { chain = []; $("timeline").innerHTML = "<li>No route found</li>"; }
 }
-
-let graph;
-function shortestPath(a, b) {
-  if (!graph) {
-    graph = new Map();
-    for (const l of rows("SELECT station_a, station_b, distance_km FROM station_links")) {
-      if (!graph.has(l.station_a)) graph.set(l.station_a, []);
-      if (!graph.has(l.station_b)) graph.set(l.station_b, []);
-      graph.get(l.station_a).push([l.station_b, l.distance_km]);
-      graph.get(l.station_b).push([l.station_a, l.distance_km]);
-    }
-  }
-  const dist = new Map([[a, 0]]), prev = new Map(), done = new Set();
-  while (true) {
-    let u = null;
-    for (const [k, d] of dist) if (!done.has(k) && (u === null || d < dist.get(u))) u = k;
-    if (u === null) return [];
-    if (u === b) break;
-    done.add(u);
-    for (const [v, w] of graph.get(u) || []) {
-      if (!dist.has(v) || dist.get(u) + w < dist.get(v)) { dist.set(v, dist.get(u) + w); prev.set(v, u); }
-    }
-  }
-  const codes = [b];
-  while (codes[0] !== a) codes.unshift(prev.get(codes[0]));
-  const byCode = new Map(rows(`SELECT station_code AS code, station_name AS name, latitude AS lat, longitude AS lon
-    FROM stations WHERE station_code IN (${codes.map(() => "?").join(",")})`, codes).map(s => [s.code, s]));
-  return codes.map(c => byCode.get(c));
+function showOption(o) {
+  if (o.codes) { chain = stationsByCodes(o.codes); renderTimeline(0); }
+  else showTimeline(o.route);
 }
 function showTimeline({ route_id, s1, s2 }) {
   const lo = Math.min(s1, s2), hi = Math.max(s1, s2);
@@ -102,7 +137,7 @@ function renderTimeline(nextIdx) {
   $("timeline").innerHTML = chain.map((s, i) =>
     `<li class="${i < nextIdx ? "done" : i === nextIdx ? "next" : ""}">${esc(s.name)} <small>${esc(s.code)}</small></li>`).join("");
 }
-$("routes").onchange = e => showTimeline(e.target._r[e.target.value]);
+$("routes").onchange = e => showOption(e.target._o[e.target.value]);
 autocomplete($("from"), $("fromDd"));
 autocomplete($("to"), $("toDd"));
 
