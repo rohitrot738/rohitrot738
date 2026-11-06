@@ -36,8 +36,7 @@ SNAP_M = 1500          # max station-to-track distance
 MAX_HOP_M = 100_000    # max track distance between neighbouring stations
 DENSIFY_M = 150        # insert vertices so snapping isn't limited by sparse geometry
 MIN_STRAIGHT_DEG = 110  # at junctions, only join edges that continue fairly straight
-TILE_DEG = 2
-INDIA_BBOX = (6.0, 68.0, 38.0, 98.0)  # south, west, north, east
+TILE_DEG = 1
 
 # Hand-written named routes that are kept alongside the generated network.
 CURATED_ROUTES = [
@@ -137,22 +136,25 @@ def fetch_and_load_stations(conn):
 
 # ---------------------------------------------------------------- OSM
 
-def _overpass(query):
+def _overpass(query, label):
     body = urllib.parse.urlencode({"data": query}).encode()
     last = None
-    for attempt in range(6):
+    for attempt in range(8):
         url = OVERPASS_URLS[attempt % len(OVERPASS_URLS)]
         try:
-            req = urllib.request.Request(url, data=body, headers={"User-Agent": "railtrack-loader/1.0"})
-            with urllib.request.urlopen(req, timeout=400) as resp:
+            req = urllib.request.Request(url, data=body, headers={
+                "User-Agent": "railtrack-loader/1.0 (https://github.com/rohitrot738/rohitrot738)"})
+            with urllib.request.urlopen(req, timeout=300) as resp:
                 return json.loads(resp.read().decode("utf-8"))
         except Exception as e:  # rate limit, timeout, bad JSON from an overloaded server
             last = e
-            time.sleep(10 * (attempt + 1))
+            wait = min(120, 10 * 2 ** min(attempt, 4))
+            print(f"   {label}: {url.split('/')[2]} failed ({e}); retry in {wait}s", flush=True)
+            time.sleep(wait)
     raise RuntimeError(f"Overpass failed after retries: {last}")
 
 
-def load_osm_ways():
+def load_osm_ways(station_coords):
     """Returns {way_id: [(lat, lon), ...]} for railway track in India."""
     fixture = os.environ.get("OSM_FIXTURE")
     if fixture:
@@ -161,23 +163,34 @@ def load_osm_ways():
     print("[3/6] Downloading railway track geometry from OpenStreetMap...")
     os.makedirs(CACHE_DIR, exist_ok=True)
     ways = {}
-    s0, w0, n0, e0 = INDIA_BBOX
-    tiles = [(s, w) for s in range(int(s0), int(n0), TILE_DEG) for w in range(int(w0), int(e0), TILE_DEG)]
+    # Only tiles that contain a station; ocean and foreign tiles are skipped.
+    tiles = sorted({(math.floor(la / TILE_DEG) * TILE_DEG, math.floor(lo / TILE_DEG) * TILE_DEG)
+                    for la, lo in station_coords})
+    failed = []
     for i, (s, w) in enumerate(tiles, 1):
         path = os.path.join(CACHE_DIR, f"tile_{s}_{w}.json")
-        if os.path.exists(path):
-            with open(path, encoding="utf-8") as f:
-                data = json.load(f)
-        else:
-            q = (f'[out:json][timeout:300][maxsize:2147483648];'
-                 f'way["railway"~"^(rail|narrow_gauge)$"][!"service"]'
-                 f'({s},{w},{s + TILE_DEG},{w + TILE_DEG});out geom;')
-            data = _overpass(q)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f)
-            time.sleep(2)
+        try:
+            if os.path.exists(path):
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+            else:
+                q = (f'[out:json][timeout:240][maxsize:2147483648];'
+                     f'way["railway"~"^(rail|narrow_gauge)$"][!"service"]'
+                     f'({s},{w},{s + TILE_DEG},{w + TILE_DEG});out geom qt;')
+                data = _overpass(q, f"tile ({s},{w})")
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f)
+                time.sleep(2)
+        except RuntimeError as e:
+            failed.append((s, w))
+            print(f"   tile {i}/{len(tiles)} ({s},{w}) SKIPPED: {e}", flush=True)
+            continue
         ways.update(_parse_ways(data))
         print(f"   tile {i}/{len(tiles)} ({s},{w}): {len(ways)} ways so far", flush=True)
+    if len(failed) > max(2, len(tiles) // 33):
+        sys.exit(f"Too many OSM tiles failed ({len(failed)}/{len(tiles)}): {failed}")
+    if failed:
+        print(f" !! {len(failed)} tiles missing, network incomplete there: {failed}")
     return ways
 
 
@@ -386,7 +399,8 @@ def main():
     conn = sqlite3.connect(DB_FILE)
     init_database(conn)
     fetch_and_load_stations(conn)
-    ways = load_osm_ways()
+    station_coords = [(la, lo) for la, lo in conn.execute("SELECT latitude, longitude FROM stations")]
+    ways = load_osm_ways(station_coords)
     if not ways:
         sys.exit("No OSM track data loaded; refusing to produce an empty network.")
 
