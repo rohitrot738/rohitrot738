@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RailTrack</title>
+<style>
+body{font-family:system-ui;padding:1rem;max-width:480px;margin:auto}
+input{width:100%;padding:.6rem;margin:.3rem 0;box-sizing:border-box}
+.dd{border:1px solid #ccc;max-height:160px;overflow:auto}.dd div{padding:.4rem;cursor:pointer}
+.dd div:hover{background:#eee}
+ol.tl{list-style:none;border-left:3px solid #999;margin:1rem 0;padding-left:1rem}
+ol.tl li{position:relative;padding:.5rem 0}
+ol.tl li::before{content:"";position:absolute;left:-1.5rem;top:.8rem;width:10px;height:10px;border-radius:50%;background:#999}
+ol.tl li.next::before{background:orange}ol.tl li.done::before{background:green}
+button{padding:.6rem 1rem}select{width:100%;padding:.5rem}
+table{width:100%;font-size:.8rem;border-collapse:collapse}td,th{border:1px solid #ccc;padding:2px}
+</style></head><body>
+<h2>RailTrack</h2>
+<input id="from" placeholder="Origin station" autocomplete="off"><div id="fromDd" class="dd" hidden></div>
+<input id="to" placeholder="Destination station" autocomplete="off"><div id="toDd" class="dd" hidden></div>
+<select id="routes" hidden></select>
+<ol id="timeline" class="tl"></ol>
+<button id="start" hidden>Start tracking</button> <button id="stop" hidden>Stop</button>
+<p id="status"></p>
+<h3>Trip log</h3>
+<button id="csv">Export Trip Log to CSV</button>
+<table><thead><tr><th>Station</th><th>Arrival</th><th>Departure</th><th>Halt</th></tr></thead><tbody id="log"></tbody></table>
+<script src="vendor/sql-wasm.js"></script>
+<script type="module" src="app.js"></script>
+</body></html>

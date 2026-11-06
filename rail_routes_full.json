@@ -1,0 +1,720 @@
+[
+  {
+    "route_id": "SUB_ARA_SSM",
+    "route_name": "Ara - Piro - Bikramganj - Sasaram Branch Line",
+    "line_type": "BRANCH",
+    "origin": "ARA",
+    "destination": "SSM",
+    "total_distance_km": 3887.65,
+    "stations": [
+      {
+        "order": 1,
+        "code": "ARA",
+        "name": "ARA",
+        "distance_km": 0.0,
+        "lat": 25.548889,
+        "lon": 84.66259600000001
+      },
+      {
+        "order": 2,
+        "code": "GADH",
+        "name": "Goaldih",
+        "distance_km": 434.47,
+        "lat": 21.726323,
+        "lon": 85.54626499999999
+      },
+      {
+        "order": 3,
+        "code": "CRQ",
+        "name": "Charpokhari Halt",
+        "distance_km": 852.84,
+        "lat": 25.3615157718,
+        "lon": 84.487603186
+      },
+      {
+        "order": 4,
+        "code": "PIRO",
+        "name": "Piro",
+        "distance_km": 860.92,
+        "lat": 25.321358352999997,
+        "lon": 84.4205444342
+      },
+      {
+        "order": 5,
+        "code": "HBS",
+        "name": "HEBSUR",
+        "distance_km": 2315.33,
+        "lat": 15.42206,
+        "lon": 75.283878
+      },
+      {
+        "order": 6,
+        "code": "XBKJ",
+        "name": "Bikramganj",
+        "distance_km": 3751.37,
+        "lat": 25.218913999999998,
+        "lon": 84.27373100000001
+      },
+      {
+        "order": 7,
+        "code": "MANI",
+        "name": "Mani Halt",
+        "distance_km": 3757.94,
+        "lat": 25.1739936806,
+        "lon": 84.23126776609999
+      },
+      {
+        "order": 8,
+        "code": "SJV",
+        "name": "Sanjhauli Halt",
+        "distance_km": 3763.2,
+        "lat": 25.1438922456,
+        "lon": 84.191033988
+      },
+      {
+        "order": 9,
+        "code": "GQN",
+        "name": "Garhani",
+        "distance_km": 3811.54,
+        "lat": 25.4118931462,
+        "lon": 84.5696156628
+      },
+      {
+        "order": 10,
+        "code": "BMHT",
+        "name": "Baraw More",
+        "distance_km": 3876.98,
+        "lat": 25.0437938949,
+        "lon": 84.06203632569999
+      },
+      {
+        "order": 11,
+        "code": "SSM",
+        "name": "SASARAM",
+        "distance_km": 3887.65,
+        "lat": 24.955926,
+        "lon": 84.019423
+      }
+    ]
+  },
+  {
+    "route_id": "SUB_DLN_TRG",
+    "route_name": "Dildarnagar - Tarighat Branch Line",
+    "line_type": "BRANCH",
+    "origin": "DLN",
+    "destination": "TRG",
+    "total_distance_km": 21.99,
+    "stations": [
+      {
+        "order": 1,
+        "code": "DLN",
+        "name": "DILDARNAGAR JN",
+        "distance_km": 0.0,
+        "lat": 25.419424,
+        "lon": 83.668324
+      },
+      {
+        "order": 2,
+        "code": "NXR",
+        "name": "Nagsar Halt",
+        "distance_km": 8.31,
+        "lat": 25.4912,
+        "lon": 83.6912
+      },
+      {
+        "order": 3,
+        "code": "SAHA",
+        "name": "Sarahula Halt",
+        "distance_km": 12.86,
+        "lat": 25.5312,
+        "lon": 83.6812
+      },
+      {
+        "order": 4,
+        "code": "TRG",
+        "name": "Tarighat",
+        "distance_km": 21.99,
+        "lat": 25.571721452321867,
+        "lon": 83.60210496000946
+      }
+    ]
+  },
+  {
+    "route_id": "SUB_FUT_IPR",
+    "route_name": "Fatuha - Hilsa - Islampur Branch Line",
+    "line_type": "BRANCH",
+    "origin": "FUT",
+    "destination": "IPR",
+    "total_distance_km": 41.61,
+    "stations": [
+      {
+        "order": 1,
+        "code": "FUT",
+        "name": "FATWA",
+        "distance_km": 0.0,
+        "lat": 25.50144,
+        "lon": 85.305488
+      },
+      {
+        "order": 2,
+        "code": "DNWH",
+        "name": "Daniyawan Bazar Halt",
+        "distance_km": 7.59,
+        "lat": 25.4345036206,
+        "lon": 85.2908951074
+      },
+      {
+        "order": 3,
+        "code": "HIL",
+        "name": "Hilsa",
+        "distance_km": 20.69,
+        "lat": 25.317354,
+        "lon": 85.277079
+      },
+      {
+        "order": 4,
+        "code": "EKR",
+        "name": "Ekangarsarai",
+        "distance_km": 32.16,
+        "lat": 25.2224815,
+        "lon": 85.2322638
+      },
+      {
+        "order": 5,
+        "code": "IPR",
+        "name": "Islampur",
+        "distance_km": 41.61,
+        "lat": 25.138577101499997,
+        "lon": 85.2173007153
+      }
+    ]
+  },
+  {
+    "route_id": "SUB_BKP_RGD",
+    "route_name": "Bakhtiyarpur - Rajgir Branch Line",
+    "line_type": "BRANCH",
+    "origin": "BKP",
+    "destination": "RGD",
+    "total_distance_km": 51.08,
+    "stations": [
+      {
+        "order": 1,
+        "code": "BKP",
+        "name": "BAKHTIYARPUR JN",
+        "distance_km": 0.0,
+        "lat": 25.456110000000002,
+        "lon": 85.52956400000001
+      },
+      {
+        "order": 2,
+        "code": "HRT",
+        "name": "Harnaut",
+        "distance_km": 9.45,
+        "lat": 25.371762836200002,
+        "lon": 85.5407224109
+      },
+      {
+        "order": 3,
+        "code": "WENA",
+        "name": "Wena",
+        "distance_km": 14.54,
+        "lat": 25.3266239799,
+        "lon": 85.5319560193
+      },
+      {
+        "order": 4,
+        "code": "BEHS",
+        "name": "Bihar Sharif",
+        "distance_km": 27.96,
+        "lat": 25.206116,
+        "lon": 85.5390747
+      },
+      {
+        "order": 5,
+        "code": "NLD",
+        "name": "Nalanda",
+        "distance_km": 40.03,
+        "lat": 25.122359,
+        "lon": 85.46277400000001
+      },
+      {
+        "order": 6,
+        "code": "RGD",
+        "name": "Rajgir",
+        "distance_km": 51.08,
+        "lat": 25.033068999999998,
+        "lon": 85.41469699999999
+      }
+    ]
+  },
+  {
+    "route_id": "MAIN_DDU_PNBE",
+    "route_name": "DDU - Buxar - Ara - Danapur - Patna Main Line",
+    "line_type": "MAIN",
+    "origin": "MGS",
+    "destination": "PNBE",
+    "total_distance_km": 1963.71,
+    "stations": [
+      {
+        "order": 1,
+        "code": "MGS",
+        "name": "MUGHAL SARAI JN",
+        "distance_km": 0.0,
+        "lat": 25.278149,
+        "lon": 83.11925000000001
+      },
+      {
+        "order": 2,
+        "code": "KCA",
+        "name": "KUCHMAN",
+        "distance_km": 10.64,
+        "lat": 25.318877999999998,
+        "lon": 83.21503
+      },
+      {
+        "order": 3,
+        "code": "SLD",
+        "name": "SAKALDIHA",
+        "distance_km": 18.23,
+        "lat": 25.331472,
+        "lon": 83.289193
+      },
+      {
+        "order": 4,
+        "code": "TLPC",
+        "name": "Tulsi Ashram",
+        "distance_km": 35.09,
+        "lat": 25.3712,
+        "lon": 83.4512
+      },
+      {
+        "order": 5,
+        "code": "ZNA",
+        "name": "ZAMANIA",
+        "distance_km": 44.39,
+        "lat": 25.373856,
+        "lon": 83.54365
+      },
+      {
+        "order": 6,
+        "code": "DRV",
+        "name": "DARAULI",
+        "distance_km": 50.63,
+        "lat": 25.393753,
+        "lon": 83.60180199999999
+      },
+      {
+        "order": 7,
+        "code": "DLN",
+        "name": "DILDARNAGAR JN",
+        "distance_km": 57.9,
+        "lat": 25.419424,
+        "lon": 83.668324
+      },
+      {
+        "order": 8,
+        "code": "USK",
+        "name": "USIA KHAS",
+        "distance_km": 62.12,
+        "lat": 25.434324,
+        "lon": 83.706967
+      },
+      {
+        "order": 9,
+        "code": "BWH",
+        "name": "BHADAURA",
+        "distance_km": 65.74,
+        "lat": 25.4504253,
+        "lon": 83.738354
+      },
+      {
+        "order": 10,
+        "code": "KKRH",
+        "name": "KARAHIA",
+        "distance_km": 69.81,
+        "lat": 25.471614,
+        "lon": 83.771397
+      },
+      {
+        "order": 11,
+        "code": "GMR",
+        "name": "GAHMAR",
+        "distance_km": 73.63,
+        "lat": 25.488685,
+        "lon": 83.80443100000001
+      },
+      {
+        "order": 12,
+        "code": "BQW",
+        "name": "BARAKALAN",
+        "distance_km": 78.17,
+        "lat": 25.4915162541,
+        "lon": 83.8494928638
+      },
+      {
+        "order": 13,
+        "code": "CSA",
+        "name": "CHAUSA",
+        "distance_km": 82.93,
+        "lat": 25.4984911003,
+        "lon": 83.89633140379999
+      },
+      {
+        "order": 14,
+        "code": "PWL",
+        "name": "PALWAL",
+        "distance_km": 796.92,
+        "lat": 28.151841,
+        "lon": 77.34223200000001
+      },
+      {
+        "order": 15,
+        "code": "BXR",
+        "name": "BUXAR",
+        "distance_km": 1515.65,
+        "lat": 25.562067,
+        "lon": 83.982184
+      },
+      {
+        "order": 16,
+        "code": "BWHH",
+        "name": "Baruna Halt",
+        "distance_km": 1524.58,
+        "lat": 25.5612,
+        "lon": 84.0712
+      },
+      {
+        "order": 17,
+        "code": "DURE",
+        "name": "DUMRAON",
+        "distance_km": 1531.97,
+        "lat": 25.571984,
+        "lon": 84.14386499999999
+      },
+      {
+        "order": 18,
+        "code": "TWG",
+        "name": "TWINING GANJ",
+        "distance_km": 1539.41,
+        "lat": 25.568766,
+        "lon": 84.218022
+      },
+      {
+        "order": 19,
+        "code": "VKDH",
+        "name": "VEER KUNWAR HALT",
+        "distance_km": 1543.11,
+        "lat": 25.567584999999998,
+        "lon": 84.254875
+      },
+      {
+        "order": 20,
+        "code": "RPR",
+        "name": "RAGHUNATHPUR",
+        "distance_km": 1548.17,
+        "lat": 25.565439,
+        "lon": 84.305227
+      },
+      {
+        "order": 21,
+        "code": "BYN",
+        "name": "BANAHI",
+        "distance_km": 1556.68,
+        "lat": 25.561301,
+        "lon": 84.389916
+      },
+      {
+        "order": 22,
+        "code": "BEA",
+        "name": "BIHIYA",
+        "distance_km": 1562.61,
+        "lat": 25.558893,
+        "lon": 84.448984
+      },
+      {
+        "order": 23,
+        "code": "KYA",
+        "name": "KAURIYA",
+        "distance_km": 1569.92,
+        "lat": 25.5509123644,
+        "lon": 84.5212854932
+      },
+      {
+        "order": 24,
+        "code": "KRS",
+        "name": "KARISATH",
+        "distance_km": 1574.12,
+        "lat": 25.549488,
+        "lon": 84.563141
+      },
+      {
+        "order": 25,
+        "code": "JGA",
+        "name": "JOGIARA",
+        "distance_km": 1726.08,
+        "lat": 26.407114392700002,
+        "lon": 85.74673274050001
+      },
+      {
+        "order": 26,
+        "code": "ARA",
+        "name": "ARA",
+        "distance_km": 1870.47,
+        "lat": 25.548889,
+        "lon": 84.66259600000001
+      },
+      {
+        "order": 27,
+        "code": "KUA",
+        "name": "KULHARIA",
+        "distance_km": 1880.26,
+        "lat": 25.568172999999998,
+        "lon": 84.757807
+      },
+      {
+        "order": 28,
+        "code": "KWR",
+        "name": "KOELWAR",
+        "distance_km": 1883.7,
+        "lat": 25.5687,
+        "lon": 84.792055
+      },
+      {
+        "order": 29,
+        "code": "PAIL",
+        "name": "Pali Halt",
+        "distance_km": 1887.86,
+        "lat": 25.5812,
+        "lon": 84.8312
+      },
+      {
+        "order": 30,
+        "code": "BTA",
+        "name": "BIHTA",
+        "distance_km": 1892.72,
+        "lat": 25.560948600000003,
+        "lon": 84.8740874
+      },
+      {
+        "order": 31,
+        "code": "PATL",
+        "name": "PATEL HALT",
+        "distance_km": 1895.21,
+        "lat": 25.5647952991,
+        "lon": 84.89852553829999
+      },
+      {
+        "order": 32,
+        "code": "SDE",
+        "name": "SADISOPUR",
+        "distance_km": 1897.07,
+        "lat": 25.566169000000002,
+        "lon": 84.916992
+      },
+      {
+        "order": 33,
+        "code": "GZH",
+        "name": "GULZARBAGH",
+        "distance_km": 1926.18,
+        "lat": 25.597542,
+        "lon": 85.205232
+      },
+      {
+        "order": 34,
+        "code": "NEO",
+        "name": "NEORA",
+        "distance_km": 1948.27,
+        "lat": 25.57459,
+        "lon": 84.986523
+      },
+      {
+        "order": 35,
+        "code": "DNR",
+        "name": "DANAPUR",
+        "distance_km": 1954.15,
+        "lat": 25.581921,
+        "lon": 85.044629
+      },
+      {
+        "order": 36,
+        "code": "PWS",
+        "name": "PHULWARI SHARIF",
+        "distance_km": 1957.68,
+        "lat": 25.586297,
+        "lon": 85.07942999999999
+      },
+      {
+        "order": 37,
+        "code": "PNBE",
+        "name": "PATNA JN",
+        "distance_km": 1963.71,
+        "lat": 25.60256,
+        "lon": 85.136824
+      }
+    ]
+  },
+  {
+    "route_id": "SUB_PNBE_GAYA",
+    "route_name": "Patna - Jehanabad - Gaya Sub-Route",
+    "line_type": "SUB_ROUTE",
+    "origin": "PNBE",
+    "destination": "GAYA",
+    "total_distance_km": 91.45,
+    "stations": [
+      {
+        "order": 1,
+        "code": "PNBE",
+        "name": "PATNA JN",
+        "distance_km": 0.0,
+        "lat": 25.60256,
+        "lon": 85.136824
+      },
+      {
+        "order": 2,
+        "code": "PRBZ",
+        "name": "Parsa Bazar",
+        "distance_km": 6.11,
+        "lat": 25.550023,
+        "lon": 85.11887899999999
+      },
+      {
+        "order": 3,
+        "code": "PNUG",
+        "name": "Punpun Ghat Halt",
+        "distance_km": 8.97,
+        "lat": 25.5255878987,
+        "lon": 85.1099123547
+      },
+      {
+        "order": 4,
+        "code": "PPN",
+        "name": "Punpun",
+        "distance_km": 13.28,
+        "lat": 25.488229642500002,
+        "lon": 85.09876768800001
+      },
+      {
+        "order": 5,
+        "code": "TEA",
+        "name": "Taregna",
+        "distance_km": 29.27,
+        "lat": 25.3552301906,
+        "lon": 85.038112915
+      },
+      {
+        "order": 6,
+        "code": "JHD",
+        "name": "Jehanabad",
+        "distance_km": 44.57,
+        "lat": 25.224705,
+        "lon": 84.989964
+      },
+      {
+        "order": 7,
+        "code": "BELA",
+        "name": "Bela",
+        "distance_km": 71.97,
+        "lat": 24.97843,
+        "lon": 84.981353
+      },
+      {
+        "order": 8,
+        "code": "GAYA",
+        "name": "GAYA JN",
+        "distance_km": 91.45,
+        "lat": 24.803978,
+        "lon": 84.999294
+      }
+    ]
+  },
+  {
+    "route_id": "CHORD_DDU_GAYA",
+    "route_name": "DDU - Sasaram - Dehri On Sone - Gaya Grand Chord",
+    "line_type": "CHORD",
+    "origin": "MGS",
+    "destination": "GAYA",
+    "total_distance_km": 200.26,
+    "stations": [
+      {
+        "order": 1,
+        "code": "MGS",
+        "name": "MUGHAL SARAI JN",
+        "distance_km": 0.0,
+        "lat": 25.278149,
+        "lon": 83.11925000000001
+      },
+      {
+        "order": 2,
+        "code": "CDMR",
+        "name": "CHANDAULI MJHWR",
+        "distance_km": 15.05,
+        "lat": 25.261093,
+        "lon": 83.267724
+      },
+      {
+        "order": 3,
+        "code": "BBU",
+        "name": "BHABUA ROAD",
+        "distance_km": 51.71,
+        "lat": 25.173007,
+        "lon": 83.618913
+      },
+      {
+        "order": 4,
+        "code": "KTQ",
+        "name": "KUDRA",
+        "distance_km": 74.07,
+        "lat": 25.048552,
+        "lon": 83.79337100000001
+      },
+      {
+        "order": 5,
+        "code": "SSM",
+        "name": "SASARAM",
+        "distance_km": 99.07,
+        "lat": 24.955926,
+        "lon": 84.019423
+      },
+      {
+        "order": 6,
+        "code": "DOS",
+        "name": "DEHRI ON SONE",
+        "distance_km": 116.42,
+        "lat": 24.914894999999998,
+        "lon": 84.185434
+      },
+      {
+        "order": 7,
+        "code": "AUBR",
+        "name": "ANUGRAHA NARAYAN ROAD",
+        "distance_km": 132.4,
+        "lat": 24.855955599999998,
+        "lon": 84.3298444
+      },
+      {
+        "order": 8,
+        "code": "RFJ",
+        "name": "RAFIGANJ",
+        "distance_km": 163.43,
+        "lat": 24.819694000000002,
+        "lon": 84.634804
+      },
+      {
+        "order": 9,
+        "code": "GRRU",
+        "name": "GURARU",
+        "distance_km": 179.31,
+        "lat": 24.811113,
+        "lon": 84.791831
+      },
+      {
+        "order": 10,
+        "code": "GAYA",
+        "name": "GAYA JN",
+        "distance_km": 200.26,
+        "lat": 24.803978,
+        "lon": 84.999294
+      }
+    ]
+  }
+]
