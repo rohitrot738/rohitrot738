@@ -13,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
@@ -34,9 +35,37 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Restore OpenStreetMap tiles
+        uses: actions/cache/restore@v4
+        with:
+          path: osm_cache
+          key: osm-tiles-${{ github.run_id }}
+          restore-keys: osm-tiles-
+
+      - name: Loader self-test
+        run: python3 test_loader.py
+
+      - name: Build railway database (OSM network)
+        run: python3 loader_pipeline.py
+
+      # Saved even on failure so a retry doesn't re-download finished tiles.
+      - name: Save OpenStreetMap tiles
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: osm_cache
+          key: osm-tiles-${{ github.run_id }}
+
+      - name: Upload database
+        uses: actions/upload-artifact@v4
+        with:
+          name: railways-db
+          path: |
+            indian_railways_complete.db
+            rail_routes_full.json
+
       - name: Build web assets and sync Capacitor
         run: |
-          python3 loader_pipeline.py
           ./scripts/build_www.sh
           npx cap sync android
 

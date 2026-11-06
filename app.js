@@ -46,15 +46,49 @@ function findRoutes() {
     FROM subroute_stations x
     JOIN subroute_stations y ON x.route_id = y.route_id AND y.sequence_order <> x.sequence_order
     JOIN rail_subroutes rs ON rs.route_id = x.route_id
-    WHERE x.station_code = ? AND y.station_code = ?`, [a, b]);
+    WHERE x.station_code = ? AND y.station_code = ?
+    ORDER BY ABS(x.sequence_order - y.sequence_order) LIMIT 20`, [a, b]);
   const sel = $("routes");
   sel.innerHTML = "";
   r.forEach((x, i) => sel.add(new Option(`${x.route_name} (${Math.abs(x.s2 - x.s1) + 1} stations)`, i)));
   sel.hidden = !r.length;
   sel._r = r;
   $("start").hidden = !r.length;
-  if (r.length) showTimeline(r[0]);
-  else { chain = []; $("timeline").innerHTML = "<li>No route found</li>"; }
+  if (r.length) { showTimeline(r[0]); return; }
+  // No single line covers both stations: take the shortest path across connected lines.
+  chain = shortestPath(a, b);
+  $("start").hidden = !chain.length;
+  if (chain.length) renderTimeline(0);
+  else $("timeline").innerHTML = "<li>No route found</li>";
+}
+
+let graph;
+function shortestPath(a, b) {
+  if (!graph) {
+    graph = new Map();
+    for (const l of rows("SELECT station_a, station_b, distance_km FROM station_links")) {
+      if (!graph.has(l.station_a)) graph.set(l.station_a, []);
+      if (!graph.has(l.station_b)) graph.set(l.station_b, []);
+      graph.get(l.station_a).push([l.station_b, l.distance_km]);
+      graph.get(l.station_b).push([l.station_a, l.distance_km]);
+    }
+  }
+  const dist = new Map([[a, 0]]), prev = new Map(), done = new Set();
+  while (true) {
+    let u = null;
+    for (const [k, d] of dist) if (!done.has(k) && (u === null || d < dist.get(u))) u = k;
+    if (u === null) return [];
+    if (u === b) break;
+    done.add(u);
+    for (const [v, w] of graph.get(u) || []) {
+      if (!dist.has(v) || dist.get(u) + w < dist.get(v)) { dist.set(v, dist.get(u) + w); prev.set(v, u); }
+    }
+  }
+  const codes = [b];
+  while (codes[0] !== a) codes.unshift(prev.get(codes[0]));
+  const byCode = new Map(rows(`SELECT station_code AS code, station_name AS name, latitude AS lat, longitude AS lon
+    FROM stations WHERE station_code IN (${codes.map(() => "?").join(",")})`, codes).map(s => [s.code, s]));
+  return codes.map(c => byCode.get(c));
 }
 function showTimeline({ route_id, s1, s2 }) {
   const lo = Math.min(s1, s2), hi = Math.max(s1, s2);
