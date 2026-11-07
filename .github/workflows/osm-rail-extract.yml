@@ -29,9 +29,10 @@ jobs:
       - name: Extract rail features with referenced nodes
         run: |
           osmium tags-filter india-latest.osm.pbf \
-            w/railway=rail,light_rail,narrow_gauge,subway,tram,construction,disused,abandoned,preserved \
+            w/railway=rail,light_rail,narrow_gauge,subway,tram,funicular,monorail,miniature,construction,disused,abandoned,proposed,preserved \
             nw/railway=station,halt \
             n/railway=junction,switch,crossing,level_crossing,buffer_stop \
+            r/route=train,railway,subway,tram \
             -o india-rail.osm.pbf
           osmium check-refs india-rail.osm.pbf
           osmium fileinfo -e india-rail.osm.pbf > rail-fileinfo.txt
@@ -39,7 +40,11 @@ jobs:
 
       - name: Build OSM track graph
         run: |
-          python3 irsd/osm/build_graph.py india-rail.osm.pbf india-rail-graph.sqlite coverage.json
+          python3 irsd/osm/build_graph.py india-rail.osm.pbf india-rail-graph.sqlite coverage.json \
+            --independent-stations safar/stations.json \
+            --independent-matches-output independent-station-candidates.csv \
+            --match-summary station-match-summary.json
+          sha256sum independent-station-candidates.csv station-match-summary.json >> SHA256SUMS.txt
           gzip -9 india-rail-graph.sqlite
           sha256sum india-rail-graph.sqlite.gz >> SHA256SUMS.txt
 
@@ -59,6 +64,7 @@ jobs:
           EOF
           gh release edit osm-rail-20261107 --notes 'WARNING: This earlier extract omitted referenced track nodes (osmium tags-filter -R); it cannot be used to construct a complete track graph. Use a newer release produced by the corrected workflow. Contains OpenStreetMap data © OpenStreetMap contributors, ODbL 1.0; coverage not verified.'
           gh release create "$TAG" india-rail.osm.pbf india-rail-graph.sqlite.gz \
+            independent-station-candidates.csv station-match-summary.json \
             full-fileinfo.txt rail-fileinfo.txt coverage.json SHA256SUMS.txt NOTICE.txt \
             --title "OSM rail graph $TAG" \
-            --notes "OSM-derived physical track graph; coverage and real-world connectivity are not independently verified. © OpenStreetMap contributors, ODbL 1.0. See irsd/osm/README.md."
+            --notes "OSM-derived physical track graph and unreviewed candidates against the separate DataMeet-derived Safar station catalog. No WIMT/IRSD data included. Coverage and real-world connectivity are not independently verified. © OpenStreetMap contributors, ODbL 1.0. See irsd/osm/README.md."

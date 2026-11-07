@@ -14,3 +14,9 @@ Observe ODbL attribution, source availability and share-alike requirements
 when using or redistributing them. Separately assess the rights in other data
 before combining or distributing it. The WIMT-derived IRSD station archive is
 not covered by the OSM licence.
+
+The optional station-candidate CSV is based on the DataMeet-derived station
+catalog used by Safar (identified by the app as CC0) and contains OSM-derived
+IDs/tags/track relationships under ODbL. Approximate fallback stations are
+identified separately in the CSV and are not represented as DataMeet records.
+No WIMT/IRSD records are included in OSM releases.

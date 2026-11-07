@@ -2,6 +2,7 @@
 """Build a physical OSM track graph; optional station matches stay separate."""
 
 import argparse
+import ast
 import csv
 import io
 import json
@@ -13,7 +14,7 @@ import subprocess
 import xml.etree.ElementTree as ET
 import zipfile
 
-TRACKS = {"rail", "narrow_gauge", "light_rail", "preserved"}
+TRACKS = {"rail", "narrow_gauge", "light_rail", "subway", "tram", "funicular", "monorail", "miniature", "preserved"}
 STATIONS = {"station", "halt"}
 INACTIVE = {"disused", "abandoned", "construction", "proposed"}
 
@@ -36,6 +37,7 @@ def build(xml, database, report):
         CREATE TABLE segments(way_id INTEGER NOT NULL, sequence INTEGER NOT NULL,
                               from_node INTEGER NOT NULL, to_node INTEGER NOT NULL,
                               PRIMARY KEY(way_id, sequence));
+        CREATE TABLE relations(id INTEGER PRIMARY KEY, tags TEXT NOT NULL, members TEXT NOT NULL);
         CREATE TABLE stations(osm_type TEXT NOT NULL, osm_id INTEGER NOT NULL,
                               railway TEXT NOT NULL, tags TEXT NOT NULL, node_refs TEXT,
                               PRIMARY KEY(osm_type, osm_id));
@@ -64,6 +66,14 @@ def build(xml, database, report):
                 db.execute("INSERT INTO ways VALUES (?,?,?)", (obj_id, tags["railway"], tag_json))
                 db.executemany("INSERT INTO segments VALUES (?,?,?,?)",
                                ((obj_id, i, a, b) for i, (a, b) in enumerate(zip(refs, refs[1:]))))
+        elif elem.tag == "relation" and tags.get("route") in {"train", "railway", "subway", "tram"}:
+            members = [
+                {"type": member.attrib["type"], "ref": int(member.attrib["ref"]),
+                 "role": member.attrib.get("role", "")}
+                for member in elem.findall("member")
+            ]
+            db.execute("INSERT INTO relations VALUES (?,?,?)",
+                       (obj_id, tag_json, json.dumps(members, ensure_ascii=False)))
         root.clear()
 
     missing = db.execute("""
@@ -92,6 +102,15 @@ def build(xml, database, report):
             JOIN node_ways w ON w.node_id=d.node_id
             GROUP BY d.node_id, d.degree;
         CREATE UNIQUE INDEX junction_id ON junctions(node_id);
+        CREATE TABLE junction_ways(
+            junction_node_id INTEGER NOT NULL,
+            way_id INTEGER NOT NULL,
+            PRIMARY KEY(junction_node_id, way_id)
+        );
+        INSERT INTO junction_ways
+            SELECT DISTINCT j.node_id, w.way_id
+            FROM junctions j JOIN node_ways w ON w.node_id=j.node_id;
+        CREATE INDEX junction_ways_way ON junction_ways(way_id);
         CREATE TABLE station_track_links(
             station_node_id INTEGER NOT NULL,
             track_node_id INTEGER NOT NULL,
@@ -114,8 +133,10 @@ def build(xml, database, report):
         "track_segments": "SELECT COUNT(*) FROM segments",
         "track_nodes": "SELECT COUNT(*) FROM (SELECT from_node FROM segments UNION SELECT to_node FROM segments)",
         "topological_junction_candidates": "SELECT COUNT(*) FROM junctions",
+        "junction_way_links": "SELECT COUNT(*) FROM junction_ways",
         "station_nodes": "SELECT COUNT(*) FROM stations WHERE osm_type='node'",
         "station_ways": "SELECT COUNT(*) FROM stations WHERE osm_type='way'",
+        "rail_route_relations": "SELECT COUNT(*) FROM relations",
         "station_nodes_with_shared_track_node": "SELECT COUNT(DISTINCT station_node_id) FROM station_track_links",
         "station_track_link_rows": "SELECT COUNT(*) FROM station_track_links",
         "junction_candidates_with_3plus_ways": "SELECT COUNT(*) FROM junctions WHERE track_way_count>=3",
@@ -169,6 +190,95 @@ def match(database, archive, output):
     db.close()
 
 
+def match_independent_stations(database, station_file, output, summary_file):
+    if os.path.exists(output) or os.path.exists(summary_file):
+        raise FileExistsError("Refusing to overwrite station match outputs")
+    pipeline_path = os.path.join(os.path.dirname(__file__), "..", "..", "loader_pipeline.py")
+    with open(pipeline_path, encoding="utf-8") as f:
+        pipeline = ast.parse(f.read(), filename=pipeline_path)
+    fallback_assignment = next(
+        node for node in pipeline.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "FALLBACK_STATIONS" for target in node.targets)
+    )
+    fallback_codes = {row[0].upper() for row in ast.literal_eval(fallback_assignment.value)}
+    db = sqlite3.connect(f"file:{os.path.abspath(database)}?mode=ro", uri=True)
+    with open(station_file, encoding="utf-8") as source:
+        stations = json.load(source)
+    candidates = []
+    for code, name, lat, lon in stations:
+        dy = 1000 / 110000
+        dx = dy / max(0.01, math.cos(math.radians(lat)))
+        rows = db.execute("""
+            SELECT n.id, n.lat, n.lon, n.tags,
+                   (SELECT group_concat(way_id, ';') FROM station_track_links l
+                    WHERE l.station_node_id=n.id)
+            FROM station_locations r JOIN nodes n ON n.id=r.id
+            WHERE r.min_lat<=? AND r.max_lat>=? AND r.min_lon<=? AND r.max_lon>=?
+        """, (lat + dy, lat - dy, lon + dx, lon - dx))
+        for node_id, nlat, nlon, tags_json, way_ids in rows:
+            tags = json.loads(tags_json)
+            refs = {item.strip().upper() for item in re.split(r"[;,]", tags.get("ref", ""))}
+            if code.upper() not in refs:
+                continue
+            meters = distance(lat, lon, nlat, nlon)
+            if meters > 1000:
+                continue
+            candidates.append({
+                "code": code, "name": name, "lat": lat, "lon": lon,
+                "source": "project_approximate_fallback" if code.upper() in fallback_codes else "DataMeet-derived",
+                "osm_id": node_id, "osm_ref": tags.get("ref", ""),
+                "osm_name": tags.get("name", ""),
+                "distance_m": round(meters, 1),
+                "way_ids": sorted(int(value) for value in (way_ids or "").split(";") if value),
+            })
+    db.close()
+
+    code_counts = {}
+    node_counts = {}
+    for row in candidates:
+        code_counts[row["code"]] = code_counts.get(row["code"], 0) + 1
+        node_counts[row["osm_id"]] = node_counts.get(row["osm_id"], 0) + 1
+    with open(output, "x", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            "station_code", "station_name", "station_lat", "station_lon", "station_source",
+            "source_license", "osm_station_node_id", "osm_ref", "osm_name", "distance_m", "shared_track_way_ids",
+            "shares_track_node", "candidate_count_for_code", "candidate_count_for_osm_node",
+            "status",
+        ])
+        for row in sorted(candidates, key=lambda item: (item["code"], item["distance_m"], item["osm_id"])):
+            writer.writerow([
+                row["code"], row["name"], row["lat"], row["lon"], row["source"],
+                ("DataMeet CC0; OSM-derived match ODbL" if row["source"] == "DataMeet-derived"
+                 else "Project approximation; OSM-derived match ODbL"),
+                row["osm_id"], row["osm_ref"], row["osm_name"], row["distance_m"], json.dumps(row["way_ids"]),
+                int(bool(row["way_ids"])), code_counts[row["code"]], node_counts[row["osm_id"]],
+                "unreviewed_candidate",
+            ])
+    summary = {
+        "station_catalog": station_file,
+        "station_catalog_source": "https://raw.githubusercontent.com/datameet/railways/master/stations.json",
+        "provenance": "DataMeet-derived catalog plus project approximate fallback entries; per-record source is marked in CSV",
+        "matching_rule": "exact OSM station-node ref token equals station code and coordinates are within 1000 m; proximity is only a sanity filter",
+        "candidate_rows": len(candidates),
+        "source_records": len(stations),
+        "project_approximate_fallback_candidate_rows": sum(row["source"] == "project_approximate_fallback" for row in candidates),
+        "distinct_station_codes_with_candidates": len(code_counts),
+        "candidate_rows_sharing_track_node": sum(bool(row["way_ids"]) for row in candidates),
+        "distinct_station_codes_with_track_node_candidate": len({
+            row["code"] for row in candidates if row["way_ids"]
+        }),
+        "ambiguous_station_codes": sum(value > 1 for value in code_counts.values()),
+        "ambiguous_osm_station_nodes": sum(value > 1 for value in node_counts.values()),
+        "radius_m": 1000,
+        "status": "all rows are candidates; none are independently reviewed or verified station identities",
+    }
+    with open(summary_file, "x", encoding="utf-8") as f:
+        json.dump(summary, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("input", nargs="?")
@@ -177,11 +287,17 @@ def main():
     parser.add_argument("--xml", action="store_true", help="Input is OSM XML, for fixtures")
     parser.add_argument("--match-archive", help="Optional restricted IRSD ZIP, never published by workflow")
     parser.add_argument("--matches-output", help="Private CSV for unreviewed matches")
+    parser.add_argument("--independent-stations", help="Independent station catalog JSON (not WIMT/IRSD)")
+    parser.add_argument("--independent-matches-output", help="CSV for independent station candidates")
+    parser.add_argument("--match-summary", help="Summary JSON for independent station candidates")
     args = parser.parse_args()
     if not all((args.input, args.database, args.report)):
         parser.error("input, database and report are required")
     if bool(args.match_archive) != bool(args.matches_output):
         parser.error("--match-archive and --matches-output must be supplied together")
+    independent_args = (args.independent_stations, args.independent_matches_output, args.match_summary)
+    if any(independent_args) and not all(independent_args):
+        parser.error("--independent-stations, --independent-matches-output and --match-summary must be supplied together")
     if args.xml:
         with open(args.input, "rb") as f:
             build(f, args.database, args.report)
@@ -195,6 +311,9 @@ def main():
                 raise RuntimeError("osmium cat failed")
     if args.match_archive:
         match(args.database, args.match_archive, args.matches_output)
+    if args.independent_stations:
+        match_independent_stations(args.database, args.independent_stations,
+                                   args.independent_matches_output, args.match_summary)
 
 
 if __name__ == "__main__":
