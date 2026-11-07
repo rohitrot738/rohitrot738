@@ -20,21 +20,23 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <main>
 <div>
   <select id="mode">
-    <option value="gps">GPS (sabse accurate)</option>
-    <option value="network">Cell tower / WiFi (network location)</option>
-    <option value="auto">Auto (GPS fail ho to network)</option>
+    <option value="auto">Auto (GPS, zaroorat par kam accuracy)</option>
+    <option value="gps">GPS (high accuracy)</option>
+    <option value="network">Kam accuracy / network location</option>
   </select>
   <button id="start">Start</button>
   <button id="stop" class="alt">Stop</button>
 </div>
 <div class="card" id="status">Status: ruka hua</div>
-<div class="card" id="now">Agla/Nazdiki station: —</div>
+<div class="card" id="data-status">Station data: location ka intezar hai</div>
+<div class="card" id="now">Nazdiki station: —</div>
 <button id="csv" class="alt">CSV download</button>
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
 <div id="log"></div>
-<p class="small">Station data OpenStreetMap se internet ke through aata hai. Screen on / app khula rakhein.
-Cell tower ki location browser/phone khud nikalta hai (network mode).</p>
+<p class="small">Station data OpenStreetMap se internet ke through aata hai. Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
+Browser location ka source khud chunta hai; network location ki accuracy kam ho sakti hai.
+Nazdiki station zaroori nahi ki agla station ho. Station chhodne ke baad log dikhega; purana safar wapas nahi milega.</p>
 </main>
 <script>
 const R = 500;            // station radius (m)
@@ -42,6 +44,8 @@ const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
 const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], fetchedAt = null, watchId = null, last = null, state = {};
+let loading = false, retryAfter = 0, pending = [], latestPosition = null, session = 0, activeController = null;
+let wakeLock = null, cacheChecked = false;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
 const fmt = t => new Date(t).toLocaleTimeString('hi-IN', {hour12:false});
@@ -52,23 +56,60 @@ function dist(a, b, c, d) {
 }
 
 async function loadStations(lat, lon) {
-  if (fetchedAt && dist(lat, lon, fetchedAt.lat, fetchedAt.lon) < 15000) return;
-  const q = `[out:json][timeout:25];node["railway"~"station|halt"](around:40000,${lat},${lon});out;`;
-  try {
-    const r = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data=' + encodeURIComponent(q)});
-    const j = await r.json();
-    stations = j.elements.filter(e => e.tags && e.tags.name)
-      .map(e => ({name: e.tags['name:en'] || e.tags.name, lat: e.lat, lon: e.lon}));
-    fetchedAt = {lat, lon};
-    localStorage.setItem('stations', JSON.stringify({stations, fetchedAt}));
-  } catch (e) {
-    const c = JSON.parse(localStorage.getItem('stations') || 'null');
-    if (c) { stations = c.stations; fetchedAt = c.fetchedAt; }
-    $('status').textContent = 'Internet nahi: saved station data use ho raha hai';
+  if (loading || Date.now() < retryAfter ||
+      (fetchedAt && dist(lat, lon, fetchedAt.lat, fetchedAt.lon) < 15000)) return;
+  loading = true;
+  const requestSession = session;
+  $('data-status').textContent = 'Station data internet se la rahe hain...';
+  const q = `[out:json][timeout:20];(nwr["railway"~"^(station|halt)$"](around:30000,${lat},${lon}););out center;`;
+  for (const host of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+    const controller = new AbortController();
+    activeController = controller;
+    const timer = setTimeout(() => controller.abort(), 25000);
+    try {
+      const r = await fetch(host, {method:'POST', body:'data=' + encodeURIComponent(q), signal:controller.signal});
+      if (!r.ok) throw new Error('Station service HTTP ' + r.status);
+      const j = await r.json();
+      if (!Array.isArray(j.elements) || j.remark) throw new Error('Station data incomplete');
+      if (requestSession !== session) break;
+      const next = j.elements.filter(e => e.tags && e.tags.name && Number.isFinite(e.lat ?? e.center?.lat) && Number.isFinite(e.lon ?? e.center?.lon))
+        .map(e => ({id: `${e.type}/${e.id}`, name: e.tags['name:en'] || e.tags.name,
+          lat: e.lat ?? e.center.lat, lon: e.lon ?? e.center.lon}));
+      // Keep stations currently being visited until their exit is observed.
+      for (const s of stations) if (state[stationKey(s)] && !next.some(n => stationKey(n) === stationKey(s))) next.push(s);
+      stations = next;
+      fetchedAt = {lat, lon};
+      try { localStorage.setItem('stations', JSON.stringify({stations, fetchedAt})); }
+      catch (e) { console.warn('Station cache save nahi hua', e); }
+      $('data-status').textContent = stations.length ? `Station data taiyar: ${stations.length} stations` : 'Aas-paas koi station data nahi mila.';
+      loading = false;
+      activeController = null;
+      const queued = pending;
+      pending = [];
+      for (const p of queued) processPosition(p);
+      if (!queued.length && latestPosition && watchId != null) processPosition(latestPosition);
+      return;
+    } catch (e) {
+      if (requestSession !== session) break;
+      console.warn('Station service failed:', host, e);
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  loading = false;
+  activeController = null;
+  if (requestSession !== session) {
+    if (watchId != null && latestPosition) loadStations(latestPosition.coords.latitude, latestPosition.coords.longitude);
+    return;
+  }
+  retryAfter = Date.now() + 30000;
+  $('data-status').textContent = stations.length
+    ? 'Station service nahi mili; purana station data use ho raha hai. Internet check karein.'
+    : 'Station data nahi mila. Internet check karein; app dobara koshish karega.';
 }
 
 function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log)); render(); }
+function stationKey(s) { return s.id || s.name + s.lat; }
 
 function finish(s, st, exitT) {
   if (st.stopStart && (st.stopEnd || exitT) && (st.stopEnd || exitT) - st.stopStart >= MIN_HALT * 1000) {
@@ -79,56 +120,119 @@ function finish(s, st, exitT) {
 }
 
 function onPos(p) {
+  latestPosition = p;
+  const {latitude: lat, longitude: lon, accuracy} = p.coords;
+  $('status').textContent = `Location mil rahi hai (±${Math.round(accuracy)} m)`;
+  if (accuracy > R) {
+    $('status').textContent += '. Accuracy kam hai; GPS on karke khule aasman ke neeche try karein.';
+    return;
+  }
+  if (!cacheChecked) {
+    cacheChecked = true;
+    try {
+      const cached = JSON.parse(localStorage.getItem('stations') || 'null');
+      if (cached && Array.isArray(cached.stations) && cached.fetchedAt &&
+          dist(lat, lon, cached.fetchedAt.lat, cached.fetchedAt.lon) < 15000) {
+        stations = cached.stations;
+        $('data-status').textContent = 'Saved station data use ho raha hai; naya data la rahe hain.';
+      }
+    } catch (e) {
+      console.warn('Saved station data nahi padh paye', e);
+    }
+  }
+  if (!stations.length) {
+    pending.push(p);
+    if (pending.length > 200) {
+      pending.shift();
+      $('data-status').textContent = 'Station data abhi nahi mila; kuch purani locations chhoot sakti hain.';
+    }
+  } else {
+    processPosition(p);
+  }
+  loadStations(lat, lon);
+}
+
+function processPosition(p) {
   const {latitude: lat, longitude: lon} = p.coords, t = p.timestamp;
   let speed = p.coords.speed;
-  if ((speed == null || isNaN(speed)) && last) {
+  if ((speed == null || !Number.isFinite(speed)) && last) {
     const dt = (t - last.t) / 1000;
-    speed = dt > 0 ? dist(last.lat, last.lon, lat, lon) / dt : 0;
+    speed = dt > 0 ? dist(last.lat, last.lon, lat, lon) / dt : null;
   }
-  speed = speed || 0;
+  if (!Number.isFinite(speed)) speed = null;
   last = {lat, lon, t};
-  loadStations(lat, lon);
 
   let nearest = null;
   for (const s of stations) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
-    const k = s.name + s.lat;
+    const k = stationKey(s);
     let st = state[k];
     if (d <= R) {
       if (!st) st = state[k] = {bestD: d, bestT: t, stopStart: null, stopEnd: null};
       if (d < st.bestD) { st.bestD = d; st.bestT = t; }
-      if (speed < STOP_SPEED) { if (!st.stopStart) st.stopStart = t; st.stopEnd = null; }
-      else if (st.stopStart && !st.stopEnd) st.stopEnd = t;
+      if (speed != null && speed < STOP_SPEED) { if (!st.stopStart) st.stopStart = t; st.stopEnd = null; }
+      else if (speed != null && st.stopStart && !st.stopEnd) st.stopEnd = t;
     } else if (st) {
       finish(s, st, t); delete state[k];
     }
   }
-  $('status').textContent = `Location mil rahi hai (±${Math.round(p.coords.accuracy)}m), speed ${(speed*3.6).toFixed(0)} km/h`;
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km)`;
+  else $('now').textContent = 'Nazdiki station: data nahi mila';
 }
 
 function start() {
   if (watchId != null) return;
   if (!navigator.geolocation) { $('status').textContent = 'Location support nahi hai'; return; }
   const mode = $('mode').value;
-  const opts = {enableHighAccuracy: mode !== 'network', maximumAge: 0, timeout: 30000};
-  watchId = navigator.geolocation.watchPosition(onPos, err => {
-    $('status').textContent = 'Error: ' + err.message;
-    if (mode === 'auto' && opts.enableHighAccuracy) { stop(); $('mode').value = 'network'; start(); }
-  }, opts);
-  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(() => {});
   $('status').textContent = 'Location dhoondh rahe hain...';
+  const currentSession = ++session;
+  function watch(highAccuracy) {
+    watchId = navigator.geolocation.watchPosition(onPos, err => {
+      if (currentSession !== session) return;
+      if (err.code === 1) {
+        stop();
+        $('status').textContent = 'Location permission nahi mili. Browser aur phone ki location permission allow karein, phir Start dabayein.';
+      } else if (mode === 'auto' && highAccuracy) {
+        navigator.geolocation.clearWatch(watchId);
+        $('status').textContent = 'GPS nahi mila; kam accuracy wali location ki koshish ho rahi hai.';
+        watch(false);
+      } else {
+        $('status').textContent = 'Location nahi mili ya timeout hua. Phone ka GPS on karein, khule aasman ke neeche jayein; app dobara koshish karega.';
+      }
+    }, {enableHighAccuracy: highAccuracy, maximumAge: 5000, timeout: 60000});
+  }
+  watch(mode !== 'network');
+  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(lock => {
+    if (currentSession !== session) return lock.release();
+    wakeLock = lock;
+  }).catch(e => console.warn('Screen wake lock nahi mila', e));
 }
 function stop() {
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
-  watchId = null; $('status').textContent = 'Status: ruka hua';
+  session++;
+  if (activeController) activeController.abort();
+  if (wakeLock) {
+    wakeLock.release().catch(e => console.warn('Screen wake lock release nahi hua', e));
+    wakeLock = null;
+  }
+  watchId = null; last = null; state = {}; pending = []; latestPosition = null;
+  $('status').textContent = 'Tracking band hai. Adhoora station visit log nahi hua.';
 }
 
 function render() {
-  $('log').innerHTML = log.slice().reverse().map(e => e.type === 'halt'
-    ? `<div class="card stop"><b>${e.name}</b><br>Aaya: ${fmt(e.arr)} · Gaya: ${fmt(e.dep)}<div class="small">Ruke: ${Math.round((e.dep - e.arr)/60000*10)/10} min</div></div>`
-    : `<div class="card pass"><b>${e.name}</b><br>Paar kiya: ${fmt(e.t)}<div class="small">bina ruke</div></div>`).join('');
+  $('log').replaceChildren();
+  if (!log.length) $('log').textContent = 'Abhi koi station log nahi hua.';
+  for (const e of log.slice().reverse()) {
+    const card = document.createElement('div'), title = document.createElement('b'), details = document.createElement('div');
+    card.className = 'card ' + (e.type === 'halt' ? 'stop' : 'pass');
+    title.textContent = e.name;
+    details.textContent = e.type === 'halt'
+      ? `Ruka: ${fmt(e.arr)} se ${fmt(e.dep)} tak (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
+      : `Paar kiya: ${fmt(e.t)}`;
+    card.append(title, details);
+    $('log').append(card);
+  }
 }
 
 $('start').onclick = start; $('stop').onclick = stop;
