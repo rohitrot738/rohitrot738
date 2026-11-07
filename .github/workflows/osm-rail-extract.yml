@@ -1,0 +1,61 @@
+name: OSM rail extract
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install osmium
+        run: sudo apt-get update && sudo apt-get install -y osmium-tool
+
+      - name: Download India extract (Geofabrik)
+        run: |
+          curl -fL -o india-latest.osm.pbf https://download.geofabrik.de/asia/india-latest.osm.pbf
+          curl -fL -o india-latest.osm.pbf.md5 https://download.geofabrik.de/asia/india-latest.osm.pbf.md5
+          md5sum -c india-latest.osm.pbf.md5
+          osmium fileinfo -e india-latest.osm.pbf > full-fileinfo.txt
+
+      - name: Extract rail features only
+        run: |
+          osmium tags-filter -R india-latest.osm.pbf \
+            w/railway=rail,light_rail,narrow_gauge,subway,tram,construction,disused,abandoned,preserved \
+            n/railway=station,halt,stop,junction,switch,crossing,level_crossing,buffer_stop \
+            n/public_transport=station,stop_position \
+            r/route=train,railway \
+            -o india-rail.osm.pbf --overwrite
+          osmium fileinfo -e india-rail.osm.pbf > rail-fileinfo.txt
+          osmium tags-count india-rail.osm.pbf railway > railway-tag-counts.txt
+          ls -l india-rail.osm.pbf
+
+      - name: Publish release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TS=$(osmium fileinfo -g header.option.osmosis_replication_timestamp india-latest.osm.pbf || true)
+          TAG="osm-rail-$(date -u +%Y%m%d)"
+          cat > NOTICE.txt <<EOF
+          Contains data from OpenStreetMap, (c) OpenStreetMap contributors.
+          Licensed under the Open Database License (ODbL) 1.0.
+          https://www.openstreetmap.org/copyright
+          Source: Geofabrik India extract (replication timestamp: ${TS:-unknown}).
+          This file is a rail-only filtered subset. Coverage is NOT verified.
+          EOF
+          gh release create "$TAG" india-rail.osm.pbf full-fileinfo.txt rail-fileinfo.txt railway-tag-counts.txt NOTICE.txt \
+            --title "OSM rail extract $TAG" \
+            --notes "Rail-only subset of OpenStreetMap India (ODbL 1.0, (c) OpenStreetMap contributors). Unverified coverage." \
+            || gh release upload "$TAG" india-rail.osm.pbf full-fileinfo.txt rail-fileinfo.txt railway-tag-counts.txt NOTICE.txt --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osm-rail-stats
+          path: |
+            full-fileinfo.txt
+            rail-fileinfo.txt
+            railway-tag-counts.txt
