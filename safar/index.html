@@ -34,18 +34,20 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
 <div id="log"></div>
-<p class="small">Station data OpenStreetMap se internet ke through aata hai. Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
+<p class="small">Station list app mein pehle se hai; pehli baar list download karne ke liye internet chahiye. Station data purana ya galat ho sakta hai.
+Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
 Browser location ka source khud chunta hai; network location ki accuracy kam ho sakti hai.
-Nazdiki station zaroori nahi ki agla station ho. Station chhodne ke baad log dikhega; purana safar wapas nahi milega.</p>
+App abhi railway route nahi pehchanta: nazdeeki station zaroori nahi ki agla station ho, aur doosri line ka station bhi log ho sakta hai.
+Station chhodne ke baad log dikhega; purana safar wapas nahi milega. Station data: DataMeet (CC0), aur repository ke kuch approximate stations.</p>
 </main>
 <script>
 const R = 500;            // station radius (m)
 const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
 const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
-let stations = [], fetchedAt = null, watchId = null, last = null, state = {};
-let loading = false, retryAfter = 0, pending = [], latestPosition = null, session = 0, activeController = null;
-let wakeLock = null, cacheChecked = false;
+let stations = [], watchId = null, last = null, state = {};
+let loading = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
+let wakeLock = null;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
 const fmt = t => new Date(t).toLocaleTimeString('hi-IN', {hour12:false});
@@ -55,57 +57,54 @@ function dist(a, b, c, d) {
   return 6371000 * Math.hypot(x, y);
 }
 
-async function loadStations(lat, lon) {
-  if (loading || Date.now() < retryAfter ||
-      (fetchedAt && dist(lat, lon, fetchedAt.lat, fetchedAt.lon) < 15000)) return;
+function parseStations(rows) {
+  if (!Array.isArray(rows) || !rows.length) throw new Error('Station list khali hai');
+  const parsed = rows.filter(r => Array.isArray(r) && typeof r[0] === 'string' &&
+    typeof r[1] === 'string' && Number.isFinite(r[2]) && Number.isFinite(r[3]))
+    .map(([id, name, lat, lon]) => ({id, name, lat, lon}));
+  if (!parsed.length) throw new Error('Station list sahi nahi hai');
+  return parsed;
+}
+
+async function loadStations() {
+  if (stations.length || loading || Date.now() < retryAfter) return;
   loading = true;
-  const requestSession = session;
-  $('data-status').textContent = 'Station data internet se la rahe hain...';
-  const q = `[out:json][timeout:20];(nwr["railway"~"^(station|halt)$"](around:30000,${lat},${lon}););out center;`;
-  for (const host of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
-    const controller = new AbortController();
-    activeController = controller;
-    const timer = setTimeout(() => controller.abort(), 25000);
-    try {
-      const r = await fetch(host, {method:'POST', body:'data=' + encodeURIComponent(q), signal:controller.signal});
-      if (!r.ok) throw new Error('Station service HTTP ' + r.status);
-      const j = await r.json();
-      if (!Array.isArray(j.elements) || j.remark) throw new Error('Station data incomplete');
-      if (requestSession !== session) break;
-      const next = j.elements.filter(e => e.tags && e.tags.name && Number.isFinite(e.lat ?? e.center?.lat) && Number.isFinite(e.lon ?? e.center?.lon))
-        .map(e => ({id: `${e.type}/${e.id}`, name: e.tags['name:en'] || e.tags.name,
-          lat: e.lat ?? e.center.lat, lon: e.lon ?? e.center.lon}));
-      // Keep stations currently being visited until their exit is observed.
-      for (const s of stations) if (state[stationKey(s)] && !next.some(n => stationKey(n) === stationKey(s))) next.push(s);
-      stations = next;
-      fetchedAt = {lat, lon};
-      try { localStorage.setItem('stations', JSON.stringify({stations, fetchedAt})); }
-      catch (e) { console.warn('Station cache save nahi hua', e); }
-      $('data-status').textContent = stations.length ? `Station data taiyar: ${stations.length} stations` : 'Aas-paas koi station data nahi mila.';
-      loading = false;
-      activeController = null;
-      const queued = pending;
-      pending = [];
-      for (const p of queued) processPosition(p);
-      if (!queued.length && latestPosition && watchId != null) processPosition(latestPosition);
-      return;
-    } catch (e) {
-      if (requestSession !== session) break;
-      console.warn('Station service failed:', host, e);
-    } finally {
-      clearTimeout(timer);
+  $('data-status').textContent = 'Station list download ho rahi hai...';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  try {
+    const r = await fetch('stations.json', {signal: controller.signal});
+    if (!r.ok) throw new Error('Station list HTTP ' + r.status);
+    const rows = await r.json();
+    stations = parseStations(rows);
+    try { localStorage.setItem('safar-stations-v1', JSON.stringify(rows)); }
+    catch (e) {
+      console.warn('Station list offline save nahi hui', e);
+      $('data-status').textContent = 'Station list taiyar hai, par offline save nahi hui; internet chahiye hoga.';
     }
+    if (!$('data-status').textContent.includes('offline save'))
+      $('data-status').textContent = `Station list taiyar: ${stations.length} stations`;
+    const queued = pending;
+    pending = [];
+    for (const p of queued) processPosition(p);
+    if (!queued.length && latestPosition && watchId != null) showNearest(latestPosition);
+  } catch (e) {
+    console.warn('Station list load nahi hui', e);
+    retryAfter = Date.now() + 30000;
+    $('data-status').textContent = 'Station list nahi mili. Internet check karein aur page refresh karein.';
+  } finally {
+    clearTimeout(timer);
+    loading = false;
   }
-  loading = false;
-  activeController = null;
-  if (requestSession !== session) {
-    if (watchId != null && latestPosition) loadStations(latestPosition.coords.latitude, latestPosition.coords.longitude);
-    return;
+}
+
+function showNearest(p) {
+  let nearest = null;
+  for (const s of stations) {
+    const d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
+    if (!nearest || d < nearest.d) nearest = {s, d};
   }
-  retryAfter = Date.now() + 30000;
-  $('data-status').textContent = stations.length
-    ? 'Station service nahi mili; purana station data use ho raha hai. Internet check karein.'
-    : 'Station data nahi mila. Internet check karein; app dobara koshish karega.';
+  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
 }
 
 function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log)); render(); }
@@ -124,21 +123,10 @@ function onPos(p) {
   const {latitude: lat, longitude: lon, accuracy} = p.coords;
   $('status').textContent = `Location mil rahi hai (±${Math.round(accuracy)} m)`;
   if (accuracy > R) {
+    showNearest(p);
     $('status').textContent += '. Accuracy kam hai; GPS on karke khule aasman ke neeche try karein.';
+    loadStations();
     return;
-  }
-  if (!cacheChecked) {
-    cacheChecked = true;
-    try {
-      const cached = JSON.parse(localStorage.getItem('stations') || 'null');
-      if (cached && Array.isArray(cached.stations) && cached.fetchedAt &&
-          dist(lat, lon, cached.fetchedAt.lat, cached.fetchedAt.lon) < 15000) {
-        stations = cached.stations;
-        $('data-status').textContent = 'Saved station data use ho raha hai; naya data la rahe hain.';
-      }
-    } catch (e) {
-      console.warn('Saved station data nahi padh paye', e);
-    }
   }
   if (!stations.length) {
     pending.push(p);
@@ -149,7 +137,7 @@ function onPos(p) {
   } else {
     processPosition(p);
   }
-  loadStations(lat, lon);
+  loadStations();
 }
 
 function processPosition(p) {
@@ -177,7 +165,7 @@ function processPosition(p) {
       finish(s, st, t); delete state[k];
     }
   }
-  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km)`;
+  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
 }
 
@@ -211,7 +199,6 @@ function start() {
 function stop() {
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
   session++;
-  if (activeController) activeController.abort();
   if (wakeLock) {
     wakeLock.release().catch(e => console.warn('Screen wake lock release nahi hua', e));
     wakeLock = null;
@@ -246,6 +233,16 @@ $('csv').onclick = () => {
   a.download = 'train-log.csv'; a.click();
 };
 render();
+try {
+  const cached = localStorage.getItem('safar-stations-v1');
+  if (cached) {
+    stations = parseStations(JSON.parse(cached));
+    $('data-status').textContent = `Saved station list taiyar: ${stations.length} stations`;
+  }
+} catch (e) {
+  console.warn('Saved station list nahi padh paye', e);
+}
+loadStations();
 </script>
 </body>
 </html>
