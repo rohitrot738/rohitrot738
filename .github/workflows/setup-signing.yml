@@ -1,0 +1,44 @@
+name: Set up Android signing
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Create signing key and save encrypted secrets
+        env:
+          GH_TOKEN: ${{ secrets.SIGNING_SETUP_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Add the SIGNING_SETUP_TOKEN Actions secret before running this workflow."
+            exit 1
+          fi
+          names="$(gh secret list --repo "$REPOSITORY" --json name --jq '.[].name')"
+          if printf '%s\n' "$names" | grep -Eq '^ANDROID_(KEYSTORE_BASE64|KEYSTORE_PASSWORD)$'; then
+            echo "::error::Signing secrets already exist. Refusing to replace the app's signing key."
+            exit 1
+          fi
+          tempdir="$(mktemp -d)"
+          trap 'rm -f "$tempdir/signing.p12"; rmdir "$tempdir"' EXIT
+          password="$(openssl rand -base64 32)"
+          echo "::add-mask::$password"
+          keytool -genkeypair -noprompt -keystore "$tempdir/signing.p12" \
+            -storetype PKCS12 -storepass "$password" -keypass "$password" \
+            -alias suffer-sathi -keyalg RSA -keysize 3072 -validity 10000 \
+            -dname "CN=Suffer Sathi"
+          base64 -w 0 "$tempdir/signing.p12" | gh secret set ANDROID_KEYSTORE_BASE64 --repo "$REPOSITORY"
+          printf '%s' "$password" | gh secret set ANDROID_KEYSTORE_PASSWORD --repo "$REPOSITORY"
+          echo "Signing secrets saved. Revoke the temporary token and delete SIGNING_SETUP_TOKEN."

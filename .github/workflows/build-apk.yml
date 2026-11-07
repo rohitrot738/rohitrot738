@@ -1,4 +1,4 @@
-name: Build Android Debug APK
+name: Build Android APK
 
 on:
   push:
@@ -14,6 +14,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    concurrency:
+      group: android-apk-publishing
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +64,7 @@ jobs:
         working-directory: android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleDebug testDebugUnitTest --no-daemon
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -70,8 +73,74 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - name: Publish GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
+      - name: Check signing configuration
+        id: signing
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$KEYSTORE" && -z "$PASSWORD" ]]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          elif [[ -z "$KEYSTORE" || -z "$PASSWORD" ]]; then
+            echo "::error::Signing configuration is incomplete; do not generate a replacement key."
+            exit 1
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build signed update APK
+        if: steps.signing.outputs.enabled == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          APP_VERSION_NAME: build-${{ github.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export APP_VERSION_CODE="$((100000 + GITHUB_RUN_NUMBER))"
+          export ANDROID_KEYSTORE_PATH="$RUNNER_TEMP/suffer-sathi-signing.p12"
+          trap 'rm -f "$ANDROID_KEYSTORE_PATH"' EXIT
+          printf '%s' "$KEYSTORE" | base64 --decode > "$ANDROID_KEYSTORE_PATH"
+          chmod 600 "$ANDROID_KEYSTORE_PATH"
+          cd android
+          ./gradlew assembleRelease --no-daemon
+
+      - name: Upload signed APK artifact
+        if: steps.signing.outputs.enabled == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
-          files: android/app/build/outputs/apk/debug/app-debug.apk
+          name: suffer-sathi-signed
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+
+      - name: Publish update
+        if: steps.signing.outputs.enabled == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP_VERSION_CODE="$((100000 + GITHUB_RUN_NUMBER))"
+          tag="suffer-sathi-updates"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --target "$GITHUB_SHA" --latest=false \
+              --title "Suffer Sathi updates" --notes "versionCode: 0"
+          fi
+          body="$(gh release view "$tag" --json body --jq .body)"
+          current="$(printf '%s\n' "$body" | sed -n 's/^versionCode: \([0-9][0-9]*\)$/\1/p')"
+          if [[ ! "$current" =~ ^[0-9]+$ ]]; then
+            echo "::error::Existing update release has an invalid versionCode."
+            exit 1
+          fi
+          if (( current >= APP_VERSION_CODE )); then
+            echo "This build is not newer than the published update; skipping."
+            exit 0
+          fi
+          apk="Suffer-Sathi-${APP_VERSION_CODE}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$RUNNER_TEMP/$apk"
+          gh release upload "$tag" "$RUNNER_TEMP/$apk" --clobber
+          printf 'versionCode: %s\n\nDownload **%s** and confirm installation to update.\n' \
+            "$APP_VERSION_CODE" "$apk" > "$RUNNER_TEMP/release-notes"
+          gh release edit "$tag" --title "Suffer Sathi updates" --notes-file "$RUNNER_TEMP/release-notes" --latest=false
