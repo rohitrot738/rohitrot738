@@ -23,19 +23,22 @@ not be used to construct a graph.
   edge. Identical endpoints are retained but excluded from neighbor counts.
 - `neighbors`: distinct directed node-neighbor pairs from segments, provided
   in both directions. This is physical topology, not a train movement rule.
-- `junctions`: `node_id` and `degree`; a degree of at least three distinct
-  neighboring nodes makes this a *topological junction candidate*. It may
-  represent a switch, crossing, siding or mapping artifact, not necessarily
-  a named passenger junction.
+- `junctions`: `node_id`, distinct neighboring-node `degree`, and the number
+  of distinct incident `track_way_count`. These are candidate branch points,
+  not verified junctions. A node with three or more ways may still be a
+  crossing, siding, or mapping artifact.
+- `station_track_links`: OSM station-point node, the same track node, and an
+  incident track way. This relationship exists only when the OSM station node
+  is literally shared with a track way; nearby stations are not linked.
 - `stations`: `osm_type` (`node` or `way`), `osm_id`, `railway`, original
   `tags`, and `node_refs` (JSON for ways, null for nodes). These are OSM
   station features, not IRSD records. Station ways are not automatically
   connected to tracks.
 - `station_locations`: SQLite R-tree index for OSM station nodes.
 
-`coverage.json` counts OSM objects in the extract; it is not a percentage of
-the Indian rail network. A shared OSM node establishes mapped connectivity,
-not independent verification or permission for a train to traverse it.
+`coverage.json` counts OSM objects and topology candidates; it is not a
+percentage of the Indian rail network. A shared OSM node establishes mapped
+connectivity, not independent verification or permission for a train to traverse it.
 Disconnected tracks, parallel lines, overlapping bridges and incomplete or
 incorrect OSM mapping may affect results. No branch/main-line designation is
 inferred from degree. No station-to-station edge or train route is asserted.

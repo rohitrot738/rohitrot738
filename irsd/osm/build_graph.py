@@ -76,13 +76,33 @@ def build(xml, database, report):
     db.executescript("""
         CREATE INDEX segments_from ON segments(from_node);
         CREATE INDEX segments_to ON segments(to_node);
+        CREATE TEMP TABLE node_ways AS
+            SELECT from_node AS node_id, way_id FROM segments
+            UNION
+            SELECT to_node AS node_id, way_id FROM segments;
+        CREATE INDEX node_ways_id ON node_ways(node_id);
         CREATE TABLE neighbors(node_id INTEGER NOT NULL, neighbor_id INTEGER NOT NULL,
                                PRIMARY KEY(node_id, neighbor_id)) WITHOUT ROWID;
         INSERT OR IGNORE INTO neighbors SELECT from_node, to_node FROM segments WHERE from_node != to_node;
         INSERT OR IGNORE INTO neighbors SELECT to_node, from_node FROM segments WHERE from_node != to_node;
-        CREATE TABLE junctions AS SELECT node_id, COUNT(*) AS degree FROM neighbors
-            GROUP BY node_id HAVING COUNT(*) >= 3;
+        CREATE TABLE junctions AS
+            SELECT d.node_id, d.degree, COUNT(DISTINCT w.way_id) AS track_way_count
+            FROM (SELECT node_id, COUNT(*) AS degree FROM neighbors
+                  GROUP BY node_id HAVING COUNT(*) >= 3) d
+            JOIN node_ways w ON w.node_id=d.node_id
+            GROUP BY d.node_id, d.degree;
         CREATE UNIQUE INDEX junction_id ON junctions(node_id);
+        CREATE TABLE station_track_links(
+            station_node_id INTEGER NOT NULL,
+            track_node_id INTEGER NOT NULL,
+            way_id INTEGER NOT NULL,
+            PRIMARY KEY(station_node_id, way_id)
+        );
+        INSERT INTO station_track_links
+            SELECT DISTINCT s.osm_id, s.osm_id, w.way_id
+            FROM stations s JOIN node_ways w ON w.node_id=s.osm_id
+            WHERE s.osm_type='node';
+        CREATE INDEX station_track_links_way ON station_track_links(way_id);
         CREATE INDEX stations_type ON stations(osm_type, osm_id);
         CREATE VIRTUAL TABLE station_locations USING rtree(id, min_lat, max_lat, min_lon, max_lon);
         INSERT INTO station_locations SELECT n.id, n.lat, n.lat, n.lon, n.lon
@@ -96,9 +116,9 @@ def build(xml, database, report):
         "topological_junction_candidates": "SELECT COUNT(*) FROM junctions",
         "station_nodes": "SELECT COUNT(*) FROM stations WHERE osm_type='node'",
         "station_ways": "SELECT COUNT(*) FROM stations WHERE osm_type='way'",
-        "station_nodes_on_track": """SELECT COUNT(*) FROM stations s WHERE s.osm_type='node'
-            AND (EXISTS (SELECT 1 FROM segments WHERE from_node=s.osm_id)
-              OR EXISTS (SELECT 1 FROM segments WHERE to_node=s.osm_id))""",
+        "station_nodes_with_shared_track_node": "SELECT COUNT(DISTINCT station_node_id) FROM station_track_links",
+        "station_track_link_rows": "SELECT COUNT(*) FROM station_track_links",
+        "junction_candidates_with_3plus_ways": "SELECT COUNT(*) FROM junctions WHERE track_way_count>=3",
         "missing_segment_node_references": "SELECT 0",
     }
     stats = {key: db.execute(query).fetchone()[0] for key, query in queries.items()}

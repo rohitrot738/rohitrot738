@@ -34,10 +34,12 @@ class GraphTest(unittest.TestCase):
             db = sqlite3.connect(dbpath)
             self.assertEqual(db.execute("SELECT way_id,from_node,to_node FROM segments ORDER BY way_id,sequence").fetchall(),
                              [(10, 1, 2), (10, 2, 3), (11, 2, 4)])
-            self.assertEqual(db.execute("SELECT node_id,degree FROM junctions").fetchall(), [(2, 3)])
+            self.assertEqual(db.execute("SELECT node_id,degree,track_way_count FROM junctions").fetchall(), [(2, 3, 2)])
             self.assertEqual(db.execute("SELECT COUNT(*) FROM stations").fetchone()[0], 3)
+            self.assertEqual(db.execute("SELECT station_node_id,way_id FROM station_track_links").fetchall(),
+                             [(1, 10)])
             with open(report, encoding="utf-8") as f:
-                self.assertEqual(json.load(f)["station_nodes_on_track"], 1)
+                self.assertEqual(json.load(f)["station_nodes_with_shared_track_node"], 1)
             db.close()
             archive = os.path.join(tmp, "stations.zip")
             with zipfile.ZipFile(archive, "w") as z:
