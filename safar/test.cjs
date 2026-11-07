@@ -112,6 +112,15 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(offline.elements.now.textContent, /Test Station/);
   assert.match(offline.elements['data-status'].textContent, /Saved station list/);
 
+  const legacyOffline = setup(async () => { throw new Error('offline'); }, [
+    ['safar-stations-v1', JSON.stringify([['OLD', 'Cached Station', 28, 77]])]
+  ]);
+  legacyOffline.elements.start.onclick();
+  legacyOffline.watches[0].success(fix(28, 100000));
+  await flush();
+  assert.match(legacyOffline.elements.now.textContent, /Cached Station/);
+  assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list available/);
+
   const database = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'stations.json'), 'utf8'));
   assert.equal(database.length, 8702);
   const delhi = database.find(row => row[0] === 'NDLS');

@@ -61,7 +61,7 @@ const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
 const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, last = null, state = {};
-let loading = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
+let loading = false, stationListsLoaded = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -277,7 +277,7 @@ function showRoutePosition(p) {
 }
 
 async function loadStations() {
-  if (stations.length || loading || Date.now() < retryAfter) return;
+  if (stationListsLoaded || loading || Date.now() < retryAfter) return;
   loading = true;
   $('data-status').textContent = 'Station list download ho rahi hai...';
   const controller = new AbortController();
@@ -293,6 +293,7 @@ async function loadStations() {
     const catalog = parseStations(rows, 'DataMeet + project fallback');
     const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
     stations = [...catalog, ...osmCatalog];
+    stationListsLoaded = true;
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
       console.warn('Station list offline save nahi hui', e);
@@ -307,7 +308,15 @@ async function loadStations() {
   } catch (e) {
     console.warn('Station list load nahi hui', e);
     retryAfter = Date.now() + 30000;
-    $('data-status').textContent = 'Station list nahi mili. Internet check karein aur page refresh karein.';
+    if (stations.length) {
+      $('data-status').textContent = 'Saved station list available hai; OSM station list nahi mili. Internet check karein.';
+      const queued = pending;
+      pending = [];
+      for (const p of queued) processPosition(p);
+      if (!queued.length && latestPosition && watchId != null) showNearest(latestPosition);
+    } else {
+      $('data-status').textContent = 'Station list nahi mili. Internet check karein aur page refresh karein.';
+    }
   } finally {
     clearTimeout(timer);
     loading = false;
@@ -470,8 +479,17 @@ try {
     const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
     stations = [...catalog, ...osmCatalog];
+    stationListsLoaded = true;
     $('data-status').textContent =
       `Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`;
+  } else {
+    const legacy = localStorage.getItem('safar-stations-v1');
+    if (legacy) {
+      const rows = JSON.parse(legacy);
+      const catalog = parseStations(rows, 'DataMeet + project fallback');
+      stations = catalog;
+      $('data-status').textContent = `Saved station list taiyar: DataMeet/project ${catalog.length}; OSM update baaki hai`;
+    }
   }
 } catch (e) {
   console.warn('Saved station list nahi padh paye', e);
