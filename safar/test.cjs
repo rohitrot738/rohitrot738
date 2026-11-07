@@ -193,6 +193,25 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.deepEqual(osmRoute.elements['route-list'].children.map(child => child.textContent),
     ['OSM Alpha (OSM:77)', 'OSM Beta (OSM:78)']);
 
+  osmRoute.elements.origin.dataset = {};
+  osmRoute.elements.origin.value = 'alpha';
+  osmRoute.elements.origin.oninput();
+  const options = osmRoute.elements['origin-options'].children;
+  assert.equal(options.length, 1);
+  options[0].onclick();
+  assert.equal(osmRoute.elements.origin.value, 'OSM Alpha (OSM:77)');
+  assert.equal(osmRoute.elements.origin.dataset.stationId, 'OSM:77');
+  assert.equal(osmRoute.elements['origin-options'].children.length, 0);
+
+  osmRoute.elements.start.onclick();
+  assert.ok(osmRoute.store.get('safar-active'));
+  const savedActive = osmRoute.store.get('safar-active');
+  const resumed = setup(stationFetcher([['A', 'A', 28, 77]]),
+    [['safar-active', savedActive], ['safar-stations-v2', JSON.stringify({catalog: [['A', 'A', 28, 77]], osm: [['OSM:77', 'OSM Alpha', 28, 77], ['OSM:78', 'OSM Beta', 29, 77]]})]]);
+  assert.equal(resumed.watches.length, 1);
+  osmRoute.elements.stop.onclick();
+  assert.equal(osmRoute.store.get('safar-active'), undefined);
+
   const badRoute = setup(async url => url === 'osm-station-routes.json'
     ? {ok: true, json: async () => ({schema_version: 1, stations_unreviewed: true, edges: [['A','B',100]]})}
     : stationFetcher([['A','A',28,77],['B','B',29,77],['C','C',30,77]])(url));

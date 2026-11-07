@@ -13,6 +13,7 @@ input{max-width:100%;box-sizing:border-box}
 button{background:#2563eb;color:#fff}button.alt{background:#475569}
 .card{background:#1e293b;border-radius:10px;padding:10px 12px;margin:8px 0}
 .small{color:#94a3b8;font-size:13px}
+.suggest button{display:block;width:100%;text-align:left;background:#334155;margin:2px 0;padding:8px 10px}
 .stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
 </style>
 </head>
@@ -22,11 +23,11 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
-  <input id="origin" list="origin-options" autocomplete="off" placeholder="Naam ya code">
-  <datalist id="origin-options"></datalist><br>
+  <input id="origin" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+  <div class="suggest" id="origin-options"></div>
   <label for="destination">Antim station</label><br>
-  <input id="destination" list="destination-options" autocomplete="off" placeholder="Naam ya code">
-  <datalist id="destination-options"></datalist><br>
+  <input id="destination" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+  <div class="suggest" id="destination-options"></div>
   <button id="find-route" class="alt">Route banayein</button>
   <div id="route-status" class="small">Route nahi chuna hai. Bina route ke sirf nazdeeki station dikhaya jayega.</div>
   <details id="route-details" hidden><summary>Anumaanit route ki station list dekhein</summary><ol id="route-list"></ol></details>
@@ -62,7 +63,8 @@ const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
 let loading = false, stationListsLoaded = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
-let nativeFallbackTimer = null;
+let nativeFallbackTimer = null, tracking = false;
+const ACTIVE_KEY = 'safar-active';
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -83,26 +85,41 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
   return parsed;
 }
 
+function stationLabel(s) { return `${s.name} (${s.id})`; }
+
 function stationSuggestions(inputId, listId) {
   const input = $(inputId);
   input.oninput = () => {
-    if (route) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
+    if (input.dataset) delete input.dataset.stationId;
+    if (route && tracking) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
     const text = input.value.trim().toUpperCase();
     const list = $(listId);
     list.replaceChildren();
     if (!text) return;
-    for (const s of stations.filter(s => s.id.toUpperCase().startsWith(text) || s.name.toUpperCase().includes(text)).slice(0, 30)) {
-      const option = document.createElement('option');
-      option.value = `${s.name} (${s.id})`;
+    for (const s of stations.filter(s => s.id.toUpperCase().startsWith(text) || s.name.toUpperCase().includes(text)).slice(0, 12)) {
+      const option = document.createElement('button');
+      option.type = 'button';
+      option.className = 'alt';
+      option.textContent = stationLabel(s);
+      option.onclick = () => {
+        input.value = stationLabel(s);
+        if (input.dataset) input.dataset.stationId = s.id;
+        list.replaceChildren();
+      };
       list.append(option);
     }
   };
 }
 
-function findStation(text) {
-  const value = text.trim().toUpperCase();
+function findStation(input) {
+  const picked = input.dataset?.stationId;
+  if (picked) {
+    const byId = stations.find(s => s.id === picked);
+    if (byId && stationLabel(byId) === input.value) return byId;
+  }
+  const value = input.value.trim().toUpperCase();
   const matches = stations.filter(s => s.id.toUpperCase() === value ||
-    `${s.name} (${s.id})`.toUpperCase() === value || s.name.toUpperCase() === value);
+    stationLabel(s).toUpperCase() === value || s.name.toUpperCase() === value);
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -183,13 +200,13 @@ function shortestRoute(graph, from, to) {
 }
 
 async function selectRoute() {
-  if (watchId != null) {
+  if (tracking) {
     $('route-status').textContent = 'Route badalne se pehle Stop dabayein; adhoora visit save nahi hoga.';
     return;
   }
-  const from = findStation($('origin').value), to = findStation($('destination').value);
+  const from = findStation($('origin')), to = findStation($('destination'));
   if (!from || !to || from.id === to.id) {
-    $('route-status').textContent = stations.length ? 'Alag shuru aur antim station list se chunein. Naam ya code poora likhein.' : 'Station list abhi taiyar nahi hai; internet check karein.';
+    $('route-status').textContent = stations.length ? 'Shuru aur antim station likhkar neeche aayi list se tap karke chunein; dono alag hone chahiye.' : 'Station list abhi taiyar nahi hai; internet check karein.';
     return;
   }
   $('find-route').disabled = true;
@@ -403,13 +420,38 @@ function processPosition(p) {
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
   showRoutePosition(p);
+  saveActive();
 }
 
+function saveActive() {
+  try {
+    if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
+    localStorage.setItem(ACTIVE_KEY, JSON.stringify({
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, state, last
+    }));
+  } catch (e) { console.warn('Tracking state save nahi hua', e); }
+}
+
+function acquireWakeLock(currentSession) {
+  if (!('wakeLock' in navigator)) return;
+  navigator.wakeLock.request('screen').then(lock => {
+    if (currentSession !== session || !tracking) return lock.release();
+    wakeLock = lock;
+  }).catch(e => console.warn('Screen wake lock nahi mila', e));
+}
+
+document.addEventListener?.('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && tracking && !wakeLock) acquireWakeLock(session);
+});
+
 function start() {
-  if (watchId != null || nativeWatcher != null) return;
+  if (tracking || watchId != null || nativeWatcher != null) return;
+  tracking = true;
   const mode = $('mode').value;
+  $('status').textContent = 'Location dhoondh rahe hain... Screen band hone par bhi chalne ke liye location "Hamesha allow" aur battery "Unrestricted" rakhein.';
   $('status').textContent = 'Location dhoondh rahe hain...';
   const currentSession = ++session;
+  saveActive();
   const startWeb = highAccuracy => {
     if (!navigator.geolocation) { $('status').textContent = 'Location support nahi hai'; return; }
     watchId = navigator.geolocation.watchPosition(onPos, err => {
@@ -501,12 +543,11 @@ function start() {
       }
     });
   }
-  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(lock => {
-    if (currentSession !== session) return lock.release();
-    wakeLock = lock;
-  }).catch(e => console.warn('Screen wake lock nahi mila', e));
+  acquireWakeLock(currentSession);
 }
 function stop() {
+  tracking = false;
+  saveActive();
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
   if (nativeFallbackTimer != null) {
     clearTimeout(nativeFallbackTimer);
@@ -580,6 +621,30 @@ try {
 }
 loadStations();
 loadNetworkSummary();
+try {
+  const saved = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
+  if (saved && stations.length) {
+    const byId = new Map(stations.map(s => [s.id, s]));
+    const ids = Array.isArray(saved.route) ? saved.route.map(id => byId.get(id)) : null;
+    if (!ids || ids.every(Boolean)) {
+      if (ids) {
+        route = ids;
+        for (const s of route) {
+          const li = document.createElement('li');
+          li.textContent = stationLabel(s);
+          $('route-list').append(li);
+        }
+        $('route-details').hidden = false;
+      }
+      if (saved.state && typeof saved.state === 'object') state = saved.state;
+      if (saved.mode) $('mode').value = saved.mode;
+      start();
+      $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
+    }
+  }
+} catch (e) {
+  console.warn('Pichla tracking session resume nahi hua', e);
+}
 </script>
 </body>
 </html>
