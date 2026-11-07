@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mera Safar Tracker</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
+header{padding:12px 16px;background:#1e293b;font-weight:700}
+main{padding:12px 16px;max-width:600px;margin:auto}
+select,button{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
+button{background:#2563eb;color:#fff}button.alt{background:#475569}
+.card{background:#1e293b;border-radius:10px;padding:10px 12px;margin:8px 0}
+.small{color:#94a3b8;font-size:13px}
+.stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
+</style>
+</head>
+<body>
+<header>📍 Mera Safar Tracker</header>
+<main>
+<div>
+  <select id="mode">
+    <option value="gps">GPS (sabse accurate)</option>
+    <option value="network">Cell tower / WiFi (network location)</option>
+    <option value="auto">Auto (GPS fail ho to network)</option>
+  </select>
+  <button id="start">Start</button>
+  <button id="stop" class="alt">Stop</button>
+</div>
+<div class="card" id="status">Status: ruka hua</div>
+<div class="card" id="now">Agla/Nazdiki station: —</div>
+<button id="csv" class="alt">CSV download</button>
+<button id="clear" class="alt">Log clear</button>
+<h3>Safar ka log</h3>
+<div id="log"></div>
+<p class="small">Station data OpenStreetMap se internet ke through aata hai. Screen on / app khula rakhein.
+Cell tower ki location browser/phone khud nikalta hai (network mode).</p>
+</main>
+<script>
+const R = 500;            // station radius (m)
+const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
+const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
+const KEY = 'trainlog';
+let stations = [], fetchedAt = null, watchId = null, last = null, state = {};
+let log = JSON.parse(localStorage.getItem(KEY) || '[]');
+const $ = id => document.getElementById(id);
+const fmt = t => new Date(t).toLocaleTimeString('hi-IN', {hour12:false});
+
+function dist(a, b, c, d) {
+  const r = Math.PI / 180, x = (c - a) * r, y = (d - b) * r * Math.cos((a + c) * r / 2);
+  return 6371000 * Math.hypot(x, y);
+}
+
+async function loadStations(lat, lon) {
+  if (fetchedAt && dist(lat, lon, fetchedAt.lat, fetchedAt.lon) < 15000) return;
+  const q = `[out:json][timeout:25];node["railway"~"station|halt"](around:40000,${lat},${lon});out;`;
+  try {
+    const r = await fetch('https://overpass-api.de/api/interpreter', {method:'POST', body:'data=' + encodeURIComponent(q)});
+    const j = await r.json();
+    stations = j.elements.filter(e => e.tags && e.tags.name)
+      .map(e => ({name: e.tags['name:en'] || e.tags.name, lat: e.lat, lon: e.lon}));
+    fetchedAt = {lat, lon};
+    localStorage.setItem('stations', JSON.stringify({stations, fetchedAt}));
+  } catch (e) {
+    const c = JSON.parse(localStorage.getItem('stations') || 'null');
+    if (c) { stations = c.stations; fetchedAt = c.fetchedAt; }
+    $('status').textContent = 'Internet nahi: saved station data use ho raha hai';
+  }
+}
+
+function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log)); render(); }
+
+function finish(s, st, exitT) {
+  if (st.stopStart && (st.stopEnd || exitT) && (st.stopEnd || exitT) - st.stopStart >= MIN_HALT * 1000) {
+    addLog({name: s.name, type: 'halt', arr: st.stopStart, dep: st.stopEnd || exitT});
+  } else {
+    addLog({name: s.name, type: 'pass', t: st.bestT});
+  }
+}
+
+function onPos(p) {
+  const {latitude: lat, longitude: lon} = p.coords, t = p.timestamp;
+  let speed = p.coords.speed;
+  if ((speed == null || isNaN(speed)) && last) {
+    const dt = (t - last.t) / 1000;
+    speed = dt > 0 ? dist(last.lat, last.lon, lat, lon) / dt : 0;
+  }
+  speed = speed || 0;
+  last = {lat, lon, t};
+  loadStations(lat, lon);
+
+  let nearest = null;
+  for (const s of stations) {
+    const d = dist(lat, lon, s.lat, s.lon);
+    if (!nearest || d < nearest.d) nearest = {s, d};
+    const k = s.name + s.lat;
+    let st = state[k];
+    if (d <= R) {
+      if (!st) st = state[k] = {bestD: d, bestT: t, stopStart: null, stopEnd: null};
+      if (d < st.bestD) { st.bestD = d; st.bestT = t; }
+      if (speed < STOP_SPEED) { if (!st.stopStart) st.stopStart = t; st.stopEnd = null; }
+      else if (st.stopStart && !st.stopEnd) st.stopEnd = t;
+    } else if (st) {
+      finish(s, st, t); delete state[k];
+    }
+  }
+  $('status').textContent = `Location mil rahi hai (±${Math.round(p.coords.accuracy)}m), speed ${(speed*3.6).toFixed(0)} km/h`;
+  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km)`;
+}
+
+function start() {
+  if (watchId != null) return;
+  if (!navigator.geolocation) { $('status').textContent = 'Location support nahi hai'; return; }
+  const mode = $('mode').value;
+  const opts = {enableHighAccuracy: mode !== 'network', maximumAge: 0, timeout: 30000};
+  watchId = navigator.geolocation.watchPosition(onPos, err => {
+    $('status').textContent = 'Error: ' + err.message;
+    if (mode === 'auto' && opts.enableHighAccuracy) { stop(); $('mode').value = 'network'; start(); }
+  }, opts);
+  if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(() => {});
+  $('status').textContent = 'Location dhoondh rahe hain...';
+}
+function stop() {
+  if (watchId != null) navigator.geolocation.clearWatch(watchId);
+  watchId = null; $('status').textContent = 'Status: ruka hua';
+}
+
+function render() {
+  $('log').innerHTML = log.slice().reverse().map(e => e.type === 'halt'
+    ? `<div class="card stop"><b>${e.name}</b><br>Aaya: ${fmt(e.arr)} · Gaya: ${fmt(e.dep)}<div class="small">Ruke: ${Math.round((e.dep - e.arr)/60000*10)/10} min</div></div>`
+    : `<div class="card pass"><b>${e.name}</b><br>Paar kiya: ${fmt(e.t)}<div class="small">bina ruke</div></div>`).join('');
+}
+
+$('start').onclick = start; $('stop').onclick = stop;
+$('clear').onclick = () => { if (confirm('Log delete karein?')) { log = []; localStorage.removeItem(KEY); render(); } };
+$('csv').onclick = () => {
+  const rows = ['station,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
+    ? `"${e.name}",halt,${new Date(e.arr).toISOString()},${new Date(e.dep).toISOString()}`
+    : `"${e.name}",pass,${new Date(e.t).toISOString()},`));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type: 'text/csv'}));
+  a.download = 'train-log.csv'; a.click();
+};
+render();
+</script>
+</body>
+</html>
