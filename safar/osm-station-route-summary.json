@@ -1,0 +1,16 @@
+{
+  "station_seeds": 1158,
+  "station_track_seed_nodes": 1685,
+  "station_catalog_records": 8702,
+  "catalog_records_without_route_seed": 7544,
+  "station_codes_with_candidate_route_edges": 1154,
+  "isolated_station_seeds": 4,
+  "candidate_station_route_edges": 1461,
+  "edge_distance_unit": "metres, OSM geometry haversine estimate",
+  "station_seed_rule": "unique independent-catalog code and OSM station node with exact ref token within 1000 m, linked to active track by shared node or explicit public_transport stop-area relation; identity remains unreviewed",
+  "edge_rule": "only adjacent regions joined by an actual consecutive-node track segment; distance combines OSM track-geometry shortest distances to that segment",
+  "network_coverage": "unknown; OSM mapping and real-world connectivity not independently verified",
+  "status": "candidate paths only; no train timetable, train-specific route, or live train position",
+  "source": "OpenStreetMap © contributors, ODbL 1.0; independent station catalog is DataMeet-derived CC0 with project fallback records separately labeled",
+  "osm_snapshot_timestamp": "2026-11-05T21:23:02Z"
+}
