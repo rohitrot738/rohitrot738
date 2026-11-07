@@ -48,7 +48,8 @@ jobs:
             --independent-matches-output independent-station-candidates.csv \
             --match-summary station-match-summary.json \
             --station-routes-output station-route-candidates.json \
-            --station-routes-summary station-route-summary.json
+            --station-routes-summary station-route-summary.json \
+            --osm-stations-output osm-stations.json
           TS=$(osmium fileinfo -g header.option.osmosis_replication_timestamp india-latest.osm.pbf)
           python3 - "$TS" <<'PY'
           import json, sys
@@ -60,18 +61,19 @@ jobs:
               json.dump(summary, f, indent=2, ensure_ascii=False)
               f.write("\n")
           PY
-          sha256sum independent-station-candidates.csv station-match-summary.json \
+          sha256sum independent-station-candidates.csv station-match-summary.json osm-stations.json \
             station-route-candidates.json station-route-summary.json >> SHA256SUMS.txt
           gzip -9 india-rail-graph.sqlite
           sha256sum india-rail-graph.sqlite.gz >> SHA256SUMS.txt
           cp station-route-candidates.json safar/osm-station-routes.json
           cp station-route-summary.json safar/osm-station-route-summary.json
+          cp osm-stations.json safar/osm-stations.json
 
       - name: Publish route data to Safar app
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add safar/osm-station-routes.json safar/osm-station-route-summary.json
+          git add safar/osm-station-routes.json safar/osm-station-route-summary.json safar/osm-stations.json
           if ! git diff --cached --quiet; then
             git commit -m "Update OSM track candidate routes for Safar"
             git push origin HEAD:main
@@ -94,7 +96,7 @@ jobs:
           gh release edit osm-rail-20261107 --notes 'WARNING: This earlier extract omitted referenced track nodes (osmium tags-filter -R); it cannot be used to construct a complete track graph. Use a newer release produced by the corrected workflow. Contains OpenStreetMap data © OpenStreetMap contributors, ODbL 1.0; coverage not verified.'
           gh release create "$TAG" india-rail.osm.pbf india-rail-graph.sqlite.gz \
             independent-station-candidates.csv station-match-summary.json \
-            station-route-candidates.json station-route-summary.json \
+            station-route-candidates.json station-route-summary.json osm-stations.json \
             full-fileinfo.txt rail-fileinfo.txt coverage.json SHA256SUMS.txt NOTICE.txt \
             --title "OSM rail graph $TAG" \
             --notes "OSM-derived physical track graph and unreviewed candidates against the separate DataMeet-derived Safar station catalog. No WIMT/IRSD data included. Coverage and real-world connectivity are not independently verified. © OpenStreetMap contributors, ODbL 1.0. See irsd/osm/README.md."

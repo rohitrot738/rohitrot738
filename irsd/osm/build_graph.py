@@ -237,8 +237,8 @@ def match(database, archive, output):
 
 
 def match_independent_stations(database, station_file, output, summary_file,
-                               routes_output, routes_summary_output):
-    outputs = (output, summary_file, routes_output, routes_summary_output)
+                               routes_output, routes_summary_output, osm_stations_output):
+    outputs = (output, summary_file, routes_output, routes_summary_output, osm_stations_output)
     if any(os.path.exists(path) for path in outputs):
         raise FileExistsError("Refusing to overwrite station match outputs")
     pipeline_path = os.path.join(os.path.dirname(__file__), "..", "..", "loader_pipeline.py")
@@ -283,7 +283,7 @@ def match_independent_stations(database, station_file, output, summary_file,
                 "osm_name": tags.get("name", ""),
                 "distance_m": round(meters, 1),
                 "way_ids": sorted(int(value) for value in re.split(r"[;,]", way_ids or "") if value),
-                "link_types": sorted((link_types or "").split(",")),
+                "link_types": sorted(value for value in (link_types or "").split(",") if value),
                 "track_node_ids": sorted(int(value) for value in re.split(r"[;,]", track_node_ids or "") if value),
             })
     db.close()
@@ -334,11 +334,51 @@ def match_independent_stations(database, station_file, output, summary_file,
     with open(summary_file, "x", encoding="utf-8") as f:
         json.dump(summary, f, indent=2, ensure_ascii=False)
         f.write("\n")
+    osm_station_count = export_osm_station_catalog(database, candidates, osm_stations_output)
     route_summary = build_station_route_candidates(
-        database, candidates, routes_output, catalog_station_count=len(stations))
+        database, candidates, routes_output,
+        catalog_station_count=len(stations) + osm_station_count)
     with open(routes_summary_output, "x", encoding="utf-8") as f:
         json.dump(route_summary, f, indent=2, ensure_ascii=False)
         f.write("\n")
+
+
+def export_osm_station_catalog(database, candidates, output):
+    if os.path.exists(output):
+        raise FileExistsError(f"Refusing to overwrite {output}")
+    code_counts = {}
+    node_counts = {}
+    for row in candidates:
+        code_counts[row["code"]] = code_counts.get(row["code"], 0) + 1
+        node_counts[row["osm_id"]] = node_counts.get(row["osm_id"], 0) + 1
+    represented_nodes = {
+        row["osm_id"] for row in candidates
+        if code_counts[row["code"]] == 1 and node_counts[row["osm_id"]] == 1
+    }
+    db = sqlite3.connect(f"file:{os.path.abspath(database)}?mode=ro", uri=True)
+    rows = db.execute("""
+        SELECT n.id, n.lat, n.lon, n.tags
+        FROM stations s JOIN nodes n ON n.id=s.osm_id
+        WHERE s.osm_type='node'
+        ORDER BY n.id
+    """)
+    count = 0
+    with open(output, "x", encoding="utf-8") as f:
+        f.write("[")
+        first = True
+        for node_id, lat, lon, tags_json in rows:
+            if node_id in represented_nodes:
+                continue
+            tags = json.loads(tags_json)
+            name = tags.get("name:en") or tags.get("name") or tags.get("ref") or f"Railway station {node_id}"
+            if not first:
+                f.write(",")
+            json.dump([f"OSM:{node_id}", name, lat, lon], f, ensure_ascii=False, separators=(",", ":"))
+            first = False
+            count += 1
+        f.write("]\n")
+    db.close()
+    return count
 
 
 def build_station_route_candidates(database, candidates, output, catalog_station_count=None):
@@ -355,6 +395,25 @@ def build_station_route_candidates(database, candidates, output, catalog_station
     }
 
     db = sqlite3.connect(f"file:{os.path.abspath(database)}?mode=ro", uri=True)
+    represented_nodes = {
+        row["osm_id"] for row in candidates
+        if row["way_ids"] and row["track_node_ids"]
+        and code_counts[row["code"]] == 1 and node_counts[row["osm_id"]] == 1
+    }
+    osm_station_rows = db.execute("""
+        SELECT s.osm_id,
+               group_concat(DISTINCT l.way_id),
+               group_concat(DISTINCT l.track_node_id)
+        FROM stations s JOIN station_track_links l ON l.station_node_id=s.osm_id
+        WHERE s.osm_type='node'
+        GROUP BY s.osm_id
+    """)
+    for node_id, way_ids, track_node_ids in osm_station_rows:
+        if node_id in represented_nodes:
+            continue
+        seeds[f"OSM:{node_id}"] = sorted(
+            int(value) for value in re.split(r"[;,]", track_node_ids or "") if value
+        )
     adjacency = {}
     for a, b, alat, alon, blat, blon in db.execute("""
         SELECT e.node_id,e.neighbor_id,a.lat,a.lon,b.lat,b.lon
@@ -419,7 +478,7 @@ def build_station_route_candidates(database, candidates, output, catalog_station
         "isolated_station_seeds": len(seeds) - len(station_codes_in_edges),
         "candidate_station_route_edges": len(edges),
         "edge_distance_unit": "metres, OSM geometry haversine estimate",
-        "station_seed_rule": "unique independent-catalog code and OSM station node with exact ref token within 1000 m, linked to active track by shared node or explicit public_transport stop-area relation; identity remains unreviewed",
+        "station_seed_rule": "project-catalog seeds require a unique exact-ref match within 1000 m and an explicit active-track link; OSM-only seeds require an OSM station node with an explicit active-track link; identity remains unreviewed",
         "edge_rule": "only adjacent regions joined by an actual consecutive-node track segment; distance combines OSM track-geometry shortest distances to that segment",
         "network_coverage": "unknown; OSM mapping and real-world connectivity not independently verified",
         "status": "candidate paths only; no train timetable, train-specific route, or live train position",
@@ -440,13 +499,14 @@ def main():
     parser.add_argument("--match-summary", help="Summary JSON for independent station candidates")
     parser.add_argument("--station-routes-output", help="OSM track-derived candidate station routes JSON")
     parser.add_argument("--station-routes-summary", help="OSM candidate route summary JSON")
+    parser.add_argument("--osm-stations-output", help="OSM-only station catalog JSON")
     args = parser.parse_args()
     if not all((args.input, args.database, args.report)):
         parser.error("input, database and report are required")
     if bool(args.match_archive) != bool(args.matches_output):
         parser.error("--match-archive and --matches-output must be supplied together")
     independent_args = (args.independent_stations, args.independent_matches_output, args.match_summary,
-                        args.station_routes_output, args.station_routes_summary)
+                        args.station_routes_output, args.station_routes_summary, args.osm_stations_output)
     if any(independent_args) and not all(independent_args):
         parser.error("all independent-station and route-candidate output options must be supplied together")
     if args.xml:
@@ -465,7 +525,8 @@ def main():
     if args.independent_stations:
         match_independent_stations(args.database, args.independent_stations,
                                    args.independent_matches_output, args.match_summary,
-                                   args.station_routes_output, args.station_routes_summary)
+                                   args.station_routes_output, args.station_routes_summary,
+                                   args.osm_stations_output)
 
 
 if __name__ == "__main__":

@@ -73,12 +73,12 @@ function dist(a, b, c, d) {
   return 6371000 * Math.hypot(x, y);
 }
 
-function parseStations(rows) {
-  if (!Array.isArray(rows) || !rows.length) throw new Error('Station list khali hai');
+function parseStations(rows, source = 'DataMeet + project fallback') {
+  if (!Array.isArray(rows) || (!rows.length && source !== 'OpenStreetMap')) throw new Error('Station list khali hai');
   const parsed = rows.filter(r => Array.isArray(r) && typeof r[0] === 'string' &&
     typeof r[1] === 'string' && Number.isFinite(r[2]) && Number.isFinite(r[3]))
-    .map(([id, name, lat, lon]) => ({id, name, lat, lon}));
-  if (!parsed.length) throw new Error('Station list sahi nahi hai');
+    .map(([id, name, lat, lon]) => ({id, name, lat, lon, source}));
+  if (!parsed.length && source !== 'OpenStreetMap') throw new Error('Station list sahi nahi hai');
   return parsed;
 }
 
@@ -283,17 +283,23 @@ async function loadStations() {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
-    const r = await fetch('stations.json', {signal: controller.signal});
+    const [r, osmResponse] = await Promise.all([
+      fetch('stations.json', {signal: controller.signal}),
+      fetch('osm-stations.json', {signal: controller.signal})
+    ]);
     if (!r.ok) throw new Error('Station list HTTP ' + r.status);
-    const rows = await r.json();
-    stations = parseStations(rows);
-    try { localStorage.setItem('safar-stations-v1', JSON.stringify(rows)); }
+    if (!osmResponse.ok) throw new Error('OSM station list HTTP ' + osmResponse.status);
+    const rows = await r.json(), osmRows = await osmResponse.json();
+    const catalog = parseStations(rows, 'DataMeet + project fallback');
+    const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
+    stations = [...catalog, ...osmCatalog];
+    try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
       console.warn('Station list offline save nahi hui', e);
       $('data-status').textContent = 'Station list taiyar hai, par offline save nahi hui; internet chahiye hoga.';
     }
     if (!$('data-status').textContent.includes('offline save'))
-      $('data-status').textContent = `Station list taiyar: ${stations.length} stations`;
+      $('data-status').textContent = `Station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`;
     const queued = pending;
     pending = [];
     for (const p of queued) processPosition(p);
@@ -321,10 +327,11 @@ function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log))
 function stationKey(s) { return s.id || s.name + s.lat; }
 
 function finish(s, st, exitT) {
+  const station = {name: s.name, id: s.id, source: s.source};
   if (st.stopStart && (st.stopEnd || exitT) && (st.stopEnd || exitT) - st.stopStart >= MIN_HALT * 1000) {
-    addLog({name: s.name, type: 'halt', arr: st.stopStart, dep: st.stopEnd || exitT});
+    addLog({...station, type: 'halt', arr: st.stopStart, dep: st.stopEnd || exitT});
   } else {
-    addLog({name: s.name, type: 'pass', t: st.bestT});
+    addLog({...station, type: 'pass', t: st.bestT});
   }
 }
 
@@ -432,7 +439,7 @@ function render() {
   for (const e of log.slice().reverse()) {
     const card = document.createElement('div'), title = document.createElement('b'), details = document.createElement('div');
     card.className = 'card ' + (e.type === 'halt' ? 'stop' : 'pass');
-    title.textContent = e.name;
+    title.textContent = e.id ? `${e.name} (${e.id})` : e.name;
     details.textContent = e.type === 'halt'
       ? `Ruka: ${fmt(e.arr)} se ${fmt(e.dep)} tak (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
       : `Paar kiya: ${fmt(e.t)}`;
@@ -447,19 +454,24 @@ stationSuggestions('origin', 'origin-options');
 stationSuggestions('destination', 'destination-options');
 $('clear').onclick = () => { if (confirm('Log delete karein?')) { log = []; localStorage.removeItem(KEY); render(); } };
 $('csv').onclick = () => {
-  const rows = ['station,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
-    ? `"${e.name}",halt,${new Date(e.arr).toISOString()},${new Date(e.dep).toISOString()}`
-    : `"${e.name}",pass,${new Date(e.t).toISOString()},`));
+  const quote = value => `"${String(value || '').replace(/"/g, '""')}"`;
+  const rows = ['station,station_id,source,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
+    ? [quote(e.name), quote(e.id), quote(e.source), 'halt', new Date(e.arr).toISOString(), new Date(e.dep).toISOString()].join(',')
+    : [quote(e.name), quote(e.id), quote(e.source), 'pass', new Date(e.t).toISOString(), ''].join(',')));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type: 'text/csv'}));
   a.download = 'train-log.csv'; a.click();
 };
 render();
 try {
-  const cached = localStorage.getItem('safar-stations-v1');
+  const cached = localStorage.getItem('safar-stations-v2');
   if (cached) {
-    stations = parseStations(JSON.parse(cached));
-    $('data-status').textContent = `Saved station list taiyar: ${stations.length} stations`;
+    const data = JSON.parse(cached);
+    const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
+    const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
+    stations = [...catalog, ...osmCatalog];
+    $('data-status').textContent =
+      `Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`;
   }
 } catch (e) {
   console.warn('Saved station list nahi padh paye', e);

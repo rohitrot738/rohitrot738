@@ -79,11 +79,20 @@ rows are not connected to the physical graph.
 coverage. It must not be used to claim complete station mapping. No IRSD
 records are included.
 
+`osm-stations.json` is the app's separate OSM station catalog. It contains
+OSM railway station/halt nodes that are not already represented by a unique
+station-code candidate in the project catalog. IDs use the prefix `OSM:` plus
+the OSM node ID and are kept distinct from project station codes. OSM-only
+entries can be selected as candidate-route endpoints but do not imply a
+verified identity, station-to-track connection, or complete station inventory.
+
 `station-route-candidates.json` is the route graph used by Safar. A
 multi-source shortest-path partition runs over the OSM graph. Candidate
 station nodes are seeds only if one catalog code uniquely matches one OSM
 station `ref`, lies within the coordinate sanity radius, and has an explicit
 OSM track link (shared track node or public-transport stop-area relation).
+OSM-only station nodes with an explicit track link are also route seeds and
+use their `OSM:<node id>` IDs.
 An edge is emitted only between adjacent seed regions joined by an
 actual consecutive-node track segment; the edge weight is the OSM geometry
 path-length estimate through that segment. Duplicate or ambiguous code/node
@@ -99,7 +108,8 @@ Routes shown by the app are still **candidates** because station identity and
 OSM mapping have not been independently reviewed. A connected OSM path does
 not say a train is scheduled to use it, nor does the graph provide real-time
 train location. Both generated route files are copied into `safar/` by the
-workflow so GitHub Pages can serve them with the app.
+workflow so GitHub Pages can serve them with the app; the separate OSM station
+catalog is copied there as well.
 The tracker uses these OSM candidate links for route selection and does not
 silently fall back to the older timetable-derived `edges.json`; routes absent
 from the candidate graph remain unavailable.

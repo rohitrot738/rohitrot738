@@ -38,6 +38,12 @@ const routeSummary = {
   osm_snapshot_timestamp: '2026-11-05T21:23:02Z',
   status: 'candidate paths only; no train timetable, train-specific route, or live train position'
 };
+const stationFetcher = (rows, osmRows = []) => async url => ({
+  ok: true,
+  json: async () => url === 'stations.json' ? rows
+    : url === 'osm-stations.json' ? osmRows
+    : routeSummary
+});
 
 (async () => {
   let requests = 0;
@@ -46,6 +52,7 @@ const routeSummary = {
       requests++;
       return {ok: true, json: async () => [['TST', 'Test Station', 28, 77]]};
     }
+    if (url === 'osm-stations.json') return {ok: true, json: async () => [['OSM:77', 'Mapped Test', 28.1, 77]]};
     if (url === 'osm-station-route-summary.json') return {ok: true, json: async () => routeSummary};
     throw new Error('unexpected URL ' + url);
   });
@@ -53,14 +60,17 @@ const routeSummary = {
   app.watches[0].success(fix(28, 100000));
   await flush();
   assert.equal(requests, 1);
+  assert.equal(JSON.parse(app.store.get('safar-stations-v2')).osm.length, 1);
   assert.match(app.elements.now.textContent, /Test Station/);
   assert.match(app.elements['data-status'].textContent, /taiyar/);
   assert.match(app.elements['network-status'].textContent, /90 have candidate links of 8,702 app stations/);
   app.watches[0].success(fix(28.01, 160000));
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].name, 'Test Station');
+  assert.equal(JSON.parse(app.store.get('trainlog'))[0].id, 'TST');
+  assert.equal(JSON.parse(app.store.get('trainlog'))[0].source, 'DataMeet + project fallback');
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].type, 'pass');
 
-  const halt = setup(async () => ({ok: true, json: async () => [['HLT', 'Halt', 28, 77]]}));
+  const halt = setup(stationFetcher([['HLT', 'Halt', 28, 77]]));
   halt.elements.start.onclick();
   halt.watches[0].success(fix(28, 100000, 0));
   await flush();
@@ -88,7 +98,7 @@ const routeSummary = {
   assert.match(noData.elements['data-status'].textContent, /Internet check/);
   assert.equal(noData.store.has('trainlog'), false);
 
-  const inaccurate = setup(async () => ({ok: true, json: async () => [['TST', 'Test Station', 28, 77]]}));
+  const inaccurate = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
   inaccurate.elements.start.onclick();
   inaccurate.watches[0].success(fix(28, 100000, 10, 1000));
   await flush();
@@ -106,19 +116,16 @@ const routeSummary = {
   assert.equal(database.length, 8702);
   const delhi = database.find(row => row[0] === 'NDLS');
   assert.equal(delhi[1], 'NEW DELHI');
-  const real = setup(async () => ({ok: true, json: async () => database}));
+  const real = setup(stationFetcher(database));
   await flush();
   real.elements.start.onclick();
   real.watches[0].success({coords: {latitude: delhi[2], longitude: delhi[3], accuracy: 10, speed: 10}, timestamp: 100000});
   assert.match(real.elements.now.textContent, /NEW DELHI/);
 
   const edges = [['SEB', 'DOS', 100]];
-  const routed = setup(async url => ({
-    ok: true,
-    json: async () => url === 'stations.json' ? database
-      : url === 'osm-station-routes.json' ? {schema_version: 1, stations_unreviewed: true, edges}
-      : routeSummary
-  }));
+  const routed = setup(async url => url === 'osm-station-routes.json'
+    ? {ok: true, json: async () => ({schema_version: 1, stations_unreviewed: true, edges})}
+    : stationFetcher(database)(url));
   await flush();
   routed.elements.origin.value = 'SEB';
   routed.elements.destination.value = 'DOS';
@@ -136,12 +143,27 @@ const routeSummary = {
   await routed.elements['find-route'].onclick();
   assert.match(routed.elements['route-status'].textContent, /Stop dabayein/);
 
-  const badRoute = setup(async url => ({
-    ok: true,
-    json: async () => url === 'stations.json' ? [['A','A',28,77],['B','B',29,77],['C','C',30,77]]
-      : url === 'osm-station-routes.json' ? {schema_version: 1, stations_unreviewed: true, edges: [['A','B',100]]}
-      : routeSummary
-  }));
+  const osmRoute = setup(async url => url === 'osm-station-routes.json'
+    ? {
+      ok: true,
+      json: async () => ({
+        schema_version: 1, stations_unreviewed: true, edges: [['OSM:77', 'OSM:78', 100]]
+      })
+    }
+    : url === 'osm-stations.json'
+      ? {ok: true, json: async () => [['OSM:77', 'OSM Alpha', 28, 77], ['OSM:78', 'OSM Beta', 29, 77]]}
+      : stationFetcher([['PROJ', 'Project Station', 27, 77]])(url));
+  await flush();
+  osmRoute.elements.origin.value = 'OSM:77';
+  osmRoute.elements.destination.value = 'OSM:78';
+  await osmRoute.elements['find-route'].onclick();
+  assert.match(osmRoute.elements['route-status'].textContent, /OSM track-based candidate/);
+  assert.deepEqual(osmRoute.elements['route-list'].children.map(child => child.textContent),
+    ['OSM Alpha (OSM:77)', 'OSM Beta (OSM:78)']);
+
+  const badRoute = setup(async url => url === 'osm-station-routes.json'
+    ? {ok: true, json: async () => ({schema_version: 1, stations_unreviewed: true, edges: [['A','B',100]]})}
+    : stationFetcher([['A','A',28,77],['B','B',29,77],['C','C',30,77]])(url));
   await flush();
   badRoute.elements.origin.value = 'A';
   badRoute.elements.destination.value = 'C';

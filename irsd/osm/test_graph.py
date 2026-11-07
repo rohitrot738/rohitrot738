@@ -19,6 +19,7 @@ FIXTURE = b"""<osm version="0.6">
 <node id="6" lat="25.0" lon="84.0005"><tag k="railway" v="halt"/></node>
 <node id="7" lat="25.0" lon="84.0001"><tag k="railway" v="station"/><tag k="ref" v="PT1"/></node>
 <node id="8" lat="25.0" lon="84.0002"><tag k="public_transport" v="stop_position"/></node>
+<node id="9" lat="25.0" lon="84.003"><tag k="railway" v="station"/><tag k="ref" v="NOLINK"/></node>
 <way id="10"><nd ref="1"/><nd ref="2"/><nd ref="3"/><tag k="railway" v="rail"/></way>
 <way id="11"><nd ref="2"/><nd ref="4"/><tag k="railway" v="rail"/></way>
 <way id="12"><nd ref="3"/><nd ref="5"/><tag k="railway" v="rail"/><tag k="disused" v="yes"/></way>
@@ -42,7 +43,7 @@ class GraphTest(unittest.TestCase):
             self.assertEqual(db.execute("SELECT node_id,degree,track_way_count FROM junctions").fetchall(), [(2, 4, 3)])
             self.assertEqual(db.execute("SELECT junction_node_id,way_id FROM junction_ways ORDER BY way_id").fetchall(),
                              [(2, 10), (2, 11), (2, 15)])
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM stations").fetchone()[0], 4)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM stations").fetchone()[0], 5)
             self.assertEqual(db.execute(
                 "SELECT station_node_id,track_node_id,way_id,link_type FROM station_track_links ORDER BY station_node_id"
             ).fetchall(), [(1, 1, 10, "shared_track_node"), (7, 8, 15, "public_transport_stop_area")])
@@ -68,7 +69,7 @@ class GraphTest(unittest.TestCase):
             build_graph.match(dbpath, archive, output)
             with open(output, newline="") as f:
                 rows = list(csv.DictReader(f))
-            self.assertEqual(len(rows), 3)
+            self.assertEqual(len(rows), 4)
             self.assertTrue(all(row["status"] == "unreviewed_candidate" for row in rows))
             self.assertTrue(any(row["osm_ref_matches_code"] == "1" for row in rows))
             self.assertNotIn("FAR", [r["irsd_code"] for r in rows])
@@ -76,28 +77,42 @@ class GraphTest(unittest.TestCase):
             summary_output = os.path.join(tmp, "summary.json")
             routes_output = os.path.join(tmp, "routes.json")
             routes_summary = os.path.join(tmp, "routes-summary.json")
+            osm_stations_output = os.path.join(tmp, "osm-stations.json")
             stations = os.path.join(tmp, "stations.json")
             with open(stations, "w", encoding="utf-8") as f:
                 json.dump([["DOS", "Dehri On Sone", 25, 84], ["GADH", "Garhani", 25, 84],
+                           ["NOLINK", "No Link", 25, 84.003],
                            ["FAR", "Far", 30, 80]], f)
             build_graph.match_independent_stations(
-                dbpath, stations, independent_output, summary_output, routes_output, routes_summary)
+                dbpath, stations, independent_output, summary_output, routes_output, routes_summary,
+                osm_stations_output)
             with open(independent_output, newline="", encoding="utf-8") as f:
                 independent_rows = list(csv.DictReader(f))
-            self.assertEqual(len(independent_rows), 2)
-            self.assertEqual(independent_rows[0]["station_code"], "DOS")
-            self.assertEqual(independent_rows[0]["shares_track_node"], "1")
-            self.assertEqual(independent_rows[0]["status"], "unreviewed_candidate")
-            self.assertEqual(independent_rows[1]["station_source"], "project_approximate_fallback")
-            self.assertEqual(independent_rows[0]["candidate_count_for_osm_node"], "2")
+            self.assertEqual(len(independent_rows), 3)
+            dos_row = next(row for row in independent_rows if row["station_code"] == "DOS")
+            no_link_row = next(row for row in independent_rows if row["station_code"] == "NOLINK")
+            self.assertEqual(dos_row["shares_track_node"], "1")
+            self.assertEqual(dos_row["status"], "unreviewed_candidate")
+            self.assertEqual(dos_row["candidate_count_for_osm_node"], "2")
+            self.assertEqual(no_link_row["track_link_types"], "[]")
+            self.assertEqual(no_link_row["has_explicit_track_link"], "0")
+            self.assertTrue(any(row["station_source"] == "project_approximate_fallback"
+                                for row in independent_rows))
             with open(summary_output, encoding="utf-8") as f:
                 summary = json.load(f)
                 self.assertEqual(summary["candidate_rows_sharing_track_node"], 2)
+                self.assertEqual(summary["candidate_rows_with_explicit_track_link"], 2)
                 self.assertEqual(summary["ambiguous_osm_station_nodes"], 1)
             with open(routes_output, encoding="utf-8") as f:
                 routes = json.load(f)
             self.assertTrue(routes["stations_unreviewed"])
-            self.assertEqual(routes["edges"], [])
+            self.assertTrue(routes["edges"])
+            self.assertTrue(all(a.startswith("OSM:") and b.startswith("OSM:")
+                                for a, b, _ in routes["edges"]))
+            with open(osm_stations_output, encoding="utf-8") as f:
+                osm_stations = json.load(f)
+            self.assertTrue(all(row[0].startswith("OSM:") for row in osm_stations))
+            self.assertEqual(len(osm_stations), 3)
 
     def test_candidate_station_route_uses_track_segments(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -111,10 +126,10 @@ class GraphTest(unittest.TestCase):
             ], output)
             with open(output, encoding="utf-8") as f:
                 routes = json.load(f)
-            self.assertEqual(len(routes["edges"]), 1)
-            self.assertEqual(routes["edges"][0][:2], ["A", "B"])
-            self.assertGreater(routes["edges"][0][2], 0)
-            self.assertEqual(summary["station_seeds"], 2)
+            self.assertEqual({tuple(edge[:2]) for edge in routes["edges"]},
+                             {("A", "OSM:7"), ("B", "OSM:7")})
+            self.assertTrue(all(edge[2] > 0 for edge in routes["edges"]))
+            self.assertEqual(summary["station_seeds"], 3)
 
     def test_missing_node_fails(self):
         data = FIXTURE.replace(b'<nd ref="4"/>', b'<nd ref="999"/>', 1)
