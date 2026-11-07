@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">RailTrack</string>
-    <string name="title_activity_main">RailTrack</string>
+    <string name="app_name">Suffer Sathi</string>
+    <string name="title_activity_main">Suffer Sathi</string>
     <string name="package_name">com.railtrack.app</string>
     <string name="custom_url_scheme">com.railtrack.app</string>
 </resources>

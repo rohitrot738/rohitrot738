@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Mera Safar Tracker</title>
+<title>Suffer Sathi</title>
 <style>
 body{font-family:system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:12px 16px;background:#1e293b;font-weight:700}
@@ -18,7 +18,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 </style>
 </head>
 <body>
-<header><a href="../index.html" style="color:inherit">← RailTrack</a> · 📍 Mera Safar Tracker</header>
+<header><a href="../index.html" style="color:inherit">← RailTrack</a> · 📍 Suffer Sathi</header>
 <main>
 <div class="card">
   <b>Apna route chunein</b><br>
@@ -503,7 +503,7 @@ function start() {
       startWeb(mode !== 'network');
     };
     backgroundGeo.addWatcher({
-      backgroundTitle: 'Mera Safar Tracker',
+      backgroundTitle: 'Suffer Sathi',
       backgroundMessage: 'Station pass aur halt record ho rahe hain',
       requestPermissions: true,
       stale: false,
@@ -512,7 +512,7 @@ function start() {
       if (currentSession !== session) return;
       if (error) {
         if (error.code === 'NOT_AUTHORIZED') {
-          $('status').textContent = 'Location permission nahi mili. Phone settings mein Safar ke liye location allow karein.';
+          $('status').textContent = 'Location permission nahi mili. Phone settings mein Suffer Sathi ke liye location allow karein.';
         }
         fallback(error.message || 'native location error');
         return;
