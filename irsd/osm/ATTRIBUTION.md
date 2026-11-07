@@ -1,10 +1,16 @@
 # OpenStreetMap attribution
 
 Contains data from OpenStreetMap, © OpenStreetMap contributors.
-Data is licensed under the Open Database License (ODbL) 1.0 — https://www.openstreetmap.org/copyright
+OpenStreetMap data is available under the Open Database License (ODbL):
+https://www.openstreetmap.org/copyright and
+https://opendatacommons.org/licenses/odbl/1-0/.
 
-- Source: Geofabrik India extract, https://download.geofabrik.de/asia/india-latest.osm.pbf
-- Content here: rail-only subset (produced by `.github/workflows/osm-rail-extract.yml`).
-- Databases derived from this data (track graph, junctions, station links) must stay under ODbL (share-alike) and carry this attribution.
-- Keep separate from WIMT-derived station data (IRSD); do not merge provenance.
-- Coverage and completeness: not verified yet.
+Source: [Geofabrik India extract](https://download.geofabrik.de/asia/india.html).
+Geofabrik distributes extracts of OpenStreetMap data; see its
+[data use notice](https://www.geofabrik.de/data/shapefiles.html).
+
+The extract and graph retain OSM identifiers and are OSM-derived databases.
+Observe ODbL attribution, source availability and share-alike requirements
+when using or redistributing them. Separately assess the rights in other data
+before combining or distributing it. The WIMT-derived IRSD station archive is
+not covered by the OSM licence.

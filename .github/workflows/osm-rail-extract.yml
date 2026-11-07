@@ -9,53 +9,56 @@ permissions:
 jobs:
   extract:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
 
       - name: Install osmium
         run: sudo apt-get update && sudo apt-get install -y osmium-tool
 
-      - name: Download India extract (Geofabrik)
+      - name: Test graph builder
+        run: python3 -m unittest discover -s irsd/osm -p 'test_*.py' -v
+
+      - name: Download India extract and verify checksum
         run: |
-          curl -fL -o india-latest.osm.pbf https://download.geofabrik.de/asia/india-latest.osm.pbf
-          curl -fL -o india-latest.osm.pbf.md5 https://download.geofabrik.de/asia/india-latest.osm.pbf.md5
+          curl --retry 3 -fL -o india-latest.osm.pbf https://download.geofabrik.de/asia/india-latest.osm.pbf
+          curl --retry 3 -fL -o india-latest.osm.pbf.md5 https://download.geofabrik.de/asia/india-latest.osm.pbf.md5
           md5sum -c india-latest.osm.pbf.md5
           osmium fileinfo -e india-latest.osm.pbf > full-fileinfo.txt
 
-      - name: Extract rail features only
+      - name: Extract rail features with referenced nodes
         run: |
-          osmium tags-filter -R india-latest.osm.pbf \
+          osmium tags-filter india-latest.osm.pbf \
             w/railway=rail,light_rail,narrow_gauge,subway,tram,construction,disused,abandoned,preserved \
-            n/railway=station,halt,stop,junction,switch,crossing,level_crossing,buffer_stop \
-            n/public_transport=station,stop_position \
-            r/route=train,railway \
-            -o india-rail.osm.pbf --overwrite
+            nw/railway=station,halt \
+            n/railway=junction,switch,crossing,level_crossing,buffer_stop \
+            -o india-rail.osm.pbf
+          osmium check-refs india-rail.osm.pbf
           osmium fileinfo -e india-rail.osm.pbf > rail-fileinfo.txt
-          osmium tags-count india-rail.osm.pbf railway > railway-tag-counts.txt
-          ls -l india-rail.osm.pbf
+          sha256sum india-rail.osm.pbf > SHA256SUMS.txt
 
-      - name: Publish release asset
+      - name: Build OSM track graph
+        run: |
+          python3 irsd/osm/build_graph.py india-rail.osm.pbf india-rail-graph.sqlite coverage.json
+          gzip -9 india-rail-graph.sqlite
+          sha256sum india-rail-graph.sqlite.gz >> SHA256SUMS.txt
+
+      - name: Publish new release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          TS=$(osmium fileinfo -g header.option.osmosis_replication_timestamp india-latest.osm.pbf || true)
-          TAG="osm-rail-$(date -u +%Y%m%d)"
+          TS=$(osmium fileinfo -g header.option.osmosis_replication_timestamp india-latest.osm.pbf)
+          TAG="osm-rail-${GITHUB_RUN_ID}"
           cat > NOTICE.txt <<EOF
-          Contains data from OpenStreetMap, (c) OpenStreetMap contributors.
-          Licensed under the Open Database License (ODbL) 1.0.
-          https://www.openstreetmap.org/copyright
-          Source: Geofabrik India extract (replication timestamp: ${TS:-unknown}).
-          This file is a rail-only filtered subset. Coverage is NOT verified.
+          Contains data from OpenStreetMap, © OpenStreetMap contributors.
+          Open Database License (ODbL): https://www.openstreetmap.org/copyright
+          Source: https://download.geofabrik.de/asia/india-latest.osm.pbf
+          Source replication timestamp: ${TS:-unknown}
+          OSM-mapped topology is not independently verified; coverage is incomplete or unknown.
+          See irsd/osm/README.md in the repository for methodology and limitations.
           EOF
-          gh release create "$TAG" india-rail.osm.pbf full-fileinfo.txt rail-fileinfo.txt railway-tag-counts.txt NOTICE.txt \
-            --title "OSM rail extract $TAG" \
-            --notes "Rail-only subset of OpenStreetMap India (ODbL 1.0, (c) OpenStreetMap contributors). Unverified coverage." \
-            || gh release upload "$TAG" india-rail.osm.pbf full-fileinfo.txt rail-fileinfo.txt railway-tag-counts.txt NOTICE.txt --clobber
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: osm-rail-stats
-          path: |
-            full-fileinfo.txt
-            rail-fileinfo.txt
-            railway-tag-counts.txt
+          gh release edit osm-rail-20261107 --notes 'WARNING: This earlier extract omitted referenced track nodes (osmium tags-filter -R); it cannot be used to construct a complete track graph. Use a newer release produced by the corrected workflow. Contains OpenStreetMap data © OpenStreetMap contributors, ODbL 1.0; coverage not verified.'
+          gh release create "$TAG" india-rail.osm.pbf india-rail-graph.sqlite.gz \
+            full-fileinfo.txt rail-fileinfo.txt coverage.json SHA256SUMS.txt NOTICE.txt \
+            --title "OSM rail graph $TAG" \
+            --notes "OSM-derived physical track graph; coverage and real-world connectivity are not independently verified. © OpenStreetMap contributors, ODbL 1.0. See irsd/osm/README.md."
