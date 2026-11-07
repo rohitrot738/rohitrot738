@@ -17,7 +17,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 </style>
 </head>
 <body>
-<header>📍 Mera Safar Tracker</header>
+<header><a href="../index.html" style="color:inherit">← RailTrack</a> · 📍 Mera Safar Tracker</header>
 <main>
 <div class="card">
   <b>Apna route chunein</b><br>
@@ -49,7 +49,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
 <div id="log"></div>
-<p class="small">Station list app mein pehle se hai; pehli baar list download karne ke liye internet chahiye. Station data purana ya galat ho sakta hai.
+<p class="small">Station aur OSM route lists APK ke saath bundled hain; internet ke bina bhi route aur station logging kaam karni chahiye. Station data purana ya galat ho sakta hai.
 Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
 Browser location ka source khud chunta hai; network location ki accuracy kam ho sakti hai.
 OSM se bana route track connectivity ka anumaan hai, aapki train ka scheduled ya live route nahi. OSM station-code matches abhi review nahi hue aur OSM network ki coverage verify nahi hai. GPS, chhute stations aur galat station data ki wajah se log galat ho sakta hai.
@@ -60,8 +60,9 @@ const R = 500;            // station radius (m)
 const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
 const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
-let stations = [], watchId = null, last = null, state = {};
+let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
 let loading = false, stationListsLoaded = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
+let nativeFallbackTimer = null;
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -405,12 +406,12 @@ function processPosition(p) {
 }
 
 function start() {
-  if (watchId != null) return;
-  if (!navigator.geolocation) { $('status').textContent = 'Location support nahi hai'; return; }
+  if (watchId != null || nativeWatcher != null) return;
   const mode = $('mode').value;
   $('status').textContent = 'Location dhoondh rahe hain...';
   const currentSession = ++session;
-  function watch(highAccuracy) {
+  const startWeb = highAccuracy => {
+    if (!navigator.geolocation) { $('status').textContent = 'Location support nahi hai'; return; }
     watchId = navigator.geolocation.watchPosition(onPos, err => {
       if (currentSession !== session) return;
       if (err.code === 1) {
@@ -418,14 +419,88 @@ function start() {
         $('status').textContent = 'Location permission nahi mili. Browser aur phone ki location permission allow karein, phir Start dabayein.';
       } else if (mode === 'auto' && highAccuracy) {
         navigator.geolocation.clearWatch(watchId);
+        watchId = null;
         $('status').textContent = 'GPS nahi mila; kam accuracy wali location ki koshish ho rahi hai.';
-        watch(false);
+        startWeb(false);
       } else {
         $('status').textContent = 'Location nahi mili ya timeout hua. Phone ka GPS on karein, khule aasman ke neeche jayein; app dobara koshish karega.';
       }
     }, {enableHighAccuracy: highAccuracy, maximumAge: 5000, timeout: 60000});
+  };
+  const capacitor = window.Capacitor;
+  const backgroundGeo = capacitor?.isNativePlatform?.() && capacitor.registerPlugin?.('BackgroundGeolocation');
+  if (!backgroundGeo) {
+    startWeb(mode !== 'network');
+  } else {
+    let gotFix = false, webStarted = false, nativeStarting = true, pendingFallback = null;
+    const fallback = reason => {
+      if (currentSession !== session || webStarted || pendingFallback) return;
+      if (nativeStarting) {
+        pendingFallback = reason;
+        $('status').textContent = `Native GPS nahi mila; browser location try ho rahi hai (${reason}).`;
+        return;
+      }
+      webStarted = true;
+      $('status').textContent = `Native GPS nahi mila; browser location try ho rahi hai (${reason}).`;
+      if (nativeWatcher) {
+        backgroundGeo.removeWatcher({id: nativeWatcher.id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
+        nativeWatcher = null;
+      }
+      startWeb(mode !== 'network');
+    };
+    backgroundGeo.addWatcher({
+      backgroundTitle: 'Mera Safar Tracker',
+      backgroundMessage: 'Station pass aur halt record ho rahe hain',
+      requestPermissions: true,
+      stale: false,
+      distanceFilter: 0
+    }, (location, error) => {
+      if (currentSession !== session) return;
+      if (error) {
+        if (error.code === 'NOT_AUTHORIZED') {
+          $('status').textContent = 'Location permission nahi mili. Phone settings mein Safar ke liye location allow karein.';
+        }
+        fallback(error.message || 'native location error');
+        return;
+      }
+      if (!Number.isFinite(location?.latitude) || !Number.isFinite(location?.longitude)) {
+        fallback('location fix nahi mila');
+        return;
+      }
+      gotFix = true;
+      onPos({
+        coords: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          accuracy: location.accuracy,
+          speed: location.speed
+        },
+        timestamp: location.time || Date.now()
+      });
+    }).then(id => {
+      nativeStarting = false;
+      if (currentSession !== session) {
+        backgroundGeo.removeWatcher({id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
+        return;
+      }
+      nativeWatcher = {id, plugin: backgroundGeo};
+      if (pendingFallback) {
+        const reason = pendingFallback;
+        pendingFallback = null;
+        fallback(reason);
+      }
+      nativeFallbackTimer = setTimeout(() => {
+        if (!gotFix && currentSession === session) fallback('20 second mein GPS fix nahi mila');
+      }, 20000);
+    }).catch(error => {
+      nativeStarting = false;
+      if (currentSession === session) {
+        const reason = pendingFallback || error?.message || 'native GPS start fail';
+        pendingFallback = null;
+        fallback(reason);
+      }
+    });
   }
-  watch(mode !== 'network');
   if ('wakeLock' in navigator) navigator.wakeLock.request('screen').then(lock => {
     if (currentSession !== session) return lock.release();
     wakeLock = lock;
@@ -433,6 +508,15 @@ function start() {
 }
 function stop() {
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
+  if (nativeFallbackTimer != null) {
+    clearTimeout(nativeFallbackTimer);
+    nativeFallbackTimer = null;
+  }
+  if (nativeWatcher) {
+    nativeWatcher.plugin.removeWatcher({id: nativeWatcher.id})
+      .catch(e => console.warn('Native GPS watcher band nahi hua', e));
+    nativeWatcher = null;
+  }
   session++;
   if (wakeLock) {
     wakeLock.release().catch(e => console.warn('Screen wake lock release nahi hua', e));

@@ -38,6 +38,9 @@ jobs:
       - name: Loader self-test
         run: python3 test_loader.py
 
+      - name: Safar tracker self-test
+        run: node safar/test.cjs
+
       - name: Build railway database (timetable network)
         run: python3 loader_pipeline.py
 

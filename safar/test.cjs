@@ -5,7 +5,7 @@ const assert = require('assert');
 const html = fs.readFileSync(require('path').join(__dirname, 'index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
-function setup(fetch, saved) {
+function setup(fetch, saved, capacitor = null) {
   const elements = {};
   function element() {
     return {
@@ -23,7 +23,7 @@ function setup(fetch, saved) {
     watchPosition(success, error, options) { watches.push({success, error, options}); return watches.length; },
     clearWatch(id) { watches[id - 1].cleared = true; }
   };
-  const context = {document, localStorage, navigator: {geolocation}, fetch, AbortController, setTimeout, clearTimeout,
+  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
   return {elements, store, watches};
@@ -81,6 +81,29 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(event.type, 'halt');
   assert.equal(event.arr, 100000);
   assert.equal(event.dep, 145000);
+
+  let nativeCallback, removedNativeWatcher = false;
+  const nativeCapacitor = {
+    isNativePlatform: () => true,
+    registerPlugin: name => {
+      assert.equal(name, 'BackgroundGeolocation');
+      return {
+        addWatcher: async (_options, callback) => { nativeCallback = callback; return 'native-watch'; },
+        removeWatcher: async ({id}) => { assert.equal(id, 'native-watch'); removedNativeWatcher = true; }
+      };
+    }
+  };
+  const native = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), null, nativeCapacitor);
+  native.elements.start.onclick();
+  await flush();
+  nativeCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
+  await flush();
+  nativeCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 145000}, null);
+  nativeCallback({latitude: 28.01, longitude: 77, accuracy: 10, speed: 10, time: 160000}, null);
+  assert.equal(JSON.parse(native.store.get('trainlog'))[0].name, 'Native Station');
+  native.elements.stop.onclick();
+  await flush();
+  assert.equal(removedNativeWatcher, true);
 
   const geo = setup(async () => { throw new Error('offline'); });
   geo.elements.start.onclick();
