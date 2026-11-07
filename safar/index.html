@@ -31,6 +31,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
   <div id="route-status" class="small">Route nahi chuna hai. Bina route ke sirf nazdeeki station dikhaya jayega.</div>
   <details id="route-details" hidden><summary>Anumaanit route ki station list dekhein</summary><ol id="route-list"></ol></details>
 </div>
+<div class="card small" id="network-status">OSM track route data load ho raha hai...</div>
 <div>
   <select id="mode">
     <option value="auto">Auto (GPS, zaroorat par kam accuracy)</option>
@@ -51,8 +52,8 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <p class="small">Station list app mein pehle se hai; pehli baar list download karne ke liye internet chahiye. Station data purana ya galat ho sakta hai.
 Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
 Browser location ka source khud chunta hai; network location ki accuracy kam ho sakti hai.
-Route timetable se banaye gaye purane data ka sabse chhota sambhavit rasta hai, aapki asli train ki line nahi. OSM physical-track graph alag release mein hai aur abhi is app ke route mein use nahi hota. Station list zaroor jaanch lein; junction, chhute stations aur GPS ki wajah se agla station ya log galat ho sakta hai.
-Station chhodne ke baad log dikhega; purana safar wapas nahi milega. Station data: DataMeet (CC0), aur repository ke kuch approximate stations.</p>
+OSM se bana route track connectivity ka anumaan hai, aapki train ka scheduled ya live route nahi. OSM station-code matches abhi review nahi hue aur OSM network ki coverage verify nahi hai. GPS, chhute stations aur galat station data ki wajah se log galat ho sakta hai.
+Station chhodne ke baad log dikhega; purana safar wapas nahi milega. Station catalog: DataMeet-derived (CC0) aur kuch approximate project stations. Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL 1.0).</p>
 </main>
 <script>
 const R = 500;            // station radius (m)
@@ -110,9 +111,12 @@ async function getGraph() {
   const timeout = setTimeout(() => controller.abort(), 30000);
   let edges;
   try {
-    const r = await fetch('edges.json', {signal: controller.signal});
-    if (!r.ok) throw new Error('Route data HTTP ' + r.status);
-    edges = await r.json();
+    const r = await fetch('osm-station-routes.json', {signal: controller.signal});
+    if (!r.ok) throw new Error('OSM route data HTTP ' + r.status);
+    const data = await r.json();
+    if (data.schema_version !== 1 || data.stations_unreviewed !== true || !Array.isArray(data.edges))
+      throw new Error('OSM route data format sahi nahi hai');
+    edges = data.edges;
   } finally {
     clearTimeout(timeout);
   }
@@ -189,7 +193,7 @@ async function selectRoute() {
   }
   $('find-route').disabled = true;
   $('start').disabled = true;
-  $('route-status').textContent = 'Route data se rasta dhoondh rahe hain...';
+  $('route-status').textContent = 'OSM track connectivity par candidate rasta dhoondh rahe hain...';
   try {
     const graph = await getGraph();
     const ids = shortestRoute(graph, from.id, to.id);
@@ -206,14 +210,37 @@ async function selectRoute() {
     }
     $('route-details').hidden = false;
     $('route-details').open = true;
-    $('route-status').textContent = `Anumaanit route: ${route.length} stations. List jaanch lein: yeh aapki train ka pakka route nahi hai.`;
+    $('route-status').textContent = `OSM track-based candidate: ${route.length} stations. Station matches review nahi hue; yeh aapki train ka scheduled ya live route nahi hai.`;
     $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
   } catch (e) {
     console.warn('Route nahi bana', e);
-    $('route-status').textContent = `Route nahi bana: ${e.message}. Internet aur station names check karein.${route ? ' Pehle chuna route abhi bhi laga hua hai.' : ''}`;
+    const reason = e.message === 'In stations ke beech route nahi mila'
+      ? 'In stations ke liye OSM track candidate route nahi mila. Station match ya network data adhura ho sakta hai; timetable route se chupke fallback nahi kiya.'
+      : `${e.message}. Internet aur station names check karein.`;
+    $('route-status').textContent = `Route nahi bana: ${reason}${route ? ' Pehle chuna route abhi bhi laga hua hai.' : ''}`;
   } finally {
     $('find-route').disabled = false;
     $('start').disabled = false;
+  }
+}
+
+async function loadNetworkSummary() {
+  try {
+    const r = await fetch('osm-station-route-summary.json');
+    if (!r.ok) throw new Error('Network summary HTTP ' + r.status);
+    const summary = await r.json();
+    if (summary.status !== 'candidate paths only; no train timetable, train-specific route, or live train position')
+      throw new Error('Network summary status sahi nahi hai');
+    $('network-status').textContent =
+      `OSM track graph: ${Number(summary.station_seeds).toLocaleString('en-IN')} unreviewed station matches; ` +
+      `${Number(summary.station_codes_with_candidate_route_edges).toLocaleString('en-IN')} have candidate links of ` +
+      `${Number(summary.station_catalog_records).toLocaleString('en-IN')} app stations; ` +
+      `${Number(summary.candidate_station_route_edges).toLocaleString('en-IN')} candidate track links. ` +
+      `OSM snapshot: ${summary.osm_snapshot_timestamp || 'unknown'}. ` +
+      'Baaki stations ke OSM route links nahi. Coverage/station identity verified nahi; timetable/live train data nahi.';
+  } catch (e) {
+    console.warn('OSM route summary load nahi hui', e);
+    $('network-status').textContent = 'OSM track-route data abhi available nahi. Internet check karein ya baad mein try karein.';
   }
 }
 
@@ -438,6 +465,7 @@ try {
   console.warn('Saved station list nahi padh paye', e);
 }
 loadStations();
+loadNetworkSummary();
 </script>
 </body>
 </html>

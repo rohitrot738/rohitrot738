@@ -32,13 +32,22 @@ function setup(fetch, saved) {
 const fix = (lat, t, speed = 10, accuracy = 10) =>
   ({coords: {latitude: lat, longitude: 77, accuracy, speed}, timestamp: t});
 const flush = () => new Promise(resolve => setImmediate(resolve));
+const routeSummary = {
+  station_seeds: 100, station_codes_with_candidate_route_edges: 90,
+  station_catalog_records: 8702, candidate_station_route_edges: 80,
+  osm_snapshot_timestamp: '2026-11-05T21:23:02Z',
+  status: 'candidate paths only; no train timetable, train-specific route, or live train position'
+};
 
 (async () => {
   let requests = 0;
   const app = setup(async url => {
-    assert.equal(url, 'stations.json');
-    requests++;
-    return {ok: true, json: async () => [['TST', 'Test Station', 28, 77]]};
+    if (url === 'stations.json') {
+      requests++;
+      return {ok: true, json: async () => [['TST', 'Test Station', 28, 77]]};
+    }
+    if (url === 'osm-station-route-summary.json') return {ok: true, json: async () => routeSummary};
+    throw new Error('unexpected URL ' + url);
   });
   app.elements.start.onclick();
   app.watches[0].success(fix(28, 100000));
@@ -46,6 +55,7 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   assert.equal(requests, 1);
   assert.match(app.elements.now.textContent, /Test Station/);
   assert.match(app.elements['data-status'].textContent, /taiyar/);
+  assert.match(app.elements['network-status'].textContent, /90 have candidate links of 8,702 app stations/);
   app.watches[0].success(fix(28.01, 160000));
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].name, 'Test Station');
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].type, 'pass');
@@ -102,13 +112,18 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   real.watches[0].success({coords: {latitude: delhi[2], longitude: delhi[3], accuracy: 10, speed: 10}, timestamp: 100000});
   assert.match(real.elements.now.textContent, /NEW DELHI/);
 
-  const edges = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'edges.json'), 'utf8'));
-  const routed = setup(async url => ({ok: true, json: async () => url === 'stations.json' ? database : edges}));
+  const edges = [['SEB', 'DOS', 100]];
+  const routed = setup(async url => ({
+    ok: true,
+    json: async () => url === 'stations.json' ? database
+      : url === 'osm-station-routes.json' ? {schema_version: 1, stations_unreviewed: true, edges}
+      : routeSummary
+  }));
   await flush();
   routed.elements.origin.value = 'SEB';
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
-  assert.match(routed.elements['route-status'].textContent, /Anumaanit route/);
+  assert.match(routed.elements['route-status'].textContent, /OSM track-based candidate/);
   assert.deepEqual(routed.elements['route-list'].children.map(child => child.textContent), ['SON NAGAR (SEB)', 'DEHRI ON SONE (DOS)']);
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
@@ -121,11 +136,16 @@ const flush = () => new Promise(resolve => setImmediate(resolve));
   await routed.elements['find-route'].onclick();
   assert.match(routed.elements['route-status'].textContent, /Stop dabayein/);
 
-  const badRoute = setup(async url => ({ok: true, json: async () => url === 'stations.json' ? [['A','A',28,77],['B','B',29,77],['C','C',30,77]] : [['A','B',100]]}));
+  const badRoute = setup(async url => ({
+    ok: true,
+    json: async () => url === 'stations.json' ? [['A','A',28,77],['B','B',29,77],['C','C',30,77]]
+      : url === 'osm-station-routes.json' ? {schema_version: 1, stations_unreviewed: true, edges: [['A','B',100]]}
+      : routeSummary
+  }));
   await flush();
   badRoute.elements.origin.value = 'A';
   badRoute.elements.destination.value = 'C';
   await badRoute.elements['find-route'].onclick();
-  assert.match(badRoute.elements['route-status'].textContent, /route nahi mila/);
+  assert.match(badRoute.elements['route-status'].textContent, /OSM track candidate route nahi mila/);
   console.log('Safar tracker checks passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });

@@ -25,6 +25,9 @@ not be used to construct a graph.
 - `relations`: OSM route relation `id`, original `tags`, and ordered member
   objects (`type`, `ref`, `role`) as JSON. These are mapped OSM relations,
   not authoritative timetables or proof a particular train runs that route.
+- `relation_members`: normalized relation ID and member object type, ID and
+  role. Members from route and public-transport relations are retained for
+  topology and station-stop linkage.
 - `neighbors`: distinct directed node-neighbor pairs from segments, provided
   in both directions. This is physical topology, not a train movement rule.
 - `junctions`: `node_id`, distinct neighboring-node `degree`, and the number
@@ -34,9 +37,12 @@ not be used to construct a graph.
 - `junction_ways`: candidate junction node and every distinct incident track
   way. This preserves the topology relationship; it does not designate a
   main line or branch line.
-- `station_track_links`: OSM station-point node, the same track node, and an
-  incident track way. This relationship exists only when the OSM station node
-  is literally shared with a track way; nearby stations are not linked.
+- `station_track_links`: OSM station-point node, linked track node, incident
+  track way, link type, and public-transport relation ID (zero for a shared
+  node). Link types are either a literally shared track node or an explicit
+  `type=public_transport`/`public_transport=stop_area` relation from the
+  station node to a `public_transport=stop_position`/`railway=stop` node on a
+  track way. Nearby stations are not linked by distance.
 - `stations`: `osm_type` (`node` or `way`), `osm_id`, `railway`, original
   `tags`, and `node_refs` (JSON for ways, null for nodes). These are OSM
   station features, not IRSD records. Station ways are not automatically
@@ -44,8 +50,9 @@ not be used to construct a graph.
 - `station_locations`: SQLite R-tree index for OSM station nodes.
 
 `coverage.json` counts OSM objects and topology candidates; it is not a
-percentage of the Indian rail network. A shared OSM node establishes mapped
-connectivity, not independent verification or permission for a train to traverse it.
+percentage of the Indian rail network. Shared OSM nodes and explicit
+stop-area relations establish mapped connectivity, not independent
+verification or permission for a train to traverse it.
 Disconnected tracks, parallel lines, overlapping bridges and incomplete or
 incorrect OSM mapping may affect results. No branch/main-line designation is
 inferred from degree. Station-to-track relations only exist for literal shared
@@ -59,22 +66,49 @@ with OSM railway station/halt nodes. Its source is not WIMT/IRSD. The DataMeet
 source is the station URL referenced in `loader_pipeline.py`; the app
 identifies that data as CC0. The CSV columns are station code/name/coordinates
 and source/license, OSM station node ID/ref/name, separation in metres,
-incident shared track-way IDs, a shared-node flag, candidate multiplicity
+track-way IDs, explicit link types, a shared-node flag, candidate multiplicity
 counts, and status. Candidates require an exact OSM `ref` code token and a
 1 km coordinate sanity check; name and distance alone never create a match.
 `shares_track_node=1` means the OSM station node is literally part of one or
-more retained active track ways. It is an OSM topology fact, but the identity
-match back to the Safar catalog still needs review. Other rows are not
-connected to the physical graph.
+more retained active track ways. `has_explicit_track_link=1` also includes
+explicit OSM stop-area relations. These are OSM topology/relationship facts,
+but the identity match back to the Safar catalog still needs review. Other
+rows are not connected to the physical graph.
 
 `station-match-summary.json` reports counts, not accuracy or national
 coverage. It must not be used to claim complete station mapping. No IRSD
-records are included, and this result does not update the tracker app.
+records are included.
+
+`station-route-candidates.json` is the route graph used by Safar. A
+multi-source shortest-path partition runs over the OSM graph. Candidate
+station nodes are seeds only if one catalog code uniquely matches one OSM
+station `ref`, lies within the coordinate sanity radius, and has an explicit
+OSM track link (shared track node or public-transport stop-area relation).
+An edge is emitted only between adjacent seed regions joined by an
+actual consecutive-node track segment; the edge weight is the OSM geometry
+path-length estimate through that segment. Duplicate or ambiguous code/node
+matches are excluded from route seeds. The method does not use timetable
+edges, station-name similarity, or free-standing distance guesses.
+The JSON has `schema_version`, the derivation `method`, an explicit
+`stations_unreviewed: true` flag, and `edges` rows shaped as
+`[station_code_a, station_code_b, track_distance_metres]`.
+The app summary includes the Geofabrik OSM replication timestamp so users
+can see which snapshot the route candidates came from.
+
+Routes shown by the app are still **candidates** because station identity and
+OSM mapping have not been independently reviewed. A connected OSM path does
+not say a train is scheduled to use it, nor does the graph provide real-time
+train location. Both generated route files are copied into `safar/` by the
+workflow so GitHub Pages can serve them with the app.
+The tracker uses these OSM candidate links for route selection and does not
+silently fall back to the older timetable-derived `edges.json`; routes absent
+from the candidate graph remain unavailable.
 
 The summary and `coverage.json` report object counts and topology counts.
 `station_nodes_with_shared_track_node` counts OSM station nodes that share
-one or more track nodes; `station_track_link_rows` counts those station-way
-incidences. `topological_junction_candidates` counts nodes with three or more
+one or more track nodes. `station_nodes_with_explicit_stop_area_link` counts
+stations explicitly related to track stop-position nodes. `station_track_link_rows`
+counts all station-to-track relationships. `topological_junction_candidates` counts nodes with three or more
 distinct neighboring track nodes, and `junction_candidates_with_3plus_ways`
 is the subset with three or more incident OSM track ways. These are not
 national completeness percentages or independently verified facilities.
