@@ -8,7 +8,8 @@
 body{font-family:system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:12px 16px;background:#1e293b;font-weight:700}
 main{padding:12px 16px;max-width:600px;margin:auto}
-select,button{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
+select,button,input{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
+input{max-width:100%;box-sizing:border-box}
 button{background:#2563eb;color:#fff}button.alt{background:#475569}
 .card{background:#1e293b;border-radius:10px;padding:10px 12px;margin:8px 0}
 .small{color:#94a3b8;font-size:13px}
@@ -18,6 +19,18 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <body>
 <header>📍 Mera Safar Tracker</header>
 <main>
+<div class="card">
+  <b>Apna route chunein</b><br>
+  <label for="origin">Shuru station</label><br>
+  <input id="origin" list="origin-options" autocomplete="off" placeholder="Naam ya code">
+  <datalist id="origin-options"></datalist><br>
+  <label for="destination">Antim station</label><br>
+  <input id="destination" list="destination-options" autocomplete="off" placeholder="Naam ya code">
+  <datalist id="destination-options"></datalist><br>
+  <button id="find-route" class="alt">Route banayein</button>
+  <div id="route-status" class="small">Route nahi chuna hai. Bina route ke sirf nazdeeki station dikhaya jayega.</div>
+  <details id="route-details" hidden><summary>Anumaanit route ki station list dekhein</summary><ol id="route-list"></ol></details>
+</div>
 <div>
   <select id="mode">
     <option value="auto">Auto (GPS, zaroorat par kam accuracy)</option>
@@ -30,6 +43,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <div class="card" id="status">Status: ruka hua</div>
 <div class="card" id="data-status">Station data: location ka intezar hai</div>
 <div class="card" id="now">Nazdiki station: —</div>
+<div class="card" id="next">Agla station: route chunein</div>
 <button id="csv" class="alt">CSV download</button>
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
@@ -37,7 +51,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <p class="small">Station list app mein pehle se hai; pehli baar list download karne ke liye internet chahiye. Station data purana ya galat ho sakta hai.
 Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
 Browser location ka source khud chunta hai; network location ki accuracy kam ho sakti hai.
-App abhi railway route nahi pehchanta: nazdeeki station zaroori nahi ki agla station ho, aur doosri line ka station bhi log ho sakta hai.
+Route timetable se banaye gaye purane data ka sabse chhota sambhavit rasta hai, aapki asli train ki line nahi. Station list zaroor jaanch lein; junction, chhute stations aur GPS ki wajah se agla station ya log galat ho sakta hai.
 Station chhodne ke baad log dikhega; purana safar wapas nahi milega. Station data: DataMeet (CC0), aur repository ke kuch approximate stations.</p>
 </main>
 <script>
@@ -48,6 +62,7 @@ const KEY = 'trainlog';
 let stations = [], watchId = null, last = null, state = {};
 let loading = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
 let wakeLock = null;
+let route = null, routeIndex = null, edgeGraph = null;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
 const fmt = t => new Date(t).toLocaleTimeString('hi-IN', {hour12:false});
@@ -64,6 +79,174 @@ function parseStations(rows) {
     .map(([id, name, lat, lon]) => ({id, name, lat, lon}));
   if (!parsed.length) throw new Error('Station list sahi nahi hai');
   return parsed;
+}
+
+function stationSuggestions(inputId, listId) {
+  const input = $(inputId);
+  input.oninput = () => {
+    if (route) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
+    const text = input.value.trim().toUpperCase();
+    const list = $(listId);
+    list.replaceChildren();
+    if (!text) return;
+    for (const s of stations.filter(s => s.id.toUpperCase().startsWith(text) || s.name.toUpperCase().includes(text)).slice(0, 30)) {
+      const option = document.createElement('option');
+      option.value = `${s.name} (${s.id})`;
+      list.append(option);
+    }
+  };
+}
+
+function findStation(text) {
+  const value = text.trim().toUpperCase();
+  const matches = stations.filter(s => s.id.toUpperCase() === value ||
+    `${s.name} (${s.id})`.toUpperCase() === value || s.name.toUpperCase() === value);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+async function getGraph() {
+  if (edgeGraph) return edgeGraph;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30000);
+  let edges;
+  try {
+    const r = await fetch('edges.json', {signal: controller.signal});
+    if (!r.ok) throw new Error('Route data HTTP ' + r.status);
+    edges = await r.json();
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!Array.isArray(edges) || !edges.length) throw new Error('Route data khali hai');
+  const known = new Set(stations.map(s => s.id));
+  const graph = new Map();
+  for (const edge of edges) {
+    if (!Array.isArray(edge) || !known.has(edge[0]) || !known.has(edge[1]) || !Number.isFinite(edge[2]) || edge[2] <= 0) continue;
+    for (const [a, b] of [[edge[0], edge[1]], [edge[1], edge[0]]]) {
+      if (!graph.has(a)) graph.set(a, []);
+      graph.get(a).push([b, edge[2]]);
+    }
+  }
+  if (!graph.size) throw new Error('Route data sahi nahi hai');
+  edgeGraph = graph;
+  return graph;
+}
+
+function shortestRoute(graph, from, to) {
+  const distances = new Map([[from, 0]]), previous = new Map(), queue = [[0, from]];
+  function push(item) {
+    queue.push(item);
+    for (let i = queue.length - 1; i > 0;) {
+      const parent = Math.floor((i - 1) / 2);
+      if (queue[parent][0] <= queue[i][0]) break;
+      [queue[parent], queue[i]] = [queue[i], queue[parent]];
+      i = parent;
+    }
+  }
+  function pop() {
+    const first = queue[0], last = queue.pop();
+    if (queue.length) {
+      queue[0] = last;
+      for (let i = 0;;) {
+        let min = i, left = 2 * i + 1, right = left + 1;
+        if (left < queue.length && queue[left][0] < queue[min][0]) min = left;
+        if (right < queue.length && queue[right][0] < queue[min][0]) min = right;
+        if (min === i) break;
+        [queue[i], queue[min]] = [queue[min], queue[i]];
+        i = min;
+      }
+    }
+    return first;
+  }
+  while (queue.length) {
+    const [cost, id] = pop();
+    if (cost !== distances.get(id)) continue;
+    if (id === to) {
+      const ids = [id];
+      while (ids[0] !== from) ids.unshift(previous.get(ids[0]));
+      return ids;
+    }
+    for (const [next, weight] of graph.get(id) || []) {
+      const candidate = cost + weight;
+      if (candidate < (distances.get(next) ?? Infinity)) {
+        distances.set(next, candidate);
+        previous.set(next, id);
+        push([candidate, next]);
+      }
+    }
+  }
+  return null;
+}
+
+async function selectRoute() {
+  if (watchId != null) {
+    $('route-status').textContent = 'Route badalne se pehle Stop dabayein; adhoora visit save nahi hoga.';
+    return;
+  }
+  const from = findStation($('origin').value), to = findStation($('destination').value);
+  if (!from || !to || from.id === to.id) {
+    $('route-status').textContent = stations.length ? 'Alag shuru aur antim station list se chunein. Naam ya code poora likhein.' : 'Station list abhi taiyar nahi hai; internet check karein.';
+    return;
+  }
+  $('find-route').disabled = true;
+  $('start').disabled = true;
+  $('route-status').textContent = 'Route data se rasta dhoondh rahe hain...';
+  try {
+    const graph = await getGraph();
+    const ids = shortestRoute(graph, from.id, to.id);
+    if (!ids) throw new Error('In stations ke beech route nahi mila');
+    const byId = new Map(stations.map(s => [s.id, s]));
+    route = ids.map(id => byId.get(id));
+    routeIndex = null;
+    state = {};
+    $('route-list').replaceChildren();
+    for (const s of route) {
+      const li = document.createElement('li');
+      li.textContent = `${s.name} (${s.id})`;
+      $('route-list').append(li);
+    }
+    $('route-details').hidden = false;
+    $('route-details').open = true;
+    $('route-status').textContent = `Anumaanit route: ${route.length} stations. List jaanch lein: yeh aapki train ka pakka route nahi hai.`;
+    $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
+  } catch (e) {
+    console.warn('Route nahi bana', e);
+    $('route-status').textContent = `Route nahi bana: ${e.message}. Internet aur station names check karein.${route ? ' Pehle chuna route abhi bhi laga hua hai.' : ''}`;
+  } finally {
+    $('find-route').disabled = false;
+    $('start').disabled = false;
+  }
+}
+
+function routePosition(p) {
+  const lat = p.coords.latitude, lon = p.coords.longitude;
+  let best = null;
+  for (let i = 0; i < route.length - 1; i++) {
+    const a = route[i], b = route[i + 1], scale = Math.cos(lat * Math.PI / 180);
+    const ax = (a.lon - lon) * scale, ay = a.lat - lat;
+    const dx = (b.lon - a.lon) * scale, dy = b.lat - a.lat;
+    const length = dx * dx + dy * dy;
+    if (!length) continue;
+    const fraction = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length));
+    const gap = Math.hypot(ax + fraction * dx, ay + fraction * dy) * Math.PI / 180 * 6371000;
+    if (!best || gap < best.gap) best = {i, fraction, gap};
+  }
+  if (!best || best.gap > 2000) return null;
+  const nearStart = dist(lat, lon, route[best.i].lat, route[best.i].lon) <= R;
+  const candidate = nearStart ? best.i : best.i + 1;
+  routeIndex = routeIndex == null ? candidate : Math.max(routeIndex, candidate);
+  return routeIndex;
+}
+
+function showRoutePosition(p) {
+  if (!route) return;
+  const index = routePosition(p);
+  if (index == null) {
+    $('next').textContent = 'Route se location ka milan nahi hua. Chuna hua route aur GPS check karein.';
+    return;
+  }
+  const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
+  const label = d <= R ? 'Route par station ke paas' : 'Sambhavit agla station';
+  $('next').textContent = `${label}: ${s.name} (${s.id}), ${(d / 1000).toFixed(1)} km — anumaan`;
 }
 
 async function loadStations() {
@@ -124,6 +307,7 @@ function onPos(p) {
   $('status').textContent = `Location mil rahi hai (±${Math.round(accuracy)} m)`;
   if (accuracy > R) {
     showNearest(p);
+    if (route) $('next').textContent = 'GPS accuracy kam hai; agla station nirdharit nahi kar sakte.';
     $('status').textContent += '. Accuracy kam hai; GPS on karke khule aasman ke neeche try karein.';
     loadStations();
     return;
@@ -142,6 +326,13 @@ function onPos(p) {
 
 function processPosition(p) {
   const {latitude: lat, longitude: lon} = p.coords, t = p.timestamp;
+  if (route && routePosition(p) == null) {
+    state = {};
+    last = null;
+    $('next').textContent = 'Route se location ka milan nahi hua. Chuna hua route aur GPS check karein; adhoore visits log nahi honge.';
+    showNearest(p);
+    return;
+  }
   let speed = p.coords.speed;
   if ((speed == null || !Number.isFinite(speed)) && last) {
     const dt = (t - last.t) / 1000;
@@ -151,7 +342,7 @@ function processPosition(p) {
   last = {lat, lon, t};
 
   let nearest = null;
-  for (const s of stations) {
+  for (const s of route || stations) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
     const k = stationKey(s);
@@ -167,6 +358,7 @@ function processPosition(p) {
   }
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
+  showRoutePosition(p);
 }
 
 function start() {
@@ -203,7 +395,7 @@ function stop() {
     wakeLock.release().catch(e => console.warn('Screen wake lock release nahi hua', e));
     wakeLock = null;
   }
-  watchId = null; last = null; state = {}; pending = []; latestPosition = null;
+  watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
   $('status').textContent = 'Tracking band hai. Adhoora station visit log nahi hua.';
 }
 
@@ -223,6 +415,9 @@ function render() {
 }
 
 $('start').onclick = start; $('stop').onclick = stop;
+$('find-route').onclick = selectRoute;
+stationSuggestions('origin', 'origin-options');
+stationSuggestions('destination', 'destination-options');
 $('clear').onclick = () => { if (confirm('Log delete karein?')) { log = []; localStorage.removeItem(KEY); render(); } };
 $('csv').onclick = () => {
   const rows = ['station,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
