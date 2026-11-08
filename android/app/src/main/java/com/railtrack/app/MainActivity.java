@@ -7,6 +7,8 @@ import android.content.ComponentName;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.util.Log;
+import android.widget.Toast;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -20,12 +22,21 @@ public class MainActivity extends BridgeActivity {
             .setPeriodic(6 * 60 * 60 * 1000L)
             .setPersisted(true)
             .build();
-        if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
-            android.util.Log.e("SathiUpdate", "Could not schedule update checks");
+        try {
+            if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
+                showUpdateError("Update check schedule nahi ho saka.", null);
+            }
+        } catch (SecurityException | IllegalArgumentException | IllegalStateException e) {
+            showUpdateError("Update check schedule nahi ho saka.", e);
         }
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 734);
+        }
+
+        private void showUpdateError(String message, Exception error) {
+            Log.e("SathiUpdate", message, error);
+            Toast.makeText(this, message + " App updates link se check karein.", Toast.LENGTH_LONG).show();
         }
     }
 }
