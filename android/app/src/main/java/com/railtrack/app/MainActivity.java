@@ -34,9 +34,10 @@ public class MainActivity extends BridgeActivity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 734);
         }
 
-        private void showUpdateError(String message, Exception error) {
-            Log.e("SathiUpdate", message, error);
-            Toast.makeText(this, message + " App updates link se check karein.", Toast.LENGTH_LONG).show();
-        }
+    }
+
+    private void showUpdateError(String message, Exception error) {
+        Log.e("SathiUpdate", message, error);
+        Toast.makeText(this, message + " App updates link se check karein.", Toast.LENGTH_LONG).show();
     }
 }
