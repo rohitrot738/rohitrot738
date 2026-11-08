@@ -115,15 +115,35 @@ jobs:
           path: android/app/build/outputs/apk/release/app-release.apk
           if-no-files-found: error
 
-      - name: Enable KVM for Android emulator
+      - name: Check whether signed build is newer
+        id: update-version
         if: steps.signing.outputs.enabled == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          body="$(gh release view suffer-sathi-updates --json body --jq .body)"
+          current="$(printf '%s\n' "$body" | sed -n 's/^versionCode: \([0-9][0-9]*\)$/\1/p')"
+          if [[ ! "$current" =~ ^[0-9]+$ ]]; then
+            echo "::error::Existing update release has an invalid versionCode."
+            exit 1
+          fi
+          if (( current >= 100000 + GITHUB_RUN_NUMBER )); then
+            echo "newer=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Enable KVM for Android emulator
+        if: steps.update-version.outputs.newer == 'true'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
       - name: Test signed upgrade and launch on Android 14
-        if: steps.signing.outputs.enabled == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.update-version.outputs.newer == 'true'
         uses: reactivecircus/android-emulator-runner@v2
         env:
           GH_TOKEN: ${{ github.token }}
@@ -134,7 +154,7 @@ jobs:
           script: bash scripts/android_update_smoke.sh
 
       - name: Publish update
-        if: steps.signing.outputs.enabled == 'true' && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        if: steps.update-version.outputs.newer == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash

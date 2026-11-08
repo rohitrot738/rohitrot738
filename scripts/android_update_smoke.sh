@@ -21,12 +21,18 @@ if [[ "$previous" == 100037 ]]; then
   adb logcat -d -s AndroidRuntime:E | grep -A 15 'FATAL EXCEPTION' || true
 fi
 adb install -r "$new_apk"
+adb shell pm grant "$package" android.permission.POST_NOTIFICATIONS
 adb logcat -c
 adb shell am start -W -n "$package/.MainActivity"
 sleep 15
 if ! adb shell pidof "$package" >/dev/null; then
   echo "App exited after launch"
   adb logcat -d -s AndroidRuntime:E SathiUpdate:E
+  exit 1
+fi
+if ! adb shell dumpsys activity activities | grep -E '(mResumedActivity|topResumedActivity).*com\.railtrack\.app/.MainActivity'; then
+  echo "Main activity is not in the foreground"
+  adb shell dumpsys activity activities | grep -i 'resumed' || true
   exit 1
 fi
 if adb logcat -d -s AndroidRuntime:E SathiUpdate:E | grep -E 'FATAL EXCEPTION|Could not schedule|schedule nahi ho saka'; then
