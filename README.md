@@ -1,65 +1,65 @@
 # Suffer Sathi
 
-ट्रेन के सफ़र का साथी: एक Android app जो phone के GPS से आपका सफ़र देखता है और रास्ते के हर station का समय अपने आप लिखता जाता है — ट्रेन कहाँ रुकी, कितनी देर रुकी और कौन-सा station बिना रुके निकल गया।
+A companion for train journeys: an Android app that follows your trip with the phone's GPS and writes down the time at every station on the way — where the train stopped, for how long, and which stations it passed without stopping.
 
-App बिना internet के चलता है: station और रास्तों का data APK के अंदर ही है। Internet सिर्फ़ नया version देखने के लिए लगता है।
+The app works without internet: the station and route data ship inside the APK. Internet is only used to look for a new version.
 
 ## Install
 
-सबसे नया signed APK हमेशा यहाँ मिलता है:
+The latest signed APK is always here:
 
-**[Suffer Sathi का नया version download करें](https://github.com/rohitrot738/rohitrot738/releases/tag/suffer-sathi-updates)**
+**[Download the latest Suffer Sathi](https://github.com/rohitrot738/rohitrot738/releases/tag/suffer-sathi-updates)**
 
-Release के नोट में जिस file का नाम लिखा है (`Suffer-Sathi-<version>.apk`), वही install करें। एक बार install होने के बाद app खुद नया version बताता है और अपने अंदर से ही download और install करवा देता है; Android हर बार आपसे पुष्टि माँगता है।
+Install the file named in the release notes (`Suffer-Sathi-<version>.apk`). Once installed, the app tells you about new versions and downloads and installs them from inside the app; Android asks you to confirm each time.
 
-## क्या-क्या करता है
+## What it does
 
-- **सफ़र का log:** हर station पर "Ruka" (आने और जाने का समय, कितनी देर) या "Paar kiya" (किस समय निकला)। रुकने वाली entry पीली और बिना रुके निकलने वाली हरी दिखती है।
-- **रास्ते में रुकना:** ट्रेन station के बाहर 30 सेकंड या ज़्यादा रुके तो वह भी समय के साथ लिखा जाता है, सबसे नज़दीकी station के नाम से।
-- **Route चुनना:** शुरू और अंतिम station, और चाहें तो बीच के 3 तक "via" station। Station नाम या code से ढूँढे जा सकते हैं; बदले हुए code (जैसे DDU, PRYJ) भी चलते हैं।
-- **किसका log चाहिए:** route बनने के बाद उसके सारे station tick के साथ दिखते हैं। जिसका log नहीं चाहिए उसका tick हटा दें, और छूटा हुआ station जोड़ दें। "Save karein" के बाद यह चुनाव app बंद करने पर भी बना रहता है।
-- **अगला station:** route पर हों तो route से, वरना चलने की दिशा से अंदाज़ा।
-- **Speed:** गोल dial में, km/h में।
-- **घड़ी:** तारीख़ और समय second के साथ; एक बटन से पूरी screen पर बड़ी घड़ी, जिसके साथ speed भी दिखती है। समय का रंग 10 रंगों में से चुना जा सकता है।
-- **CSV:** पूरा log CSV file में निकाला जा सकता है।
+- **Journey log:** for every station, either a halt (arrival time, departure time, duration) or a pass (the time it went by). Halts are marked amber and passes green.
+- **Stops between stations:** when the train stands for 30 seconds or more away from any station, that is logged too, named by the nearest station.
+- **Route:** a start station, an end station and up to three optional "via" stations. Stations can be found by name or code; renamed codes such as DDU and PRYJ work as well.
+- **Choose what is logged:** after a route is built, its stations are listed with a tick each. Untick the ones you do not want logged, and add any station the route missed. After "Save karein" the choice is kept even when the app is closed.
+- **Next station:** from the route when you are on it, otherwise an estimate from the direction of travel.
+- **Speed:** in a round dial, in km/h.
+- **Clock:** date and time with seconds; one button turns it into a large full-screen clock that also shows the speed. The colour of the time can be picked from ten colours.
+- **CSV:** the whole log can be exported as a CSV file.
 
-## Screen बंद होने पर भी log चाहिए तो
+## Logging with the screen off
 
-Phone की ये तीन settings ज़रूरी हैं, वरना phone app को background में रोक देता है:
+Three phone settings are needed, otherwise the phone stops the app in the background:
 
-1. Location permission: **Allow all the time** (हमेशा अनुमति दें)।
-2. Battery: Suffer Sathi के लिए **Unrestricted** (कोई पाबंदी नहीं)।
-3. Notification: चालू। Tracking के दौरान "Station pass aur halt record ho rahe hain" वाली notification दिखती रहनी चाहिए।
+1. Location permission: **Allow all the time**.
+2. Battery: **Unrestricted** for Suffer Sathi.
+3. Notifications: on. While tracking, the notification "Station pass aur halt record ho rahe hain" should stay visible.
 
-## ध्यान रखें
+## Good to know
 
-- Route "सबसे छोटा रास्ता" होता है, आपकी ट्रेन का असली route नहीं। ट्रेन किसी और line से जाए तो via station दें; वरना app दिशा के अंदाज़े पर चला जाता है।
-- Station की जगह और नाम खुले data से लिए गए हैं और कहीं-कहीं पुराने या थोड़े गलत हो सकते हैं, इसलिए log में भी गलती आ सकती है।
-- यह रेलवे का आधिकारिक app नहीं है। इसमें timetable, ट्रेन की live स्थिति या ticket की कोई जानकारी नहीं है।
+- The route is the shortest path, not your train's actual route. If the train takes another line, add a via station; otherwise the app falls back to the estimate from the direction of travel.
+- Station positions and names come from open data and can be out of date or slightly wrong in places, so the log can be wrong too.
+- This is not an official railway app. It has no timetable, live train status or ticket information.
 
-## Repository में क्या है
+## What is in this repository
 
-| जगह | क्या है |
+| Path | Contents |
 | --- | --- |
-| `safar/` | App की screen (`index.html`), उसके tests (`test.cjs`) और station व रास्तों का data |
-| `android/` | Android app का ढाँचा (Capacitor) और app के अंदर से update करने वाला code |
-| `irsd/osm/` | OpenStreetMap से station और track का data बनाने वाली scripts |
-| `loader_pipeline.py`, `indian_railways_complete.db` | Station catalog का स्रोत data और उसे बनाने वाली script |
-| `scripts/build_www.sh` | App की files को APK में जाने के लिए इकट्ठा करती है |
-| `.github/workflows/` | APK बनाने, जाँचने और release करने के workflows |
+| `safar/` | The app's screen (`index.html`), its tests (`test.cjs`) and the station and route data |
+| `android/` | The Android shell (Capacitor) and the in-app update code |
+| `irsd/osm/` | Scripts that build station and track data from OpenStreetMap |
+| `loader_pipeline.py`, `indian_railways_complete.db` | The source data for the station catalog and the script that builds it |
+| `scripts/build_www.sh` | Gathers the app's files for the APK |
+| `.github/workflows/` | Workflows that build, test and release the APK |
 
-## बनाना और जाँचना
+## Build and test
 
 ```sh
-node safar/test.cjs        # app के tests
-sh scripts/build_www.sh    # web files को www/ में इकट्ठा करना
+node safar/test.cjs        # the app's tests
+sh scripts/build_www.sh    # gather the web files into www/
 npm ci && npx cap sync android
 cd android && ./gradlew assembleDebug testDebugUnitTest
 ```
 
-`main` पर हर बदलाव के बाद GitHub Actions signed APK बनाता है, उसे emulator पर पुराने version के ऊपर install करके चलाता है, और पास होने पर update release में डाल देता है। Signing और update की पूरी जानकारी [`safar/README.md`](safar/README.md) में है।
+After every change on `main`, GitHub Actions builds a signed APK, installs it over the previous version on an emulator and launches it, and publishes it to the update release when that passes. Signing and updates are described in [`safar/README.md`](safar/README.md).
 
-## Data का श्रेय
+## Data credits
 
-- Station catalog: DataMeet से लिया गया (CC0)।
-- Track और कई station: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL 1.0।
+- Station catalog: derived from DataMeet (CC0).
+- Track and many stations: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL 1.0.
