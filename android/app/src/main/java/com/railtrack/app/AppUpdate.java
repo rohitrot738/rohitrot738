@@ -45,8 +45,6 @@ final class AppUpdate {
     static final String TAG = "SathiUpdate";
     static final String EXTRA_UPDATE = "com.railtrack.app.UPDATE";
     static final int RUNNING = 1, DONE = 2, FAILED = 3;
-    private static final String RELEASE_API =
-        "https://api.github.com/repos/rohitrot738/rohitrot738/releases/tags/suffer-sathi-updates";
     private static final String APK_MIME = "application/vnd.android.package-archive";
     private static final String PREFS = "app-updates";
     private static final String DOWNLOAD_ID = "download_id", DOWNLOAD_CODE = "download_code";
@@ -68,7 +66,16 @@ final class AppUpdate {
 
     /** The published update, or null when no update release exists yet. */
     static Release fetch() throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(RELEASE_API).openConnection();
+        // The first name that answers: before the rename only the old one does, after it both do.
+        for (String repository : UpdateVersions.REPOSITORIES) {
+            Release release = fetch("https://api.github.com/repos/" + repository + "/releases/tags/suffer-sathi-updates");
+            if (release != null) return release;
+        }
+        return null;
+    }
+
+    private static Release fetch(String api) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(api).openConnection();
         connection.setRequestProperty("Accept", "application/vnd.github+json");
         connection.setRequestProperty("User-Agent", "Suffer-Sathi-Android");
         connection.setConnectTimeout(15000);
