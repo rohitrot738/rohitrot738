@@ -9,13 +9,13 @@ function setup(fetch, saved, capacitor = null) {
   const elements = {};
   function element() {
     return {
-      textContent: '', value: 'auto', children: [],
+      textContent: '', value: 'auto', children: [], style: {}, dataset: {},
       append(...items) { this.children.push(...items); },
       replaceChildren() { this.children = []; this.textContent = ''; },
       click() {}
     };
   }
-  const document = {getElementById(id) { return elements[id] ||= element(); }, createElement: element};
+  const document = {getElementById(id) { return elements[id] ||= element(); }, createElement: element, body: elements.body = element()};
   const store = new Map(saved || []);
   const localStorage = {getItem: k => store.get(k) || null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k)};
   const watches = [];
@@ -23,7 +23,7 @@ function setup(fetch, saved, capacitor = null) {
     watchPosition(success, error, options) { watches.push({success, error, options}); return watches.length; },
     clearWatch(id) { watches[id - 1].cleared = true; }
   };
-  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout,
+  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: fn => { elements.clockTick = fn; return 0; }, String,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
   return {elements, store, watches};
@@ -376,6 +376,57 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const run = chosen.watches[chosen.watches.length - 1];
   for (let i = 0; i <= 80; i++) run.success(fix(27.98 + i * 0.0045, 100000 + i * 10000, 30));
   assert.deepEqual(JSON.parse(chosen.store.get('trainlog')).map(entry => entry.id), ['A', 'X', 'C', 'D']);
+  // The route and its ticks are kept: a fresh start of the app on the same phone shows them again.
+  chosen.elements.stop.onclick();
+  chosen.elements['route-save'].onclick();
+  assert.match(chosen.elements['route-status'].textContent, /^Save ho gaya: Alpha se Delta, 4 \/ 5 station/);
+  assert.equal(chosen.elements['route-details'].open, false);
+  const reopened = setup(async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url), chosen.store);
+  await flush();
+  assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
+  assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
+  assert.match(reopened.elements['route-status'].textContent, /^Save kiya hua route: Alpha se Delta\. 4 \/ 5 station/);
+  assert.equal(reopened.elements.origin.value, 'A');
+  reopened.elements['route-clear'].onclick();
+  assert.equal(reopened.store.has('safar-route'), false);
+  assert.equal(reopened.elements['route-details'].hidden, true);
+  assert.match(reopened.elements['clock-hm'].textContent, /^\d\d:\d\d$/);
+  assert.match(reopened.elements['clock-sec'].textContent, /^\d\d$/);
+  assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
+  assert.equal(typeof reopened.elements.clockTick, 'function');
+
+  // Full-screen clock: only the look changes; a station passed meanwhile is still logged, with its speed shown.
+  const big = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
+  big.elements.start.onclick();
+  big.elements['clock-full'].onclick();
+  assert.equal(big.elements.body.className, 'clockmode');
+  assert.equal(big.elements['clock-full'].innerHTML, 'EXIT');
+  big.watches[0].success(fix(27.99, 100000));
+  await flush();
+  big.watches[0].success(fix(28, 110000));
+  big.watches[0].success(fix(28.01, 120000));
+  assert.equal(JSON.parse(big.store.get('trainlog'))[0].id, 'TST');
+  assert.equal(big.elements.speed.textContent, '36');
+  big.elements['clock-full'].onclick();
+  assert.equal(big.elements.body.className, '');
+  // Ten colours for the time in a dropdown that shows the colours themselves; the pick is kept for the next start.
+  const menu = big.elements['clock-color-menu'];
+  assert.equal(menu.children.length, 10);
+  assert.ok(menu.children.every(choice => !choice.textContent && /^#[0-9a-f]{6}$/.test(choice.style.background)));
+  assert.equal(menu.hidden, true);
+  assert.equal(big.elements['clock-time'].style.color, '#f8fafc');
+  big.elements['clock-color'].onclick();
+  assert.equal(menu.hidden, false);
+  menu.children[4].onclick();
+  assert.equal(menu.hidden, true);
+  assert.equal(big.elements['clock-time'].style.color, '#f472b6');
+  assert.equal(big.elements['clock-color-now'].style.background, '#f472b6');
+  const recoloured = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), big.store);
+  assert.equal(recoloured.elements['clock-time'].style.color, '#f472b6');
+  assert.equal(recoloured.elements['clock-color-now'].style.background, '#f472b6');
+  assert.match(big.elements['clock-full'].innerHTML, /^<svg /);
+
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
   chosen.elements['route-all'].onclick();
