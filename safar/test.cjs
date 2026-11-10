@@ -237,7 +237,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements[list].children.find(option => option.textContent === label).onclick();
   };
   pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'Deen Dayal Upadhyaya Junction (OSM:2669094333)');
-  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
   assert.match(bundled.elements['route-status'].textContent, /Route bana: \d+ stations, lagbhag 1\d\d km/);
   const names = bundled.elements['route-list'].children.map(child => child.textContent);
@@ -249,6 +249,46 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   pick('destination', 'destination-options', 'HWH', 'HOWRAH JN (HWH)');
   await bundled.elements['find-route'].onclick();
   assert.ok(bundled.elements['route-list'].children.length > 150);
+
+  // A code comes first even when many names contain it, and a renamed station answers to its new code.
+  const firstOption = text => {
+    bundled.elements.origin.dataset = {};
+    bundled.elements.origin.value = text;
+    bundled.elements.origin.oninput();
+    return bundled.elements['origin-options'].children[0].textContent;
+  };
+  for (const [code, label] of [['MB', 'MORADABAD (MB)'], ['HW', 'HARIDWAR JN (HW)'], ['ara', 'ARA (ARA)']])
+    assert.equal(firstOption(code), label);
+  assert.match(firstOption('DDU'), /^MUGHAL SARAI JN \(MGS\) — ab Deen Dayal Upadhyaya Jn \(DDU\)$/);
+  assert.match(firstOption('PRYJ'), /^ALLAHABAD JN \(ALD\)/);
+  assert.match(firstOption('prayagraj jn'), /^ALLAHABAD JN \(ALD\)/);
+  bundled.elements.origin.dataset = {};
+  bundled.elements.origin.value = 'DDU';
+  bundled.elements.destination.dataset = {};
+  bundled.elements.destination.value = 'PRYJ';
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /Route bana/);
+  assert.doesNotMatch(html, /RailTrack|railtrack/);
+
+  // A stop between stations is logged with its times once the train moves on; standing before the journey is not.
+  const outer = setup(stationFetcher([['HLT', 'Halt', 28, 77]]));
+  outer.elements.start.onclick();
+  outer.watches[0].success(fix(28.05, 100000, 0));
+  await flush();
+  outer.watches[0].success(fix(28.05, 160000, 0));
+  outer.watches[0].success(fix(28.055, 170000, 10));
+  assert.equal(outer.store.has('trainlog'), false);
+  outer.watches[0].success(fix(28.06, 200000, 0));
+  outer.watches[0].success(fix(28.06, 260000, 0));
+  assert.match(outer.elements.now.textContent, /Raste mein ruki hai: 1 min/);
+  outer.watches[0].success(fix(28.061, 270000, 10));
+  const outerLog = JSON.parse(outer.store.get('trainlog'));
+  assert.equal(outerLog.length, 1);
+  assert.match(outerLog[0].name, /^Raste mein \(Halt se 6\.\d km\)$/);
+  assert.deepEqual([outerLog[0].type, outerLog[0].arr, outerLog[0].dep], ['halt', 200000, 270000]);
+  outer.watches[0].success(fix(28.07, 300000, 0));
+  outer.watches[0].success(fix(28.07, 310000, 10));
+  assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
 
   // No route chosen: the next station is the nearest one ahead in the direction of travel (Buxar towards DDU).
   const free = setup(async url => ({ok: true, json: async () => read(url)}));

@@ -9,16 +9,17 @@ body{font-family:system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:12px 16px;background:#1e293b;font-weight:700}
 main{padding:12px 16px;max-width:600px;margin:auto}
 select,button,input{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
-input{max-width:100%;box-sizing:border-box}
+input{width:100%;max-width:100%;box-sizing:border-box}
 button{background:#2563eb;color:#fff}button.alt{background:#475569}
 .card{background:#1e293b;border-radius:10px;padding:10px 12px;margin:8px 0}
 .small{color:#94a3b8;font-size:13px}
+.suggest{max-height:40vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .suggest button{display:block;width:100%;text-align:left;background:#334155;margin:2px 0;padding:8px 10px}
 .stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
 </style>
 </head>
 <body>
-<header><a href="../index.html" style="color:inherit">← RailTrack</a> · 📍 Suffer Sathi</header>
+<header>📍 Suffer Sathi</header>
 <main>
 <div class="card">
   <b>Apna route chunein</b><br>
@@ -64,6 +65,7 @@ const ACTIVE_KEY = 'safar-active';
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let heading = null, headingFrom = null, lastActive = null;
+let openStop = null; // the train standing still away from any station: {start, near, d}
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
 // Station-list status stays off screen unless something went wrong.
@@ -86,8 +88,37 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
 
 function stationLabel(s) { return `${s.name} (${s.id})`; }
 
+// Stations renamed since the catalog was made: catalog code -> [today's code, today's name], so both find them.
+const RENAMED = {
+  MGS: ['DDU', 'Deen Dayal Upadhyaya Jn'], ALD: ['PRYJ', 'Prayagraj Jn'], ALY: ['PRRB', 'Prayagraj Rambagh'],
+  PRG: ['PYGS', 'Prayagraj Sangam'], MUV: ['BSBS', 'Banaras'], FD: ['AYC', 'Ayodhya Cantt'],
+  JHS: ['VGLJ', 'Virangana Lakshmibai Jhansi'], HBJ: ['RKMP', 'Rani Kamlapati'],
+  BCT: ['MMCT', 'Mumbai Central'], CSTM: ['CSMT', 'Chhatrapati Shivaji Maharaj Terminus']
+};
+
+// Best matches first: the exact code, then codes starting with the text, then names starting with it, then names
+// containing it. Without the order a short code was pushed out of the list by every name that contains it.
+function searchStations(text, limit = 40) {
+  const found = [];
+  for (const s of stations) {
+    const id = s.id.toUpperCase(), name = s.name.toUpperCase(), renamed = RENAMED[s.id];
+    const newId = renamed ? renamed[0] : '', newName = renamed ? renamed[1].toUpperCase() : '';
+    let rank;
+    if (id === text || newId === text) rank = 0;
+    else if ((!id.startsWith('OSM:') && id.startsWith(text)) || newId.startsWith(text)) rank = 1;
+    else if (name.startsWith(text) || newName.startsWith(text)) rank = 2;
+    else if (name.includes(text) || newName.includes(text) || id.startsWith(text)) rank = 3;
+    else continue;
+    found.push([rank, s]);
+  }
+  found.sort((a, b) => a[0] - b[0] || a[1].name.length - b[1].name.length || (a[1].name < b[1].name ? -1 : a[1].name > b[1].name ? 1 : 0));
+  return found.slice(0, limit).map(item => item[1]);
+}
+
 function stationSuggestions(inputId, listId) {
   const input = $(inputId);
+  // Keeps the box and its list above the keyboard.
+  input.onfocus = () => input.scrollIntoView?.({block: 'start', behavior: 'smooth'});
   input.oninput = () => {
     if (input.dataset) delete input.dataset.stationId;
     if (route && tracking) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
@@ -95,11 +126,11 @@ function stationSuggestions(inputId, listId) {
     const list = $(listId);
     list.replaceChildren();
     if (!text) return;
-    for (const s of stations.filter(s => s.id.toUpperCase().startsWith(text) || s.name.toUpperCase().includes(text)).slice(0, 12)) {
-      const option = document.createElement('button');
+    for (const s of searchStations(text)) {
+      const option = document.createElement('button'), renamed = RENAMED[s.id];
       option.type = 'button';
       option.className = 'alt';
-      option.textContent = stationLabel(s);
+      option.textContent = stationLabel(s) + (renamed ? ` — ab ${renamed[1]} (${renamed[0]})` : '');
       option.onclick = () => {
         input.value = stationLabel(s);
         if (input.dataset) input.dataset.stationId = s.id;
@@ -117,13 +148,11 @@ function findStation(input) {
     if (byId && stationLabel(byId) === input.value) return byId;
   }
   const value = input.value.trim().toUpperCase();
-  const matches = stations.filter(s => s.id.toUpperCase() === value ||
+  const matches = stations.filter(s => s.id.toUpperCase() === value || RENAMED[s.id]?.[0] === value ||
     stationLabel(s).toUpperCase() === value || s.name.toUpperCase() === value);
   return matches.length === 1 ? matches[0] : null;
 }
 
-// Track network for route finding, in metres: the OSM track links plus the older timetable-derived links
-// (edges.json, km), which cover the many stations the OSM graph has no link for yet.
 async function fetchEdges(url, read) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
@@ -480,6 +509,20 @@ function processPosition(p) {
   }
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
+  // A stop between stations (signal, crossing, outer): logged like a station halt once the train moves again.
+  // Only after the train has moved, so sitting still before the journey is not a halt.
+  const atStation = nearest && nearest.d <= R;
+  if (speed != null && speed < STOP_SPEED && !atStation && heading != null) {
+    if (!openStop) openStop = {start: t, near: nearest ? nearest.s.name : '', d: nearest ? nearest.d : 0};
+    if (t - openStop.start >= MIN_HALT * 1000)
+      $('now').textContent += ` · Raste mein ruki hai: ${Math.round((t - openStop.start) / 6000) / 10} min`;
+  } else if (openStop && (speed != null || atStation)) {
+    if (t - openStop.start >= MIN_HALT * 1000) {
+      const place = openStop.near ? `Raste mein (${openStop.near} se ${(openStop.d / 1000).toFixed(1)} km)` : 'Raste mein';
+      addLog({name: place, id: '', source: 'GPS', type: 'halt', arr: openStop.start, dep: t});
+    }
+    openStop = null;
+  }
   if (index != null) showRoutePosition(p, index);
   else showAheadStation(lat, lon);
   saveActive();
@@ -489,7 +532,7 @@ function saveActive() {
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
-      mode: $('mode').value, route: route ? route.map(s => s.id) : null, state, last
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, state, last, openStop
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -627,7 +670,7 @@ function stop() {
   }
   $('speed').textContent = 'Speed: —';
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
-  heading = null; headingFrom = null; lastActive = null;
+  heading = null; headingFrom = null; lastActive = null; openStop = null;
   $('status').textContent = 'Tracking band hai. Adhoora station visit log nahi hua.';
 }
 
@@ -699,6 +742,7 @@ try {
         $('route-details').hidden = false;
       }
       if (saved.state && typeof saved.state === 'object') state = saved.state;
+      if (saved.openStop && Number.isFinite(saved.openStop.start)) { openStop = saved.openStop; heading = 0; }
       if (saved.mode) $('mode').value = saved.mode;
       start();
       $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
