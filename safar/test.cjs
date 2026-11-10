@@ -311,7 +311,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   outer.watches[0].success(fix(28.061, 270000, 10));
   const outerLog = JSON.parse(outer.store.get('trainlog'));
   assert.equal(outerLog.length, 1);
-  assert.match(outerLog[0].name, /^Raste mein \(Halt se 6\.\d km\)$/);
+  assert.match(outerLog[0].name, /^Raste mein \(Halt se 6\.\d\d km\)$/);
   assert.deepEqual([outerLog[0].type, outerLog[0].arr, outerLog[0].dep], ['halt', 200000, 270000]);
   outer.watches[0].success(fix(28.07, 300000, 0));
   outer.watches[0].success(fix(28.07, 310000, 10));
@@ -408,7 +408,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   free.watches[0].success(at(25.5600, 83.9600, 100000));
   assert.match(free.elements.next.textContent, /train chalne par dikhega/);
   free.watches[0].success(at(25.5560, 83.9300, 200000));
-  assert.match(free.elements.next.textContent, /Agla station \(disha se anumaan\): .+\), \d+\.\d km/);
+  assert.match(free.elements.next.textContent, /Agla station \(disha se anumaan\): .+\), \d+\.\d\d km/);
   assert.doesNotMatch(free.elements.next.textContent, /BUXAR/);
   console.log('Safar tracker checks passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });
