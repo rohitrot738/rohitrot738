@@ -1,37 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>RailTrack</title>
-<style>
-body{font-family:system-ui;padding:1rem;max-width:480px;margin:auto}
-input{width:100%;padding:.6rem;margin:.3rem 0;box-sizing:border-box}
-.dd{border:1px solid #ccc;max-height:160px;overflow:auto}.dd div{padding:.4rem;cursor:pointer}
-.dd div:hover{background:#eee}
-ol.tl{list-style:none;border-left:3px solid #999;margin:1rem 0;padding-left:1rem}
-ol.tl li{position:relative;padding:.5rem 0}
-ol.tl li::before{content:"";position:absolute;left:-1.5rem;top:.8rem;width:10px;height:10px;border-radius:50%;background:#999}
-ol.tl li.next::before{background:orange}ol.tl li.done::before{background:green}
-#panel{background:#f4f4f4;padding:.5rem;margin:.5rem 0;font-size:.9rem}#panel #status{font-weight:bold}
-ol.tl li.here::before{background:green;width:16px;height:16px;left:-1.7rem;top:.65rem}ol.tl li .dist{color:#c60;margin-left:.4rem}
-button{padding:.6rem 1rem}select{width:100%;padding:.5rem}
-table{width:100%;font-size:.8rem;border-collapse:collapse}td,th{border:1px solid #ccc;padding:2px}
-</style></head><body>
-<h2>RailTrack</h2>
-<p><a href="./safar/index.html">Suffer Sathi — station pass aur halt log karein</a></p>
-<input id="from" placeholder="Origin station" autocomplete="off"><div id="fromDd" class="dd" hidden></div>
-<input id="to" placeholder="Destination station" autocomplete="off"><div id="toDd" class="dd" hidden></div>
-<select id="routes" hidden></select>
-<ol id="timeline" class="tl"></ol>
-<button id="start" hidden>Start tracking</button> <button id="stop" hidden>Stop</button>
-<div id="panel">
-<div id="gps">GPS: idle</div>
-<div id="speed">Current Speed: 0 km/h</div>
-<div id="acc">Accuracy: --</div>
-<div id="status"></div>
-</div>
-<h3>Trip log</h3>
-<button id="csv">Export Trip Log to CSV</button>
-<table><thead><tr><th>Station</th><th>Arrival</th><th>Departure</th><th>Halt</th></tr></thead><tbody id="log"></tbody></table>
-<script src="vendor/sql-wasm.js"></script>
-<script type="module" src="app.js"></script>
-</body></html>
+<html lang="hi"><head><meta charset="utf-8">
+<meta http-equiv="refresh" content="0; url=./safar/index.html">
+<title>Suffer Sathi</title></head>
+<body><a href="./safar/index.html">Suffer Sathi kholein</a></body></html>

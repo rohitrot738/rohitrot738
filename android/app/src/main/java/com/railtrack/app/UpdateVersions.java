@@ -7,9 +7,11 @@ import java.util.regex.Pattern;
 final class UpdateVersions {
     private static final Pattern VERSION = Pattern.compile("(?m)^versionCode: ([0-9]+)$");
     private static final Pattern APK_NAME = Pattern.compile("^Suffer-Sathi-([0-9]{1,10})\\.apk$");
-    /** Update APKs are only ever taken from this repository's fixed update release. */
-    static final String DOWNLOAD_PREFIX =
-        "https://github.com/rohitrot738/rohitrot738/releases/download/suffer-sathi-updates/";
+    /**
+     * The repository's names, newest first: it is being renamed from rohitrot738 to safar-sathi, and an installed app
+     * must keep updating across the rename. Update APKs are only ever taken from its fixed update release.
+     */
+    static final String[] REPOSITORIES = {"rohitrot738/safar-sathi", "rohitrot738/rohitrot738"};
 
     static long parse(String body) throws IOException {
         Matcher match = VERSION.matcher(body);
@@ -42,6 +44,10 @@ final class UpdateVersions {
 
     /** True only for version [code]'s APK in this repository's update release. */
     static boolean trustedUrl(String url, long code) {
-        return url != null && url.equals(DOWNLOAD_PREFIX + apkName(code));
+        for (String repository : REPOSITORIES) {
+            String expected = "https://github.com/" + repository + "/releases/download/suffer-sathi-updates/" + apkName(code);
+            if (expected.equals(url)) return true;
+        }
+        return false;
     }
 }

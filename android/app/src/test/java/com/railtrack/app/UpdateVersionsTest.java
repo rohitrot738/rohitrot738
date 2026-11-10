@@ -45,6 +45,8 @@ public class UpdateVersionsTest {
         String good = "https://github.com/rohitrot738/rohitrot738/releases/download/suffer-sathi-updates/Suffer-Sathi-7.apk";
         assertTrue(UpdateVersions.trustedUrl(good, 7));
         assertFalse(UpdateVersions.trustedUrl(good, 8));
+        assertTrue(UpdateVersions.trustedUrl(good.replace("rohitrot738/rohitrot738", "rohitrot738/safar-sathi"), 7));
+        assertFalse(UpdateVersions.trustedUrl(good.replace("rohitrot738/rohitrot738", "someone/safar-sathi"), 7));
         assertFalse(UpdateVersions.trustedUrl(good.replace("rohitrot738/rohitrot738", "someone/else"), 7));
         assertFalse(UpdateVersions.trustedUrl("https://example.com/Suffer-Sathi-7.apk", 7));
         assertFalse(UpdateVersions.trustedUrl(null, 7));
