@@ -401,7 +401,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   big.elements.start.onclick();
   big.elements['clock-full'].onclick();
   assert.equal(big.elements.body.className, 'clockmode');
-  assert.equal(big.elements['clock-full'].textContent, 'EXIT');
+  assert.equal(big.elements['clock-full'].innerHTML, 'EXIT');
   big.watches[0].success(fix(27.99, 100000));
   await flush();
   big.watches[0].success(fix(28, 110000));
@@ -410,23 +410,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(big.elements.speed.textContent, '36');
   big.elements['clock-full'].onclick();
   assert.equal(big.elements.body.className, '');
-  // Ten colours for the time; the pick is shown, and kept for the next start.
-  const swatches = big.elements['clock-colors'].children;
-  assert.equal(swatches.length, 10);
-  assert.equal(big.elements['clock-colors'].hidden, true);
-  big.elements['clock-colors-toggle'].onclick();
-  assert.equal(big.elements['clock-colors'].hidden, false);
-  assert.equal(big.elements['clock-colors-toggle'].textContent, 'Rang chhupayein');
-  big.elements['clock-colors-toggle'].onclick();
-  assert.equal(big.elements['clock-colors'].hidden, true);
-  assert.equal(big.elements['clock-colors-toggle'].textContent, 'Rang chunein');
+  // Ten colours for the time in a dropdown; the pick is shown, and kept for the next start.
+  const colours = big.elements['clock-color'];
+  assert.equal(colours.children.length, 10);
+  assert.deepEqual(colours.children.slice(0, 2).map(option => option.textContent), ['Rang: Safed', 'Rang: Peela']);
   assert.equal(big.elements['clock-time'].style.color, '#f8fafc');
-  swatches[4].onclick();
+  colours.value = colours.children[4].value;
+  colours.onchange();
   assert.equal(big.elements['clock-time'].style.color, '#f472b6');
-  assert.deepEqual(swatches.map(swatch => swatch.className === 'swatch on'), [false, false, false, false, true, false, false, false, false, false]);
   const recoloured = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), big.store);
   assert.equal(recoloured.elements['clock-time'].style.color, '#f472b6');
-  assert.equal(big.elements['clock-full'].textContent, 'Full screen ghadi');
+  assert.equal(recoloured.elements['clock-color'].value, '#f472b6');
+  assert.match(big.elements['clock-full'].innerHTML, /^<svg /);
 
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
