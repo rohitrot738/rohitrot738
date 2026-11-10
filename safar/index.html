@@ -24,6 +24,20 @@ box-shadow:0 4px 14px rgba(0,0,0,.5)}
 .clock{text-align:center}
 #clock-time{font-size:46px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
 #clock-date{font-size:19px;color:#cbd5e1;margin-top:2px}
+/* Full-screen clock: the clock card covers the screen and the speed dial grows to about 0.57 inch radius
+   (182 px across at a phone's ~160 px per inch). Everything underneath keeps running. */
+body.clockmode{overflow:hidden}
+body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
+display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 16px 220px;box-sizing:border-box}
+body.clockmode #clock-time{font-size:min(21vw,30vh)}
+body.clockmode #clock-date{font-size:min(6.5vw,9vh);margin-top:8px}
+body.clockmode #clock-full{position:absolute;top:10px;right:10px}
+body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:50%;bottom:24px;transform:translateX(50%)}
+body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
+@media (orientation:landscape){
+body.clockmode .clock{padding:16px 220px 16px 16px}
+body.clockmode .speedo{right:24px;bottom:50%;transform:translateY(50%)}
+}
 main{padding-bottom:120px}
 .stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
 </style>
@@ -31,7 +45,7 @@ main{padding-bottom:120px}
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock"><div id="clock-time">--:--:--</div><div id="clock-date"></div></div>
+<div class="card clock"><div id="clock-time">--:--:--</div><div id="clock-date"></div><button id="clock-full" class="alt" type="button">Full screen ghadi</button></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -1002,6 +1016,25 @@ function showClock() {
 }
 showClock();
 setInterval(showClock, 1000);
+
+// Full-screen clock. Only the look changes: tracking and the log go on underneath, and the screen is kept on.
+let clockMode = false, clockLock = null;
+function setClockMode(on) {
+  clockMode = on;
+  document.body.className = on ? 'clockmode' : '';
+  $('clock-full').textContent = on ? 'Wapas jayein' : 'Full screen ghadi';
+  if (on) {
+    navigator.wakeLock?.request('screen').then(lock => {
+      if (clockMode) clockLock = lock; else lock.release();
+    }).catch(e => console.warn('Screen wake lock nahi mila', e));
+    // Hides the status bar where the phone's browser allows it; the clock covers the page either way.
+    try { document.documentElement?.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* not supported */ }
+  } else {
+    if (clockLock) { clockLock.release().catch(() => {}); clockLock = null; }
+    try { if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {}); } catch (e) { /* not supported */ }
+  }
+}
+$('clock-full').onclick = () => setClockMode(!clockMode);
 </script>
 </body>
 </html>

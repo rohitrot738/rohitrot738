@@ -15,7 +15,7 @@ function setup(fetch, saved, capacitor = null) {
       click() {}
     };
   }
-  const document = {getElementById(id) { return elements[id] ||= element(); }, createElement: element};
+  const document = {getElementById(id) { return elements[id] ||= element(); }, createElement: element, body: elements.body = element()};
   const store = new Map(saved || []);
   const localStorage = {getItem: k => store.get(k) || null, setItem: (k, v) => store.set(k, v), removeItem: k => store.delete(k)};
   const watches = [];
@@ -394,6 +394,22 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(reopened.elements['clock-time'].textContent, /^\d\d:\d\d:\d\d$/);
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+var, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
+
+  // Full-screen clock: only the look changes; a station passed meanwhile is still logged, with its speed shown.
+  const big = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
+  big.elements.start.onclick();
+  big.elements['clock-full'].onclick();
+  assert.equal(big.elements.body.className, 'clockmode');
+  assert.equal(big.elements['clock-full'].textContent, 'Wapas jayein');
+  big.watches[0].success(fix(27.99, 100000));
+  await flush();
+  big.watches[0].success(fix(28, 110000));
+  big.watches[0].success(fix(28.01, 120000));
+  assert.equal(JSON.parse(big.store.get('trainlog'))[0].id, 'TST');
+  assert.equal(big.elements.speed.textContent, '36');
+  big.elements['clock-full'].onclick();
+  assert.equal(big.elements.body.className, '');
+  assert.equal(big.elements['clock-full'].textContent, 'Full screen ghadi');
 
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
