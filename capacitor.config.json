@@ -1,5 +1,8 @@
 {
   "appId": "com.railtrack.app",
   "appName": "Suffer Sathi",
-  "webDir": "www"
+  "webDir": "www",
+  "android": {
+    "useLegacyBridge": true
+  }
 }

@@ -591,7 +591,6 @@ function start() {
   if (tracking || watchId != null || nativeWatcher != null) return;
   tracking = true;
   const mode = $('mode').value;
-  $('status').textContent = 'Location dhoondh rahe hain... Screen band hone par bhi chalne ke liye location "Hamesha allow" aur battery "Unrestricted" rakhein.';
   $('status').textContent = 'Location dhoondh rahe hain...';
   const currentSession = ++session;
   saveActive();
@@ -618,7 +617,10 @@ function start() {
     startWeb(mode !== 'network');
   } else {
     let gotFix = false, webStarted = false, nativeStarting = true, pendingFallback = null;
-    const fallback = reason => {
+    // Browser location stops when the screen goes off or the app is minimised; only the native watcher keeps
+    // logging then. So a slow first fix adds browser location beside the native watcher (keepNative) instead of
+    // replacing it, and the first native fix takes over again.
+    const fallback = (reason, keepNative = false) => {
       if (currentSession !== session || webStarted || pendingFallback) return;
       if (nativeStarting) {
         pendingFallback = reason;
@@ -627,7 +629,7 @@ function start() {
       }
       webStarted = true;
       $('status').textContent = `Native GPS nahi mila; browser location try ho rahi hai (${reason}).`;
-      if (nativeWatcher) {
+      if (nativeWatcher && !keepNative) {
         backgroundGeo.removeWatcher({id: nativeWatcher.id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
         nativeWatcher = null;
       }
@@ -653,6 +655,10 @@ function start() {
         return;
       }
       gotFix = true;
+      if (webStarted && nativeWatcher) {
+        if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+        webStarted = false;
+      }
       onPos({
         coords: {
           latitude: location.latitude,
@@ -675,7 +681,7 @@ function start() {
         fallback(reason);
       }
       nativeFallbackTimer = setTimeout(() => {
-        if (!gotFix && currentSession === session) fallback('20 second mein GPS fix nahi mila');
+        if (!gotFix && currentSession === session) fallback('20 second mein GPS fix nahi mila', true);
       }, 20000);
     }).catch(error => {
       nativeStarting = false;

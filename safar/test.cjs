@@ -106,6 +106,30 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await flush();
   assert.equal(removedNativeWatcher, true);
 
+  // A slow first native fix adds browser location beside the native watcher, which alone works with the screen
+  // off; it is not replaced, and its first fix takes over again.
+  const realSetTimeout = global.setTimeout, timers = [];
+  global.setTimeout = (fn, ms) => { timers.push({fn, ms}); return timers.length; };
+  let slowCallback, slowRemoved = false;
+  const slow = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), null, {
+    isNativePlatform: () => true,
+    registerPlugin: () => ({
+      addWatcher: async (_options, callback) => { slowCallback = callback; return 'slow-watch'; },
+      removeWatcher: async () => { slowRemoved = true; }
+    })
+  });
+  global.setTimeout = realSetTimeout;
+  slow.elements.start.onclick();
+  await flush();
+  timers.find(timer => timer.ms === 20000).fn();
+  assert.equal(slow.watches.length, 1);
+  assert.equal(slowRemoved, false);
+  slowCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
+  assert.equal(slow.watches[0].cleared, true);
+  assert.equal(slowRemoved, false);
+  assert.match(slow.elements.status.textContent, /Location mil rahi hai/);
+  assert.equal(JSON.parse(fs.readFileSync(require('path').join(__dirname, '..', 'capacitor.config.json'), 'utf8')).android.useLegacyBridge, true);
+
   const geo = setup(async () => { throw new Error('offline'); });
   geo.elements.start.onclick();
   geo.watches[0].error({code: 3});
