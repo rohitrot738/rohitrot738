@@ -435,24 +435,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   chosen.elements['route-all'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^5 \/ 5 station/);
 
-  // One station in both lists is one station: the catalog's code at OpenStreetMap's position, logged once.
+  // Every station of both lists is offered, each at its own position: the catalog's entry with its code and
+  // OpenStreetMap's entry by name, without its internal id.
   const labels = text => {
     bundled.elements.origin.dataset = {};
     bundled.elements.origin.value = text;
     bundled.elements.origin.oninput();
     return bundled.elements['origin-options'].children.map(option => option.textContent);
   };
-  assert.deepEqual(labels('Baruna').filter(label => /^baruna( \(|$)/i.test(label)), ['BARUNA (BUE)']);
-  assert.equal(labels('Deen Dayal Upadhyaya').length, 1);
-  const once = setup(async url => ({ok: true, json: async () => read(url)}));
-  await flush();
-  once.elements.start.onclick();
-  // Past Baruna along the line, at OpenStreetMap's position for it (25.5690671, 84.0726238).
-  for (let i = 0; i <= 40; i++)
-    once.watches[0].success({coords: {latitude: 25.5690671, longitude: 84.0926238 - i * 0.001, accuracy: 5, speed: 29}, timestamp: 100000 + i * 4000});
-  const onceLog = JSON.parse(once.store.get('trainlog'));
-  assert.deepEqual(onceLog.map(entry => entry.id), ['BUE']);
-  assert.match(once.elements.speed.textContent, /^\d+$/);
+  assert.deepEqual(labels('Baruna').filter(label => /^baruna( \(|$)/i.test(label)).sort(), ['BARUNA (BUE)', 'Baruna']);
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
+  assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));
 
   // No route chosen: the next station is the nearest one ahead in the direction of travel (Buxar towards DDU).
   const free = setup(async url => ({ok: true, json: async () => read(url)}));
