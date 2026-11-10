@@ -23,7 +23,7 @@ function setup(fetch, saved, capacitor = null) {
     watchPosition(success, error, options) { watches.push({success, error, options}); return watches.length; },
     clearWatch(id) { watches[id - 1].cleared = true; }
   };
-  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout,
+  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: fn => { elements.clockTick = fn; return 0; }, String,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
   return {elements, store, watches};
@@ -376,6 +376,25 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const run = chosen.watches[chosen.watches.length - 1];
   for (let i = 0; i <= 80; i++) run.success(fix(27.98 + i * 0.0045, 100000 + i * 10000, 30));
   assert.deepEqual(JSON.parse(chosen.store.get('trainlog')).map(entry => entry.id), ['A', 'X', 'C', 'D']);
+  // The route and its ticks are kept: a fresh start of the app on the same phone shows them again.
+  chosen.elements.stop.onclick();
+  chosen.elements['route-save'].onclick();
+  assert.match(chosen.elements['route-status'].textContent, /^Save ho gaya: Alpha se Delta, 4 \/ 5 station/);
+  assert.equal(chosen.elements['route-details'].open, false);
+  const reopened = setup(async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url), chosen.store);
+  await flush();
+  assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
+  assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
+  assert.match(reopened.elements['route-status'].textContent, /^Save kiya hua route: Alpha se Delta\. 4 \/ 5 station/);
+  assert.equal(reopened.elements.origin.value, 'A');
+  reopened.elements['route-clear'].onclick();
+  assert.equal(reopened.store.has('safar-route'), false);
+  assert.equal(reopened.elements['route-details'].hidden, true);
+  assert.match(reopened.elements['clock-time'].textContent, /^\d\d:\d\d:\d\d$/);
+  assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+var, \d\d [A-Z][a-z]{2} \d{4}$/);
+  assert.equal(typeof reopened.elements.clockTick, 'function');
+
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
   chosen.elements['route-all'].onclick();
