@@ -27,7 +27,13 @@ box-shadow:0 4px 14px rgba(0,0,0,.5)}
 #clock-sec::before{content:":"}
 #clock-full{position:absolute;top:6px;right:6px;margin:0;padding:6px;line-height:0;background:transparent;color:#cbd5e1}
 #clock-full svg{width:26px;height:26px}
-#clock-color{font-size:14px;padding:6px 8px;margin-top:6px;background:#334155;color:#e2e8f0}
+#clock-color-row{position:relative;display:inline-block}
+#clock-color{font-size:14px;padding:6px 10px;margin:6px 0 0;background:#334155;color:#e2e8f0;display:inline-flex;align-items:center;gap:8px}
+#clock-color-now{display:inline-block;width:46px;height:18px;border-radius:4px}
+#clock-color-menu{position:absolute;z-index:6;top:100%;left:50%;transform:translateX(-50%);width:150px;padding:6px;border-radius:8px;
+background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6)}
+#clock-color-menu button{display:block;width:100%;height:30px;margin:4px 0;padding:0;border-radius:6px;border:2px solid transparent}
+#clock-color-menu button.on{border-color:#fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright.
    Hours and minutes start at the left edge, the small seconds end at the right edge, a little above the middle;
    the speed dial (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the bottom corner under
@@ -60,7 +66,7 @@ body.clockmode .speedo{right:14px;bottom:14px}
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span></div><div id="clock-date"></div><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><div id="clock-color-row"><select id="clock-color" aria-label="Samay ka rang"></select></div></div>
+<div class="card clock"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span></div><div id="clock-date"></div><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein">Rang <span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -1056,25 +1062,27 @@ $('clock-full').onclick = () => setClockMode(!clockMode);
 
 $('clock-full').innerHTML = FULLSCREEN_ICON;
 
-// Colour of the time: ten choices in a dropdown, the pick is remembered.
+// Colour of the time: a dropdown of ten colours shown as colours, not names; the pick is remembered.
 const CLOCK_COLOR_KEY = 'safar-clock-color';
-const CLOCK_COLORS = [['#f8fafc', 'Safed'], ['#facc15', 'Peela'], ['#fb923c', 'Narangi'], ['#f87171', 'Laal'], ['#f472b6', 'Gulabi'],
-  ['#c084fc', 'Baingani'], ['#60a5fa', 'Neela'], ['#22d3ee', 'Aasmani'], ['#4ade80', 'Hara'], ['#a3e635', 'Halka hara']];
+const CLOCK_COLORS = ['#f8fafc', '#facc15', '#fb923c', '#f87171', '#f472b6', '#c084fc', '#60a5fa', '#22d3ee', '#4ade80', '#a3e635'];
 function setClockColor(color, remember = true) {
-  if (!CLOCK_COLORS.some(([value]) => value === color)) color = CLOCK_COLORS[0][0];
+  if (!CLOCK_COLORS.includes(color)) color = CLOCK_COLORS[0];
   $('clock-time').style.color = color;
-  $('clock-color').value = color;
+  $('clock-color-now').style.background = color;
+  Array.from($('clock-color-menu').children).forEach(choice => { choice.className = choice.dataset.color === color ? 'on' : ''; });
   if (remember) { try { localStorage.setItem(CLOCK_COLOR_KEY, color); } catch (e) { console.warn('Rang save nahi hua', e); } }
 }
-for (const [value, name] of CLOCK_COLORS) {
-  const option = document.createElement('option');
-  option.value = value;
-  option.textContent = 'Rang: ' + name;
-  option.style.color = value;
-  $('clock-color').append(option);
+for (const color of CLOCK_COLORS) {
+  const choice = document.createElement('button');
+  choice.type = 'button';
+  choice.dataset.color = color;
+  choice.style.background = color;
+  choice.onclick = () => { setClockColor(color); $('clock-color-menu').hidden = true; };
+  $('clock-color-menu').append(choice);
 }
-$('clock-color').onchange = () => setClockColor($('clock-color').value);
-setClockColor(localStorage.getItem(CLOCK_COLOR_KEY) || CLOCK_COLORS[0][0], false);
+$('clock-color-menu').hidden = true;
+$('clock-color').onclick = () => { $('clock-color-menu').hidden = !$('clock-color-menu').hidden; };
+setClockColor(localStorage.getItem(CLOCK_COLOR_KEY) || CLOCK_COLORS[0], false);
 </script>
 </body>
 </html>

@@ -410,17 +410,21 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(big.elements.speed.textContent, '36');
   big.elements['clock-full'].onclick();
   assert.equal(big.elements.body.className, '');
-  // Ten colours for the time in a dropdown; the pick is shown, and kept for the next start.
-  const colours = big.elements['clock-color'];
-  assert.equal(colours.children.length, 10);
-  assert.deepEqual(colours.children.slice(0, 2).map(option => option.textContent), ['Rang: Safed', 'Rang: Peela']);
+  // Ten colours for the time in a dropdown that shows the colours themselves; the pick is kept for the next start.
+  const menu = big.elements['clock-color-menu'];
+  assert.equal(menu.children.length, 10);
+  assert.ok(menu.children.every(choice => !choice.textContent && /^#[0-9a-f]{6}$/.test(choice.style.background)));
+  assert.equal(menu.hidden, true);
   assert.equal(big.elements['clock-time'].style.color, '#f8fafc');
-  colours.value = colours.children[4].value;
-  colours.onchange();
+  big.elements['clock-color'].onclick();
+  assert.equal(menu.hidden, false);
+  menu.children[4].onclick();
+  assert.equal(menu.hidden, true);
   assert.equal(big.elements['clock-time'].style.color, '#f472b6');
+  assert.equal(big.elements['clock-color-now'].style.background, '#f472b6');
   const recoloured = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), big.store);
   assert.equal(recoloured.elements['clock-time'].style.color, '#f472b6');
-  assert.equal(recoloured.elements['clock-color'].value, '#f472b6');
+  assert.equal(recoloured.elements['clock-color-now'].style.background, '#f472b6');
   assert.match(big.elements['clock-full'].innerHTML, /^<svg /);
 
   chosen.elements['route-none'].onclick();
