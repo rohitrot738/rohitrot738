@@ -68,6 +68,9 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(app.elements['data-status'].textContent, /taiyar/);
   assert.equal(app.elements['data-status'].hidden, true);
   assert.doesNotMatch(html, /network-status|App updates dekhein|suffer-sathi-updates/);
+  // The log's colours: amber for a halt, green for a pass. (A style rewrite once dropped these rules.)
+  assert.match(html, /\.stop\{border-left:4px solid #f59e0b\}/);
+  assert.match(html, /\.pass\{border-left:4px solid #22c55e\}/);
   app.watches[0].success(fix(28.01, 160000));
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].name, 'Test Station');
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].id, 'TST');
