@@ -110,9 +110,11 @@ not say a train is scheduled to use it, nor does the graph provide real-time
 train location. Both generated route files are copied into `safar/` by the
 workflow so GitHub Pages can serve them with the app; the separate OSM station
 catalog is copied there as well.
-The tracker uses these OSM candidate links for route selection and does not
-silently fall back to the older timetable-derived `edges.json`; routes absent
-from the candidate graph remain unavailable.
+The tracker finds routes over these OSM candidate links together with the
+older timetable-derived `edges.json`, because the OSM graph links only part of
+the station catalog. A station with no link of its own joins its nearest
+linked stations (within 15 km), and long timetable jumps are penalised so a
+route steps station by station.
 
 The summary and `coverage.json` report object counts and topology counts.
 `station_nodes_with_shared_track_node` counts OSM station nodes that share

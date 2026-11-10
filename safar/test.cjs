@@ -63,7 +63,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(JSON.parse(app.store.get('safar-stations-v2')).osm.length, 1);
   assert.match(app.elements.now.textContent, /Test Station/);
   assert.match(app.elements['data-status'].textContent, /taiyar/);
-  assert.match(app.elements['network-status'].textContent, /90 have candidate links of 8,702 app stations/);
+  assert.equal(app.elements['data-status'].hidden, true);
+  assert.doesNotMatch(html, /network-status|App updates dekhein|suffer-sathi-updates/);
   app.watches[0].success(fix(28.01, 160000));
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].name, 'Test Station');
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].id, 'TST');
@@ -119,6 +120,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   noData.watches[0].success(fix(28, 100000));
   await flush();
   assert.match(noData.elements['data-status'].textContent, /Internet check/);
+  assert.equal(noData.elements['data-status'].hidden, false);
   assert.equal(noData.store.has('trainlog'), false);
 
   const inaccurate = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
@@ -162,7 +164,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.origin.value = 'SEB';
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
-  assert.match(routed.elements['route-status'].textContent, /OSM track-based candidate/);
+  assert.match(routed.elements['route-status'].textContent, /Route bana: 2 stations/);
   assert.deepEqual(routed.elements['route-list'].children.map(child => child.textContent), ['SON NAGAR (SEB)', 'DEHRI ON SONE (DOS)']);
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
@@ -172,7 +174,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.watches[0].success({coords: {latitude: 24.914895, longitude: 84.185434, accuracy: 4, speed: 10}, timestamp: 220000});
   assert.doesNotMatch(routed.store.get('trainlog') || '', /ADSR/);
   routed.watches[0].success({coords: {latitude: 25.5, longitude: 85, accuracy: 4, speed: 10}, timestamp: 280000});
-  assert.match(routed.elements.next.textContent, /milan nahi hua/);
+  // Off the chosen route the tracker keeps going: the next station comes from the direction of travel.
+  assert.match(routed.elements.next.textContent, /Agla station \(disha se anumaan\): .+ km/);
   await routed.elements['find-route'].onclick();
   assert.match(routed.elements['route-status'].textContent, /Stop dabayein/);
 
@@ -190,7 +193,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   osmRoute.elements.origin.value = 'OSM:77';
   osmRoute.elements.destination.value = 'OSM:78';
   await osmRoute.elements['find-route'].onclick();
-  assert.match(osmRoute.elements['route-status'].textContent, /OSM track-based candidate/);
+  assert.match(osmRoute.elements['route-status'].textContent, /Route bana: 2 stations/);
   assert.deepEqual(osmRoute.elements['route-list'].children.map(child => child.textContent),
     ['OSM Alpha (OSM:77)', 'OSM Beta (OSM:78)']);
 
@@ -220,6 +223,42 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   badRoute.elements.origin.value = 'A';
   badRoute.elements.destination.value = 'C';
   await badRoute.elements['find-route'].onclick();
-  assert.match(badRoute.elements['route-status'].textContent, /OSM track candidate route nahi mila/);
+  assert.match(badRoute.elements['route-status'].textContent, /rasta nahi mila/);
+
+  // The bundled data: the stations from the bug report route to each other, with no link of their own in the
+  // OSM graph (the OSM-only station joins its nearest linked neighbour), and step station by station.
+  const read = name => JSON.parse(fs.readFileSync(require('path').join(__dirname, name), 'utf8'));
+  const bundled = setup(async url => ({ok: true, json: async () => read(url)}));
+  await flush();
+  const pick = (input, list, text, label) => {
+    bundled.elements[input].dataset = {};
+    bundled.elements[input].value = text;
+    bundled.elements[input].oninput();
+    bundled.elements[list].children.find(option => option.textContent === label).onclick();
+  };
+  pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'Deen Dayal Upadhyaya Junction (OSM:2669094333)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD)');
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /Route bana: \d+ stations, lagbhag 1\d\d km/);
+  const names = bundled.elements['route-list'].children.map(child => child.textContent);
+  assert.equal(names[0], 'Deen Dayal Upadhyaya Junction (OSM:2669094333)');
+  assert.equal(names[names.length - 1], 'ALLAHABAD JN (ALD)');
+  assert.ok(names.length > 10);
+
+  pick('origin', 'origin-options', 'NDLS', 'NEW DELHI (NDLS)');
+  pick('destination', 'destination-options', 'HWH', 'HOWRAH JN (HWH)');
+  await bundled.elements['find-route'].onclick();
+  assert.ok(bundled.elements['route-list'].children.length > 150);
+
+  // No route chosen: the next station is the nearest one ahead in the direction of travel (Buxar towards DDU).
+  const free = setup(async url => ({ok: true, json: async () => read(url)}));
+  await flush();
+  free.elements.start.onclick();
+  const at = (lat, lon, t) => ({coords: {latitude: lat, longitude: lon, accuracy: 4, speed: 30}, timestamp: t});
+  free.watches[0].success(at(25.5600, 83.9600, 100000));
+  assert.match(free.elements.next.textContent, /train chalne par dikhega/);
+  free.watches[0].success(at(25.5560, 83.9300, 200000));
+  assert.match(free.elements.next.textContent, /Agla station \(disha se anumaan\): .+\), \d+\.\d km/);
+  assert.doesNotMatch(free.elements.next.textContent, /BUXAR/);
   console.log('Safar tracker checks passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });

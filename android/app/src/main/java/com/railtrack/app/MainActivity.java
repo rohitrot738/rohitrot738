@@ -38,6 +38,6 @@ public class MainActivity extends BridgeActivity {
 
     private void showUpdateError(String message, Exception error) {
         Log.e("SathiUpdate", message, error);
-        Toast.makeText(this, message + " App updates link se check karein.", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 }
