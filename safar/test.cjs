@@ -314,6 +314,38 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   outer.watches[0].success(fix(28.07, 310000, 10));
   assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
 
+  // Via: the shortest DDU -> Prayagraj route runs through Varanasi; a via station takes it along the Mirzapur line.
+  const routeNames = () => bundled.elements['route-list'].children.map(child => child.textContent);
+  const pickVia = (i, text, label) => {
+    bundled.elements['via-' + i].dataset = {};
+    bundled.elements['via-' + i].value = text;
+    bundled.elements['via-' + i].oninput();
+    bundled.elements[`via-${i}-options`].children.find(option => option.textContent === label).onclick();
+  };
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
+  await bundled.elements['find-route'].onclick();
+  assert.ok(routeNames().includes('VARANASI JN (BSB)'));
+  assert.ok(!routeNames().includes('MIRZAPUR (MZP)'));
+  bundled.elements['add-via'].onclick();
+  assert.equal(bundled.elements['via-row-1'].hidden, false);
+  pickVia(1, 'MZP', 'MIRZAPUR (MZP)');
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\): \d+ stations/);
+  const viaRoute = routeNames();
+  assert.equal(viaRoute[0], 'MUGHAL SARAI JN (MGS)');
+  assert.equal(viaRoute[viaRoute.length - 1], 'ALLAHABAD JN (ALD)');
+  assert.ok(viaRoute.includes('MIRZAPUR (MZP)') && !viaRoute.includes('VARANASI JN (BSB)'));
+  assert.equal(viaRoute.filter(name => name === 'MIRZAPUR (MZP)').length, 1);
+  // A via box with text that is no station stops the route; an empty one is skipped.
+  bundled.elements['via-1'].dataset = {};
+  bundled.elements['via-1'].value = 'zzzz';
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /Via station 1 nahi mila/);
+  bundled.elements['via-1'].value = '';
+  await bundled.elements['find-route'].onclick();
+  assert.ok(routeNames().includes('VARANASI JN (BSB)'));
+
   // One station in both lists is one station: the catalog's code at OpenStreetMap's position, logged once.
   const labels = text => {
     bundled.elements.origin.dataset = {};

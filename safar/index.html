@@ -31,6 +31,22 @@ main{padding-bottom:120px}
   <label for="origin">Shuru station</label><br>
   <input id="origin" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
   <div class="suggest" id="origin-options"></div>
+  <div id="via-row-1" hidden>
+    <label for="via-1">Via station 1</label><br>
+    <input id="via-1" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <div class="suggest" id="via-1-options"></div>
+  </div>
+  <div id="via-row-2" hidden>
+    <label for="via-2">Via station 2</label><br>
+    <input id="via-2" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <div class="suggest" id="via-2-options"></div>
+  </div>
+  <div id="via-row-3" hidden>
+    <label for="via-3">Via station 3</label><br>
+    <input id="via-3" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <div class="suggest" id="via-3-options"></div>
+  </div>
+  <button id="add-via" class="alt" type="button">+ Via station jodein</button><br>
   <label for="destination">Antim station</label><br>
   <input id="destination" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
   <div class="suggest" id="destination-options"></div>
@@ -70,6 +86,7 @@ const ACTIVE_KEY = 'safar-active';
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let heading = null, headingFrom = null, lastActive = null;
+let viaCount = 0; // via boxes shown so far (up to 3)
 let openStop = null; // the train standing still away from any station: {start, near, d}
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
@@ -300,6 +317,22 @@ async function selectRoute() {
     $('route-status').textContent = stations.length ? 'Shuru aur antim station likhkar neeche aayi list se tap karke chunein; dono alag hone chahiye.' : 'Station list abhi taiyar nahi hai.';
     return;
   }
+  // Via stations the route must pass through, in order; an empty box is skipped.
+  const stops = [from];
+  for (let i = 1; i <= viaCount; i++) {
+    if (!$('via-' + i).value.trim()) continue;
+    const via = findStation($('via-' + i));
+    if (!via) {
+      $('route-status').textContent = `Via station ${i} nahi mila. Likhkar neeche aayi list se tap karke chunein, ya box khaali kar dein.`;
+      return;
+    }
+    stops.push(via);
+  }
+  stops.push(to);
+  if (stops.some((stop, i) => i && stop.id === stops[i - 1].id)) {
+    $('route-status').textContent = 'Ek ke baad ek aane wale station alag hone chahiye (shuru, via, antim).';
+    return;
+  }
   $('find-route').disabled = true;
   $('start').disabled = true;
   $('route-status').textContent = 'Rasta dhoondh rahe hain...';
@@ -307,7 +340,7 @@ async function selectRoute() {
     const graph = await getGraph();
     const byId = new Map(stations.map(s => [s.id, s]));
     const extra = new Map();
-    for (const end of [from, to]) {
+    for (const end of new Set(stops)) {
       if (graph.has(end.id)) continue;
       for (const [id, metres] of snapLinks(graph, end, byId)) {
         if (!extra.has(end.id)) extra.set(end.id, []);
@@ -316,8 +349,12 @@ async function selectRoute() {
         extra.get(id).push([end.id, metres]);
       }
     }
-    const ids = shortestRoute(graph, from.id, to.id, extra);
-    if (!ids) throw new Error('In stations ke beech route nahi mila');
+    const ids = [from.id];
+    for (let i = 1; i < stops.length; i++) {
+      const leg = shortestRoute(graph, stops[i - 1].id, stops[i].id, extra);
+      if (!leg) throw new Error('In stations ke beech route nahi mila');
+      ids.push(...leg.slice(1));
+    }
     route = ids.map(id => byId.get(id));
     routeIndex = null;
     state = {};
@@ -331,7 +368,8 @@ async function selectRoute() {
     });
     $('route-details').hidden = false;
     $('route-details').open = true;
-    $('route-status').textContent = `Route bana: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Train doosri line se gayi to agla station disha se dikhega.`;
+    const viaNames = stops.slice(1, -1).map(stop => stop.name).join(', ');
+    $('route-status').textContent = `Route bana${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Train doosri line se gayi to agla station disha se dikhega.`;
     $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
   } catch (e) {
     console.warn('Route nahi bana', e);
@@ -737,6 +775,13 @@ $('start').onclick = start; $('stop').onclick = stop;
 $('find-route').onclick = selectRoute;
 stationSuggestions('origin', 'origin-options');
 stationSuggestions('destination', 'destination-options');
+for (let i = 1; i <= 3; i++) stationSuggestions('via-' + i, `via-${i}-options`);
+$('add-via').onclick = () => {
+  if (viaCount >= 3) return;
+  viaCount++;
+  $('via-row-' + viaCount).hidden = false;
+  if (viaCount === 3) $('add-via').hidden = true;
+};
 $('clear').onclick = () => { if (confirm('Log delete karein?')) { log = []; localStorage.removeItem(KEY); render(); } };
 $('csv').onclick = () => {
   const quote = value => `"${String(value || '').replace(/"/g, '""')}"`;
