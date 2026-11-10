@@ -399,6 +399,23 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
 
+  // The limits: a station counts within 250 m, the train is stopped below 0.75 m/s (2.7 km/h), and a stop of
+  // 15 seconds or more is a halt.
+  const limits = setup(stationFetcher([['LIM', 'Limit Station', 28, 77]]));
+  limits.elements.start.onclick();
+  limits.watches[0].success(fix(27.99, 100000));
+  await flush();
+  limits.watches[0].success(fix(27.9975, 110000));          // 278 m away: outside the station
+  limits.watches[0].success(fix(27.9975, 130000, 0));       // standing there is a stop on the way, not at the station
+  limits.watches[0].success(fix(27.998, 160000));           // 222 m away: inside
+  limits.watches[0].success(fix(28, 170000, 0.7));          // below 0.75 m/s: stopped
+  limits.watches[0].success(fix(28, 190000, 0.8));          // above it: moving again, 20 s later
+  limits.watches[0].success(fix(28.01, 260000));
+  const limitLog = JSON.parse(limits.store.get('trainlog'));
+  const stationEntry = limitLog.find(entry => entry.id === 'LIM');
+  assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
+  assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 130000));
+
   // Full-screen clock: only the look changes; a station passed meanwhile is still logged, with its speed shown.
   const big = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
   big.elements.start.onclick();

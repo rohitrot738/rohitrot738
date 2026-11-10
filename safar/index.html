@@ -119,9 +119,9 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 <details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
 <script>
-const R = 500;            // station radius (m)
-const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
-const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
+const R = 250;            // station radius (m)
+const STOP_SPEED = 0.75;  // m/s (2.7 km/h) se kam = ruka hua
+const MIN_HALT = 15;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
 let loading = false, stationListsLoaded = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;

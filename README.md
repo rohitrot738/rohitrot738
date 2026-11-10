@@ -14,8 +14,8 @@ Install the file named in the release notes (`Suffer-Sathi-<version>.apk`). Once
 
 ## What it does
 
-- **Journey log:** for every station, either a halt (arrival time, departure time, duration) or a pass (the time it went by). Halts are marked amber and passes green.
-- **Stops between stations:** when the train stands for 30 seconds or more away from any station, that is logged too, named by the nearest station.
+- **Journey log:** for every station, either a halt (arrival time, departure time, duration) or a pass (the time it went by). Halts are marked amber and passes green. A station counts once the train is within 250 m of it; the train counts as stopped below 2.7 km/h, and a stop of 15 seconds or more is a halt.
+- **Stops between stations:** when the train stands for 15 seconds or more away from any station, that is logged too, named by the nearest station.
 - **Route:** a start station, an end station and up to three optional "via" stations. Stations can be found by name or code; renamed codes such as DDU and PRYJ work as well.
 - **Choose what is logged:** after a route is built, its stations are listed with a tick each. Untick the ones you do not want logged, and add any station the route missed. After "Save karein" the choice is kept even when the app is closed.
 - **Next station:** from the route when you are on it, otherwise an estimate from the direction of travel.
