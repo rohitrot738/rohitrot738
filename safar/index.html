@@ -22,30 +22,39 @@ border:4px solid #2563eb;background:rgba(15,23,42,.94);display:flex;flex-directi
 box-shadow:0 4px 14px rgba(0,0,0,.5)}
 .speedo b{font-size:32px;line-height:1}.speedo span{font-size:12px;color:#cbd5e1;margin-top:2px}
 .clock{text-align:center}
-#clock-time{font-size:46px;font-weight:700;line-height:1.1;font-variant-numeric:tabular-nums}
+#clock-time{font-size:56px;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}
 #clock-date{font-size:19px;color:#cbd5e1;margin-top:2px}
-/* Full-screen clock: the clock card covers the screen and the speed dial grows to about 0.57 inch radius
-   (182 px across at a phone's ~160 px per inch). Everything underneath keeps running. */
+#clock-colors{margin-top:6px}
+.swatch{width:26px;height:26px;padding:0;margin:3px;border-radius:50%;border:2px solid #334155}
+.swatch.on{border-color:#fff;box-shadow:0 0 0 2px #0f172a,0 0 0 4px #fff}
+/* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright,
+   so the time runs along the long edge. The speed dial grows to about 0.57 inch radius (182 px across at a
+   phone's ~160 px per inch). Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
-body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
-display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px 16px 220px;box-sizing:border-box}
-body.clockmode #clock-time{font-size:min(21vw,30vh)}
-body.clockmode #clock-date{font-size:min(6.5vw,9vh);margin-top:8px}
-body.clockmode #clock-full{position:absolute;top:10px;right:10px}
-body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:50%;bottom:24px;transform:translateX(50%)}
+body.clockmode .clock{position:fixed;z-index:8;margin:0;border-radius:0;background:#0f172a;box-sizing:border-box;
+display:flex;flex-direction:column;align-items:center;justify-content:center}
+body.clockmode #clock-full{position:absolute;top:10px;left:10px}
+body.clockmode #clock-colors{display:none}
+body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
-@media (orientation:landscape){
-body.clockmode .clock{padding:16px 220px 16px 16px}
-body.clockmode .speedo{right:24px;bottom:50%;transform:translateY(50%)}
+@media (orientation:portrait){
+body.clockmode .clock{width:100vh;height:100vw;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg);padding:12px 222px 12px 16px}
+body.clockmode #clock-time{font-size:min(calc((100vh - 250px)/4.4),52vw)}
+body.clockmode #clock-date{font-size:min(calc((100vh - 250px)/14),11vw);margin-top:6px}
+body.clockmode .speedo{right:50%;bottom:20px;transform:translateX(50%) rotate(90deg)}
 }
-main{padding-bottom:120px}
-.stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
+@media (orientation:landscape){
+body.clockmode .clock{top:0;right:0;bottom:0;left:0;padding:12px 222px 12px 16px}
+body.clockmode #clock-time{font-size:min(calc((100vw - 250px)/4.4),52vh)}
+body.clockmode #clock-date{font-size:min(calc((100vw - 250px)/14),11vh);margin-top:6px}
+body.clockmode .speedo{right:20px;bottom:50%;transform:translateY(50%)}
+}
 </style>
 </head>
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock"><div id="clock-time">--:--:--</div><div id="clock-date"></div><button id="clock-full" class="alt" type="button">Full screen ghadi</button></div>
+<div class="card clock"><div id="clock-time">--:--:--</div><div id="clock-date"></div><button id="clock-full" class="alt" type="button">Full screen ghadi</button><div id="clock-colors"></div></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -1007,7 +1016,7 @@ try {
 restoreRoute();
 
 // Clock: date and time with seconds.
-const DAYS = ['Ravivar', 'Somvar', 'Mangalvar', 'Budhvar', 'Guruvar', 'Shukravar', 'Shanivar'];
+const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function showClock() {
   const now = new Date(), two = n => String(n).padStart(2, '0');
@@ -1035,6 +1044,26 @@ function setClockMode(on) {
   }
 }
 $('clock-full').onclick = () => setClockMode(!clockMode);
+
+// Colour of the time: ten choices, the pick is remembered.
+const CLOCK_COLOR_KEY = 'safar-clock-color';
+const CLOCK_COLORS = ['#f8fafc', '#facc15', '#fb923c', '#f87171', '#f472b6', '#c084fc', '#60a5fa', '#22d3ee', '#4ade80', '#a3e635'];
+function setClockColor(color, remember = true) {
+  if (!CLOCK_COLORS.includes(color)) color = CLOCK_COLORS[0];
+  $('clock-time').style.color = color;
+  Array.from($('clock-colors').children).forEach(swatch => { swatch.className = swatch.dataset.color === color ? 'swatch on' : 'swatch'; });
+  if (remember) { try { localStorage.setItem(CLOCK_COLOR_KEY, color); } catch (e) { console.warn('Rang save nahi hua', e); } }
+}
+for (const color of CLOCK_COLORS) {
+  const swatch = document.createElement('button');
+  swatch.type = 'button';
+  swatch.dataset.color = color;
+  swatch.style.background = color;
+  swatch.setAttribute?.('aria-label', 'Samay ka rang ' + color);
+  swatch.onclick = () => setClockColor(color);
+  $('clock-colors').append(swatch);
+}
+setClockColor(localStorage.getItem(CLOCK_COLOR_KEY) || CLOCK_COLORS[0], false);
 </script>
 </body>
 </html>

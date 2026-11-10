@@ -9,7 +9,7 @@ function setup(fetch, saved, capacitor = null) {
   const elements = {};
   function element() {
     return {
-      textContent: '', value: 'auto', children: [],
+      textContent: '', value: 'auto', children: [], style: {}, dataset: {},
       append(...items) { this.children.push(...items); },
       replaceChildren() { this.children = []; this.textContent = ''; },
       click() {}
@@ -392,7 +392,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(reopened.store.has('safar-route'), false);
   assert.equal(reopened.elements['route-details'].hidden, true);
   assert.match(reopened.elements['clock-time'].textContent, /^\d\d:\d\d:\d\d$/);
-  assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+var, \d\d [A-Z][a-z]{2} \d{4}$/);
+  assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
 
   // Full-screen clock: only the look changes; a station passed meanwhile is still logged, with its speed shown.
@@ -409,6 +409,15 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(big.elements.speed.textContent, '36');
   big.elements['clock-full'].onclick();
   assert.equal(big.elements.body.className, '');
+  // Ten colours for the time; the pick is shown, and kept for the next start.
+  const swatches = big.elements['clock-colors'].children;
+  assert.equal(swatches.length, 10);
+  assert.equal(big.elements['clock-time'].style.color, '#f8fafc');
+  swatches[4].onclick();
+  assert.equal(big.elements['clock-time'].style.color, '#f472b6');
+  assert.deepEqual(swatches.map(swatch => swatch.className === 'swatch on'), [false, false, false, false, true, false, false, false, false, false]);
+  const recoloured = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), big.store);
+  assert.equal(recoloured.elements['clock-time'].style.color, '#f472b6');
   assert.equal(big.elements['clock-full'].textContent, 'Full screen ghadi');
 
   chosen.elements['route-none'].onclick();
