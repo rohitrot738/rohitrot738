@@ -17,6 +17,9 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 .small{color:#94a3b8;font-size:13px}
 .suggest{max-height:40vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .suggest button{display:block;width:100%;text-align:left;background:#334155;margin:2px 0;padding:8px 10px}
+/* Log entries: a halt is marked amber, a station passed without stopping green. */
+.stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
+main{padding-bottom:120px}
 .speedo{position:fixed;right:14px;bottom:14px;z-index:5;width:92px;height:92px;border-radius:50%;box-sizing:border-box;
 border:4px solid #2563eb;background:rgba(15,23,42,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;
 box-shadow:0 4px 14px rgba(0,0,0,.5)}
@@ -164,37 +167,6 @@ const RENAMED = {
 
 // Best matches first: the exact code, then codes starting with the text, then names starting with it, then names
 // containing it. Without the order a short code was pushed out of the list by every name that contains it.
-// The same station is often in both lists: the catalog has its code, OpenStreetMap its exact place. Such a pair
-// becomes one station (catalog name and code, OSM position), so it is listed and logged once.
-const MERGE_WITHIN = 15000;
-let mergedIds = new Map(); // OSM id -> the catalog id it was merged into
-function nameKey(name) {
-  return name.toUpperCase().replace(/\b(JUNCTION|JN)\b/g, ' ').replace(/[^A-Z0-9]+/g, ' ').trim();
-}
-function mergeStationLists(catalog, osmCatalog) {
-  const byName = new Map();
-  const index = (key, s) => { if (key) byName.set(key, [...(byName.get(key) || []), s]); };
-  for (const s of catalog) {
-    index(nameKey(s.name), s);
-    if (RENAMED[s.id]) index(nameKey(RENAMED[s.id][1]), s);
-  }
-  mergedIds = new Map();
-  const moved = new Map(), rest = [];
-  for (const o of osmCatalog) {
-    let best = null;
-    for (const s of byName.get(nameKey(o.name)) || []) {
-      const d = dist(o.lat, o.lon, s.lat, s.lon);
-      if (d <= MERGE_WITHIN && (!best || d < best.d)) best = {s, d};
-    }
-    if (!best) { rest.push(o); continue; }
-    mergedIds.set(o.id, best.s.id);
-    // Two OSM entries for one catalog station: the nearer one gives the position.
-    if (!moved.has(best.s.id) || best.d < moved.get(best.s.id).d) moved.set(best.s.id, {o, d: best.d});
-  }
-  const merged = catalog.map(s => moved.has(s.id) ? {...s, lat: moved.get(s.id).o.lat, lon: moved.get(s.id).o.lon} : s);
-  return [...merged, ...rest];
-}
-
 function searchStations(text, limit = 40) {
   const found = [];
   for (const s of stations) {
@@ -275,7 +247,6 @@ async function getGraph() {
   const known = new Set(stations.map(s => s.id));
   const graph = new Map();
   const add = (a, b, metres) => {
-    a = mergedIds.get(a) || a; b = mergedIds.get(b) || b;
     if (!known.has(a) || !known.has(b) || a === b || !Number.isFinite(metres) || metres <= 0) return;
     for (const [x, y] of [[a, b], [b, a]]) {
       if (!graph.has(x)) graph.set(x, new Map());
@@ -473,10 +444,10 @@ function restoreRoute() {
     const saved = JSON.parse(localStorage.getItem(ROUTE_KEY) || 'null');
     if (!saved || !Array.isArray(saved.route)) return;
     const byId = new Map(stations.map(s => [s.id, s]));
-    const ids = saved.route.map(id => byId.get(mergedIds.get(id) || id));
+    const ids = saved.route.map(id => byId.get(id));
     if (ids.length < 2 || !ids.every(Boolean)) return;
     route = ids;
-    skipIds = new Set(Array.isArray(saved.skip) ? saved.skip.map(id => mergedIds.get(id) || id) : []);
+    skipIds = new Set(Array.isArray(saved.skip) ? saved.skip : []);
     const fill = (id, box) => {
       if (!box || typeof box.value !== 'string') return;
       $(id).value = box.value;
@@ -628,7 +599,7 @@ async function loadStations() {
     const rows = await r.json(), osmRows = await osmResponse.json();
     const catalog = parseStations(rows, 'DataMeet + project fallback');
     const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
-    stations = mergeStationLists(catalog, osmCatalog);
+    stations = [...catalog, ...osmCatalog];
     stationListsLoaded = true;
     restoreRoute();
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
@@ -977,7 +948,7 @@ try {
     const data = JSON.parse(cached);
     const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
-    stations = mergeStationLists(catalog, osmCatalog);
+    stations = [...catalog, ...osmCatalog];
     stationListsLoaded = true;
     dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {
@@ -997,11 +968,11 @@ try {
   const saved = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
   if (saved && stations.length) {
     const byId = new Map(stations.map(s => [s.id, s]));
-    const ids = Array.isArray(saved.route) ? saved.route.map(id => byId.get(mergedIds.get(id) || id)) : null;
+    const ids = Array.isArray(saved.route) ? saved.route.map(id => byId.get(id)) : null;
     if (!ids || ids.every(Boolean)) {
       if (ids) {
         route = ids;
-        skipIds = new Set(Array.isArray(saved.skip) ? saved.skip.map(id => mergedIds.get(id) || id) : []);
+        skipIds = new Set(Array.isArray(saved.skip) ? saved.skip : []);
         renderRouteList();
         $('route-details').hidden = false;
       }

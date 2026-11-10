@@ -1,12 +1,65 @@
-- 👋 Hi, I’m @rohitrot738
-- 👀 I’m interested in ...
-- 🌱 I’m currently learning ...
-- 💞️ I’m looking to collaborate on ...
-- 📫 How to reach me ...
-- 😄 Pronouns: ...
-- ⚡ Fun fact: ...
+# Suffer Sathi
 
-<!---
-rohitrot738/rohitrot738 is a ✨ special ✨ repository because its `README.md` (this file) appears on your GitHub profile.
-You can click the Preview link to take a look at your changes.
---->
+A companion for train journeys: an Android app that follows your trip with the phone's GPS and writes down the time at every station on the way — where the train stopped, for how long, and which stations it passed without stopping.
+
+The app works without internet: the station and route data ship inside the APK. Internet is only used to look for a new version.
+
+## Install
+
+The latest signed APK is always here:
+
+**[Download the latest Suffer Sathi](https://github.com/rohitrot738/rohitrot738/releases/tag/suffer-sathi-updates)**
+
+Install the file named in the release notes (`Suffer-Sathi-<version>.apk`). Once installed, the app tells you about new versions and downloads and installs them from inside the app; Android asks you to confirm each time.
+
+## What it does
+
+- **Journey log:** for every station, either a halt (arrival time, departure time, duration) or a pass (the time it went by). Halts are marked amber and passes green.
+- **Stops between stations:** when the train stands for 30 seconds or more away from any station, that is logged too, named by the nearest station.
+- **Route:** a start station, an end station and up to three optional "via" stations. Stations can be found by name or code; renamed codes such as DDU and PRYJ work as well.
+- **Choose what is logged:** after a route is built, its stations are listed with a tick each. Untick the ones you do not want logged, and add any station the route missed. After "Save karein" the choice is kept even when the app is closed.
+- **Next station:** from the route when you are on it, otherwise an estimate from the direction of travel.
+- **Speed:** in a round dial, in km/h.
+- **Clock:** date and time with seconds; one button turns it into a large full-screen clock that also shows the speed. The colour of the time can be picked from ten colours.
+- **CSV:** the whole log can be exported as a CSV file.
+
+## Logging with the screen off
+
+Three phone settings are needed, otherwise the phone stops the app in the background:
+
+1. Location permission: **Allow all the time**.
+2. Battery: **Unrestricted** for Suffer Sathi.
+3. Notifications: on. While tracking, the notification "Station pass aur halt record ho rahe hain" should stay visible.
+
+## Good to know
+
+- The route is the shortest path, not your train's actual route. If the train takes another line, add a via station; otherwise the app falls back to the estimate from the direction of travel.
+- Station positions and names come from open data and can be out of date or slightly wrong in places, so the log can be wrong too.
+- This is not an official railway app. It has no timetable, live train status or ticket information.
+
+## What is in this repository
+
+| Path | Contents |
+| --- | --- |
+| `safar/` | The app's screen (`index.html`), its tests (`test.cjs`) and the station and route data |
+| `android/` | The Android shell (Capacitor) and the in-app update code |
+| `irsd/osm/` | Scripts that build station and track data from OpenStreetMap |
+| `loader_pipeline.py`, `indian_railways_complete.db` | The source data for the station catalog and the script that builds it |
+| `scripts/build_www.sh` | Gathers the app's files for the APK |
+| `.github/workflows/` | Workflows that build, test and release the APK |
+
+## Build and test
+
+```sh
+node safar/test.cjs        # the app's tests
+sh scripts/build_www.sh    # gather the web files into www/
+npm ci && npx cap sync android
+cd android && ./gradlew assembleDebug testDebugUnitTest
+```
+
+After every change on `main`, GitHub Actions builds a signed APK, installs it over the previous version on an emulator and launches it, and publishes it to the update release when that passes. Signing and updates are described in [`safar/README.md`](safar/README.md).
+
+## Data credits
+
+- Station catalog: derived from DataMeet (CC0).
+- Track and many stations: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL 1.0.
