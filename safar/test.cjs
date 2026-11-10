@@ -391,7 +391,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   reopened.elements['route-clear'].onclick();
   assert.equal(reopened.store.has('safar-route'), false);
   assert.equal(reopened.elements['route-details'].hidden, true);
-  assert.match(reopened.elements['clock-time'].textContent, /^\d\d:\d\d:\d\d$/);
+  assert.match(reopened.elements['clock-hm'].textContent, /^\d\d:\d\d$/);
+  assert.match(reopened.elements['clock-sec'].textContent, /^\d\d$/);
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
 
@@ -400,7 +401,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   big.elements.start.onclick();
   big.elements['clock-full'].onclick();
   assert.equal(big.elements.body.className, 'clockmode');
-  assert.equal(big.elements['clock-full'].textContent, 'Wapas jayein');
+  assert.equal(big.elements['clock-full'].textContent, 'EXIT');
   big.watches[0].success(fix(27.99, 100000));
   await flush();
   big.watches[0].success(fix(28, 110000));
@@ -412,6 +413,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // Ten colours for the time; the pick is shown, and kept for the next start.
   const swatches = big.elements['clock-colors'].children;
   assert.equal(swatches.length, 10);
+  assert.equal(big.elements['clock-colors'].hidden, true);
+  big.elements['clock-colors-toggle'].onclick();
+  assert.equal(big.elements['clock-colors'].hidden, false);
+  assert.equal(big.elements['clock-colors-toggle'].textContent, 'Rang chhupayein');
+  big.elements['clock-colors-toggle'].onclick();
+  assert.equal(big.elements['clock-colors'].hidden, true);
+  assert.equal(big.elements['clock-colors-toggle'].textContent, 'Rang chunein');
   assert.equal(big.elements['clock-time'].style.color, '#f8fafc');
   swatches[4].onclick();
   assert.equal(big.elements['clock-time'].style.color, '#f472b6');

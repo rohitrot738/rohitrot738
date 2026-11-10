@@ -25,6 +25,7 @@ box-shadow:0 4px 14px rgba(0,0,0,.5)}
 #clock-time{font-size:56px;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}
 #clock-date{font-size:19px;color:#cbd5e1;margin-top:2px}
 #clock-colors{margin-top:6px}
+#clock-sec::before{content:":"}
 .swatch{width:26px;height:26px;padding:0;margin:3px;border-radius:50%;border:2px solid #334155}
 .swatch.on{border-color:#fff;box-shadow:0 0 0 2px #0f172a,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright,
@@ -34,27 +35,30 @@ body.clockmode{overflow:hidden}
 body.clockmode .clock{position:fixed;z-index:8;margin:0;border-radius:0;background:#0f172a;box-sizing:border-box;
 display:flex;flex-direction:column;align-items:center;justify-content:center}
 body.clockmode #clock-full{position:absolute;top:10px;left:10px}
-body.clockmode #clock-colors{display:none}
+body.clockmode #clock-colors,body.clockmode #clock-colors-toggle{display:none}
+/* Seconds at about a third of the hours and minutes. */
+body.clockmode #clock-sec{font-size:.34em;margin-left:.18em}
+body.clockmode #clock-sec::before{content:""}
 body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
 @media (orientation:portrait){
-body.clockmode .clock{width:100vh;height:100vw;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg);padding:12px 222px 12px 16px}
-body.clockmode #clock-time{font-size:min(calc((100vh - 250px)/4.4),52vw)}
+body.clockmode .clock{width:100vh;height:100vw;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg);padding:12px 210px 12px 16px}
+body.clockmode #clock-time{font-size:min(calc((100vh - 240px)/3.25),60vw)}
 body.clockmode #clock-date{font-size:min(calc((100vh - 250px)/14),11vw);margin-top:6px}
-body.clockmode .speedo{right:50%;bottom:20px;transform:translateX(50%) rotate(90deg)}
+body.clockmode .speedo{right:auto;left:14px;bottom:14px;transform:rotate(90deg)}
 }
 @media (orientation:landscape){
-body.clockmode .clock{top:0;right:0;bottom:0;left:0;padding:12px 222px 12px 16px}
-body.clockmode #clock-time{font-size:min(calc((100vw - 250px)/4.4),52vh)}
+body.clockmode .clock{top:0;right:0;bottom:0;left:0;padding:12px 210px 12px 16px}
+body.clockmode #clock-time{font-size:min(calc((100vw - 240px)/3.25),60vh)}
 body.clockmode #clock-date{font-size:min(calc((100vw - 250px)/14),11vh);margin-top:6px}
-body.clockmode .speedo{right:20px;bottom:50%;transform:translateY(50%)}
+body.clockmode .speedo{right:14px;bottom:14px}
 }
 </style>
 </head>
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock"><div id="clock-time">--:--:--</div><div id="clock-date"></div><button id="clock-full" class="alt" type="button">Full screen ghadi</button><div id="clock-colors"></div></div>
+<div class="card clock"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span></div><div id="clock-date"></div><button id="clock-full" class="alt" type="button">Full screen ghadi</button><button id="clock-colors-toggle" class="alt" type="button">Rang chunein</button><div id="clock-colors" hidden></div></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -1020,7 +1024,8 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 function showClock() {
   const now = new Date(), two = n => String(n).padStart(2, '0');
-  $('clock-time').textContent = `${two(now.getHours())}:${two(now.getMinutes())}:${two(now.getSeconds())}`;
+  $('clock-hm').textContent = `${two(now.getHours())}:${two(now.getMinutes())}`;
+  $('clock-sec').textContent = two(now.getSeconds());
   $('clock-date').textContent = `${DAYS[now.getDay()]}, ${two(now.getDate())} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 }
 showClock();
@@ -1031,7 +1036,7 @@ let clockMode = false, clockLock = null;
 function setClockMode(on) {
   clockMode = on;
   document.body.className = on ? 'clockmode' : '';
-  $('clock-full').textContent = on ? 'Wapas jayein' : 'Full screen ghadi';
+  $('clock-full').textContent = on ? 'EXIT' : 'Full screen ghadi';
   if (on) {
     navigator.wakeLock?.request('screen').then(lock => {
       if (clockMode) clockLock = lock; else lock.release();
@@ -1064,6 +1069,13 @@ for (const color of CLOCK_COLORS) {
   $('clock-colors').append(swatch);
 }
 setClockColor(localStorage.getItem(CLOCK_COLOR_KEY) || CLOCK_COLORS[0], false);
+// The colours stay folded away until asked for.
+$('clock-colors').hidden = true;
+$('clock-colors-toggle').onclick = () => {
+  const show = $('clock-colors').hidden;
+  $('clock-colors').hidden = !show;
+  $('clock-colors-toggle').textContent = show ? 'Rang chhupayein' : 'Rang chunein';
+};
 </script>
 </body>
 </html>
