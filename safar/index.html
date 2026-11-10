@@ -10,11 +10,18 @@ header{padding:12px 16px;background:#1e293b;font-weight:700}
 main{padding:12px 16px;max-width:600px;margin:auto}
 select,button,input{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
 input{width:100%;max-width:100%;box-sizing:border-box}
+input[type=checkbox]{width:22px;height:22px;margin:0;padding:0;flex:none}
+#route-list label{display:flex;gap:10px;align-items:center;padding:6px 0}
 button{background:#2563eb;color:#fff}button.alt{background:#475569}
 .card{background:#1e293b;border-radius:10px;padding:10px 12px;margin:8px 0}
 .small{color:#94a3b8;font-size:13px}
 .suggest{max-height:40vh;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
 .suggest button{display:block;width:100%;text-align:left;background:#334155;margin:2px 0;padding:8px 10px}
+.speedo{position:fixed;right:12px;bottom:12px;z-index:5;width:176px;height:176px;border-radius:50%;box-sizing:border-box;
+border:6px solid #2563eb;background:rgba(15,23,42,.94);display:flex;flex-direction:column;align-items:center;justify-content:center;
+box-shadow:0 4px 14px rgba(0,0,0,.5)}
+.speedo b{font-size:64px;line-height:1}.speedo span{font-size:18px;color:#cbd5e1;margin-top:4px}
+main{padding-bottom:210px}
 .stop{border-left:4px solid #f59e0b}.pass{border-left:4px solid #22c55e}
 </style>
 </head>
@@ -26,12 +33,37 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
   <label for="origin">Shuru station</label><br>
   <input id="origin" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
   <div class="suggest" id="origin-options"></div>
+  <div id="via-row-1" hidden>
+    <label for="via-1">Via station 1</label><br>
+    <input id="via-1" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <div class="suggest" id="via-1-options"></div>
+  </div>
+  <div id="via-row-2" hidden>
+    <label for="via-2">Via station 2</label><br>
+    <input id="via-2" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <div class="suggest" id="via-2-options"></div>
+  </div>
+  <div id="via-row-3" hidden>
+    <label for="via-3">Via station 3</label><br>
+    <input id="via-3" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <div class="suggest" id="via-3-options"></div>
+  </div>
+  <button id="add-via" class="alt" type="button">+ Via station jodein</button><br>
   <label for="destination">Antim station</label><br>
   <input id="destination" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
   <div class="suggest" id="destination-options"></div>
   <button id="find-route" class="alt">Route banayein</button>
   <div id="route-status" class="small">Route chunna zaroori nahi; bina route ke agla station chalne ki disha se dikhega.</div>
-  <details id="route-details" hidden><summary>Anumaanit route ki station list dekhein</summary><ol id="route-list"></ol></details>
+  <details id="route-details" hidden><summary>Route ke station: kiska log chahiye, chunein</summary>
+    <div id="route-choice" class="small"></div>
+    <button id="route-all" class="alt" type="button">Sab chunein</button><button id="route-none" class="alt" type="button">Sab hatayein</button>
+    <ol id="route-list"></ol>
+    <label for="add-station">Is route mein station jodein</label><br>
+    <input id="add-station" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+    <div class="suggest" id="add-station-options"></div>
+    <button id="add-station-btn" class="alt" type="button">Station jodein</button>
+    <div id="add-station-status" class="small"></div>
+  </details>
 </div>
 <div>
   <select id="mode">
@@ -44,7 +76,7 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 </div>
 <div class="card" id="status">Status: ruka hua</div>
 <div class="card" id="data-status" hidden></div>
-<div class="card" id="speed">Speed: —</div>
+<div class="speedo" aria-label="Speed"><b id="speed">—</b><span>km/h</span></div>
 <div class="card" id="now">Nazdiki station: —</div>
 <div class="card" id="next">Agla station: Start dabayein</div>
 <button id="csv" class="alt">CSV download</button>
@@ -65,6 +97,8 @@ const ACTIVE_KEY = 'safar-active';
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let heading = null, headingFrom = null, lastActive = null;
+let skipIds = new Set(); // route stations the user unticked: never logged
+let viaCount = 0; // via boxes shown so far (up to 3)
 let openStop = null; // the train standing still away from any station: {start, near, d}
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
@@ -86,7 +120,8 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
   return parsed;
 }
 
-function stationLabel(s) { return `${s.name} (${s.id})`; }
+// OSM-only stations have no station code; their internal id is not shown.
+function stationLabel(s) { return s.id && !s.id.startsWith('OSM:') ? `${s.name} (${s.id})` : s.name; }
 
 // Stations renamed since the catalog was made: catalog code -> [today's code, today's name], so both find them.
 const RENAMED = {
@@ -98,6 +133,37 @@ const RENAMED = {
 
 // Best matches first: the exact code, then codes starting with the text, then names starting with it, then names
 // containing it. Without the order a short code was pushed out of the list by every name that contains it.
+// The same station is often in both lists: the catalog has its code, OpenStreetMap its exact place. Such a pair
+// becomes one station (catalog name and code, OSM position), so it is listed and logged once.
+const MERGE_WITHIN = 15000;
+let mergedIds = new Map(); // OSM id -> the catalog id it was merged into
+function nameKey(name) {
+  return name.toUpperCase().replace(/\b(JUNCTION|JN)\b/g, ' ').replace(/[^A-Z0-9]+/g, ' ').trim();
+}
+function mergeStationLists(catalog, osmCatalog) {
+  const byName = new Map();
+  const index = (key, s) => { if (key) byName.set(key, [...(byName.get(key) || []), s]); };
+  for (const s of catalog) {
+    index(nameKey(s.name), s);
+    if (RENAMED[s.id]) index(nameKey(RENAMED[s.id][1]), s);
+  }
+  mergedIds = new Map();
+  const moved = new Map(), rest = [];
+  for (const o of osmCatalog) {
+    let best = null;
+    for (const s of byName.get(nameKey(o.name)) || []) {
+      const d = dist(o.lat, o.lon, s.lat, s.lon);
+      if (d <= MERGE_WITHIN && (!best || d < best.d)) best = {s, d};
+    }
+    if (!best) { rest.push(o); continue; }
+    mergedIds.set(o.id, best.s.id);
+    // Two OSM entries for one catalog station: the nearer one gives the position.
+    if (!moved.has(best.s.id) || best.d < moved.get(best.s.id).d) moved.set(best.s.id, {o, d: best.d});
+  }
+  const merged = catalog.map(s => moved.has(s.id) ? {...s, lat: moved.get(s.id).o.lat, lon: moved.get(s.id).o.lon} : s);
+  return [...merged, ...rest];
+}
+
 function searchStations(text, limit = 40) {
   const found = [];
   for (const s of stations) {
@@ -178,6 +244,7 @@ async function getGraph() {
   const known = new Set(stations.map(s => s.id));
   const graph = new Map();
   const add = (a, b, metres) => {
+    a = mergedIds.get(a) || a; b = mergedIds.get(b) || b;
     if (!known.has(a) || !known.has(b) || a === b || !Number.isFinite(metres) || metres <= 0) return;
     for (const [x, y] of [[a, b], [b, a]]) {
       if (!graph.has(x)) graph.set(x, new Map());
@@ -262,6 +329,22 @@ async function selectRoute() {
     $('route-status').textContent = stations.length ? 'Shuru aur antim station likhkar neeche aayi list se tap karke chunein; dono alag hone chahiye.' : 'Station list abhi taiyar nahi hai.';
     return;
   }
+  // Via stations the route must pass through, in order; an empty box is skipped.
+  const stops = [from];
+  for (let i = 1; i <= viaCount; i++) {
+    if (!$('via-' + i).value.trim()) continue;
+    const via = findStation($('via-' + i));
+    if (!via) {
+      $('route-status').textContent = `Via station ${i} nahi mila. Likhkar neeche aayi list se tap karke chunein, ya box khaali kar dein.`;
+      return;
+    }
+    stops.push(via);
+  }
+  stops.push(to);
+  if (stops.some((stop, i) => i && stop.id === stops[i - 1].id)) {
+    $('route-status').textContent = 'Ek ke baad ek aane wale station alag hone chahiye (shuru, via, antim).';
+    return;
+  }
   $('find-route').disabled = true;
   $('start').disabled = true;
   $('route-status').textContent = 'Rasta dhoondh rahe hain...';
@@ -269,7 +352,7 @@ async function selectRoute() {
     const graph = await getGraph();
     const byId = new Map(stations.map(s => [s.id, s]));
     const extra = new Map();
-    for (const end of [from, to]) {
+    for (const end of new Set(stops)) {
       if (graph.has(end.id)) continue;
       for (const [id, metres] of snapLinks(graph, end, byId)) {
         if (!extra.has(end.id)) extra.set(end.id, []);
@@ -278,22 +361,23 @@ async function selectRoute() {
         extra.get(id).push([end.id, metres]);
       }
     }
-    const ids = shortestRoute(graph, from.id, to.id, extra);
-    if (!ids) throw new Error('In stations ke beech route nahi mila');
+    const ids = [from.id];
+    for (let i = 1; i < stops.length; i++) {
+      const leg = shortestRoute(graph, stops[i - 1].id, stops[i].id, extra);
+      if (!leg) throw new Error('In stations ke beech route nahi mila');
+      ids.push(...leg.slice(1));
+    }
     route = ids.map(id => byId.get(id));
     routeIndex = null;
     state = {};
-    $('route-list').replaceChildren();
+    skipIds = new Set();
     let metres = 0;
-    route.forEach((s, i) => {
-      if (i) metres += dist(route[i - 1].lat, route[i - 1].lon, s.lat, s.lon);
-      const li = document.createElement('li');
-      li.textContent = `${s.name} (${s.id})`;
-      $('route-list').append(li);
-    });
+    route.forEach((s, i) => { if (i) metres += dist(route[i - 1].lat, route[i - 1].lon, s.lat, s.lon); });
+    renderRouteList();
     $('route-details').hidden = false;
     $('route-details').open = true;
-    $('route-status').textContent = `Route bana: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Train doosri line se gayi to agla station disha se dikhega.`;
+    const viaNames = stops.slice(1, -1).map(stop => stop.name).join(', ');
+    $('route-status').textContent = `Route bana${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Neeche list mein jis station ka log nahi chahiye uska tick hata dein.`;
     $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
   } catch (e) {
     console.warn('Route nahi bana', e);
@@ -308,8 +392,72 @@ async function selectRoute() {
 }
 
 // Where the fix sits on the chosen route: the index of the station ahead, or null when the train is off it.
-function routePosition(p) {
-  const lat = p.coords.latitude, lon = p.coords.longitude;
+// The route's stations with a tick each: an unticked station is never logged. Ticks can change during a journey.
+function renderRouteList() {
+  $('route-list').replaceChildren();
+  if (!route) return;
+  for (const s of route) {
+    const li = document.createElement('li'), label = document.createElement('label');
+    const box = document.createElement('input'), name = document.createElement('span');
+    box.type = 'checkbox';
+    box.checked = !skipIds.has(s.id);
+    box.onchange = () => {
+      if (box.checked) skipIds.delete(s.id);
+      else { skipIds.add(s.id); delete state[stationKey(s)]; }
+      // A station the route passes twice has two rows; keep them in step.
+      if (route.filter(other => other.id === s.id).length > 1) renderRouteList();
+      else showRouteChoice();
+      saveActive();
+    };
+    name.textContent = stationLabel(s);
+    label.append(box, name);
+    li.append(label);
+    $('route-list').append(li);
+  }
+  showRouteChoice();
+}
+
+function showRouteChoice() {
+  const chosen = route.filter(s => !skipIds.has(s.id)).length;
+  $('route-choice').textContent = `${chosen} / ${route.length} station ka log banega. Jiska log nahi chahiye uska tick hata dein.`;
+}
+
+function setAllRouteStations(logged) {
+  if (!route) return;
+  skipIds = new Set(logged ? [] : route.map(s => s.id));
+  if (!logged) for (const s of route) delete state[stationKey(s)];
+  renderRouteList();
+  saveActive();
+}
+
+// Adds a station the estimated route missed, at its place along the route.
+function addRouteStation() {
+  const say = text => { $('add-station-status').textContent = text; };
+  if (!route) return;
+  if (tracking) { say('Station jodne se pehle Stop dabayein.'); return; }
+  const s = findStation($('add-station'));
+  if (!s) { say('Station likhkar neeche aayi list se tap karke chunein.'); return; }
+  if (route.some(other => other.id === s.id)) {
+    skipIds.delete(s.id);
+    say(`${stationLabel(s)} route mein pehle se hai; uska log banega.`);
+  } else {
+    const best = nearestSegment(s.lat, s.lon);
+    if (!best || best.gap > 25000) {
+      say(`${stationLabel(s)} is route se ${best ? Math.round(best.gap / 1000) + ' km' : 'bahut'} door hai; nahi joda.`);
+      return;
+    }
+    // Before the first station or after the last one when it lies beyond that end, otherwise between the two.
+    const at = best.fraction === 0 && best.i === 0 ? 0 : best.fraction === 1 && best.i === route.length - 2 ? route.length : best.i + 1;
+    route.splice(at, 0, s);
+    routeIndex = null;
+    say(`${stationLabel(s)} joda gaya.`);
+  }
+  $('add-station').value = '';
+  renderRouteList();
+}
+
+// The route segment nearest to a point: its index, how far along it, and how far off it (metres).
+function nearestSegment(lat, lon) {
   let best = null;
   for (let i = 0; i < route.length - 1; i++) {
     const a = route[i], b = route[i + 1], scale = Math.cos(lat * Math.PI / 180);
@@ -321,6 +469,12 @@ function routePosition(p) {
     const gap = Math.hypot(ax + fraction * dx, ay + fraction * dy) * Math.PI / 180 * 6371000;
     if (!best || gap < best.gap) best = {i, fraction, gap, span: Math.sqrt(length) * Math.PI / 180 * 6371000};
   }
+  return best;
+}
+
+function routePosition(p) {
+  const lat = p.coords.latitude, lon = p.coords.longitude;
+  const best = nearestSegment(lat, lon);
   // Track curves between stations, so a long gap between two stations allows a wider miss.
   if (!best || best.gap > Math.max(2000, best.span * 0.25)) return null;
   const nearStart = dist(lat, lon, route[best.i].lat, route[best.i].lon) <= R;
@@ -356,14 +510,14 @@ function showAheadStation(lat, lon) {
     if (!best || score < best.score) best = {s, d, score};
   }
   $('next').textContent = best
-    ? `Agla station (disha se anumaan): ${stationLabel(best.s)}, ${(best.d / 1000).toFixed(1)} km`
+    ? `Agla station (disha se anumaan): ${stationLabel(best.s)}, ${(best.d / 1000).toFixed(2)} km`
     : 'Agla station: is disha mein 80 km tak koi station nahi mila.';
 }
 
 function showRoutePosition(p, index) {
   const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
   const label = d <= R ? 'Route par station ke paas' : 'Sambhavit agla station';
-  $('next').textContent = `${label}: ${s.name} (${s.id}), ${(d / 1000).toFixed(1)} km — anumaan`;
+  $('next').textContent = `${label}: ${stationLabel(s)}, ${(d / 1000).toFixed(2)} km — anumaan`;
 }
 
 async function loadStations() {
@@ -382,7 +536,7 @@ async function loadStations() {
     const rows = await r.json(), osmRows = await osmResponse.json();
     const catalog = parseStations(rows, 'DataMeet + project fallback');
     const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
-    stations = [...catalog, ...osmCatalog];
+    stations = mergeStationLists(catalog, osmCatalog);
     stationListsLoaded = true;
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
@@ -419,7 +573,7 @@ function showNearest(p) {
     const d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
   }
-  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
+  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
 }
 
 function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log)); render(); }
@@ -441,7 +595,7 @@ function showSpeed(p, prev) {
     v = dt > 0 ? dist(prev.coords.latitude, prev.coords.longitude, p.coords.latitude, p.coords.longitude) / dt : null;
   }
   $('speed').textContent = Number.isFinite(v) && p.coords.accuracy <= R
-    ? `Speed: ${Math.round(v * 3.6)} km/h` : 'Speed: —';
+    ? String(Math.round(v * 3.6)) : '—';
 }
 
 function onPos(p) {
@@ -496,6 +650,7 @@ function processPosition(p) {
   for (const s of active) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
+    if (skipIds.has(s.id)) continue; // unticked in the route list
     const k = stationKey(s);
     let st = state[k];
     if (d <= R) {
@@ -507,7 +662,7 @@ function processPosition(p) {
       finish(s, st, t); delete state[k];
     }
   }
-  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
+  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
   // A stop between stations (signal, crossing, outer): logged like a station halt once the train moves again.
   // Only after the train has moved, so sitting still before the journey is not a halt.
@@ -518,7 +673,7 @@ function processPosition(p) {
       $('now').textContent += ` · Raste mein ruki hai: ${Math.round((t - openStop.start) / 6000) / 10} min`;
   } else if (openStop && (speed != null || atStation)) {
     if (t - openStop.start >= MIN_HALT * 1000) {
-      const place = openStop.near ? `Raste mein (${openStop.near} se ${(openStop.d / 1000).toFixed(1)} km)` : 'Raste mein';
+      const place = openStop.near ? `Raste mein (${openStop.near} se ${(openStop.d / 1000).toFixed(2)} km)` : 'Raste mein';
       addLog({name: place, id: '', source: 'GPS', type: 'halt', arr: openStop.start, dep: t});
     }
     openStop = null;
@@ -532,7 +687,7 @@ function saveActive() {
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
-      mode: $('mode').value, route: route ? route.map(s => s.id) : null, state, last, openStop
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -553,7 +708,6 @@ function start() {
   if (tracking || watchId != null || nativeWatcher != null) return;
   tracking = true;
   const mode = $('mode').value;
-  $('status').textContent = 'Location dhoondh rahe hain... Screen band hone par bhi chalne ke liye location "Hamesha allow" aur battery "Unrestricted" rakhein.';
   $('status').textContent = 'Location dhoondh rahe hain...';
   const currentSession = ++session;
   saveActive();
@@ -580,7 +734,10 @@ function start() {
     startWeb(mode !== 'network');
   } else {
     let gotFix = false, webStarted = false, nativeStarting = true, pendingFallback = null;
-    const fallback = reason => {
+    // Browser location stops when the screen goes off or the app is minimised; only the native watcher keeps
+    // logging then. So a slow first fix adds browser location beside the native watcher (keepNative) instead of
+    // replacing it, and the first native fix takes over again.
+    const fallback = (reason, keepNative = false) => {
       if (currentSession !== session || webStarted || pendingFallback) return;
       if (nativeStarting) {
         pendingFallback = reason;
@@ -589,7 +746,7 @@ function start() {
       }
       webStarted = true;
       $('status').textContent = `Native GPS nahi mila; browser location try ho rahi hai (${reason}).`;
-      if (nativeWatcher) {
+      if (nativeWatcher && !keepNative) {
         backgroundGeo.removeWatcher({id: nativeWatcher.id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
         nativeWatcher = null;
       }
@@ -615,6 +772,10 @@ function start() {
         return;
       }
       gotFix = true;
+      if (webStarted && nativeWatcher) {
+        if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+        webStarted = false;
+      }
       onPos({
         coords: {
           latitude: location.latitude,
@@ -637,7 +798,7 @@ function start() {
         fallback(reason);
       }
       nativeFallbackTimer = setTimeout(() => {
-        if (!gotFix && currentSession === session) fallback('20 second mein GPS fix nahi mila');
+        if (!gotFix && currentSession === session) fallback('20 second mein GPS fix nahi mila', true);
       }, 20000);
     }).catch(error => {
       nativeStarting = false;
@@ -668,7 +829,7 @@ function stop() {
     wakeLock.release().catch(e => console.warn('Screen wake lock release nahi hua', e));
     wakeLock = null;
   }
-  $('speed').textContent = 'Speed: —';
+  $('speed').textContent = '—';
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
   heading = null; headingFrom = null; lastActive = null; openStop = null;
   $('status').textContent = 'Tracking band hai. Adhoora station visit log nahi hua.';
@@ -680,7 +841,7 @@ function render() {
   for (const e of log.slice().reverse()) {
     const card = document.createElement('div'), title = document.createElement('b'), details = document.createElement('div');
     card.className = 'card ' + (e.type === 'halt' ? 'stop' : 'pass');
-    title.textContent = e.id ? `${e.name} (${e.id})` : e.name;
+    title.textContent = stationLabel(e);
     details.textContent = e.type === 'halt'
       ? `Ruka: ${fmt(e.arr)} se ${fmt(e.dep)} tak (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
       : `Paar kiya: ${fmt(e.t)}`;
@@ -693,6 +854,17 @@ $('start').onclick = start; $('stop').onclick = stop;
 $('find-route').onclick = selectRoute;
 stationSuggestions('origin', 'origin-options');
 stationSuggestions('destination', 'destination-options');
+for (let i = 1; i <= 3; i++) stationSuggestions('via-' + i, `via-${i}-options`);
+stationSuggestions('add-station', 'add-station-options');
+$('add-station-btn').onclick = addRouteStation;
+$('route-all').onclick = () => setAllRouteStations(true);
+$('route-none').onclick = () => setAllRouteStations(false);
+$('add-via').onclick = () => {
+  if (viaCount >= 3) return;
+  viaCount++;
+  $('via-row-' + viaCount).hidden = false;
+  if (viaCount === 3) $('add-via').hidden = true;
+};
 $('clear').onclick = () => { if (confirm('Log delete karein?')) { log = []; localStorage.removeItem(KEY); render(); } };
 $('csv').onclick = () => {
   const quote = value => `"${String(value || '').replace(/"/g, '""')}"`;
@@ -710,7 +882,7 @@ try {
     const data = JSON.parse(cached);
     const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
-    stations = [...catalog, ...osmCatalog];
+    stations = mergeStationLists(catalog, osmCatalog);
     stationListsLoaded = true;
     dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {
@@ -730,15 +902,12 @@ try {
   const saved = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
   if (saved && stations.length) {
     const byId = new Map(stations.map(s => [s.id, s]));
-    const ids = Array.isArray(saved.route) ? saved.route.map(id => byId.get(id)) : null;
+    const ids = Array.isArray(saved.route) ? saved.route.map(id => byId.get(mergedIds.get(id) || id)) : null;
     if (!ids || ids.every(Boolean)) {
       if (ids) {
         route = ids;
-        for (const s of route) {
-          const li = document.createElement('li');
-          li.textContent = stationLabel(s);
-          $('route-list').append(li);
-        }
+        skipIds = new Set(Array.isArray(saved.skip) ? saved.skip.map(id => mergedIds.get(id) || id) : []);
+        renderRouteList();
         $('route-details').hidden = false;
       }
       if (saved.state && typeof saved.state === 'object') state = saved.state;
