@@ -10,6 +10,8 @@ header{padding:12px 16px;background:#1e293b;font-weight:700}
 main{padding:12px 16px;max-width:600px;margin:auto}
 select,button,input{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
 input{width:100%;max-width:100%;box-sizing:border-box}
+input[type=checkbox]{width:22px;height:22px;margin:0;padding:0;flex:none}
+#route-list label{display:flex;gap:10px;align-items:center;padding:6px 0}
 button{background:#2563eb;color:#fff}button.alt{background:#475569}
 .card{background:#1e293b;border-radius:10px;padding:10px 12px;margin:8px 0}
 .small{color:#94a3b8;font-size:13px}
@@ -52,7 +54,16 @@ main{padding-bottom:120px}
   <div class="suggest" id="destination-options"></div>
   <button id="find-route" class="alt">Route banayein</button>
   <div id="route-status" class="small">Route chunna zaroori nahi; bina route ke agla station chalne ki disha se dikhega.</div>
-  <details id="route-details" hidden><summary>Anumaanit route ki station list dekhein</summary><ol id="route-list"></ol></details>
+  <details id="route-details" hidden><summary>Route ke station: kiska log chahiye, chunein</summary>
+    <div id="route-choice" class="small"></div>
+    <button id="route-all" class="alt" type="button">Sab chunein</button><button id="route-none" class="alt" type="button">Sab hatayein</button>
+    <ol id="route-list"></ol>
+    <label for="add-station">Is route mein station jodein</label><br>
+    <input id="add-station" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+    <div class="suggest" id="add-station-options"></div>
+    <button id="add-station-btn" class="alt" type="button">Station jodein</button>
+    <div id="add-station-status" class="small"></div>
+  </details>
 </div>
 <div>
   <select id="mode">
@@ -86,6 +97,7 @@ const ACTIVE_KEY = 'safar-active';
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
 let heading = null, headingFrom = null, lastActive = null;
+let skipIds = new Set(); // route stations the user unticked: never logged
 let viaCount = 0; // via boxes shown so far (up to 3)
 let openStop = null; // the train standing still away from any station: {start, near, d}
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -358,18 +370,14 @@ async function selectRoute() {
     route = ids.map(id => byId.get(id));
     routeIndex = null;
     state = {};
-    $('route-list').replaceChildren();
+    skipIds = new Set();
     let metres = 0;
-    route.forEach((s, i) => {
-      if (i) metres += dist(route[i - 1].lat, route[i - 1].lon, s.lat, s.lon);
-      const li = document.createElement('li');
-      li.textContent = stationLabel(s);
-      $('route-list').append(li);
-    });
+    route.forEach((s, i) => { if (i) metres += dist(route[i - 1].lat, route[i - 1].lon, s.lat, s.lon); });
+    renderRouteList();
     $('route-details').hidden = false;
     $('route-details').open = true;
     const viaNames = stops.slice(1, -1).map(stop => stop.name).join(', ');
-    $('route-status').textContent = `Route bana${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Train doosri line se gayi to agla station disha se dikhega.`;
+    $('route-status').textContent = `Route bana${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Neeche list mein jis station ka log nahi chahiye uska tick hata dein.`;
     $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
   } catch (e) {
     console.warn('Route nahi bana', e);
@@ -384,8 +392,72 @@ async function selectRoute() {
 }
 
 // Where the fix sits on the chosen route: the index of the station ahead, or null when the train is off it.
-function routePosition(p) {
-  const lat = p.coords.latitude, lon = p.coords.longitude;
+// The route's stations with a tick each: an unticked station is never logged. Ticks can change during a journey.
+function renderRouteList() {
+  $('route-list').replaceChildren();
+  if (!route) return;
+  for (const s of route) {
+    const li = document.createElement('li'), label = document.createElement('label');
+    const box = document.createElement('input'), name = document.createElement('span');
+    box.type = 'checkbox';
+    box.checked = !skipIds.has(s.id);
+    box.onchange = () => {
+      if (box.checked) skipIds.delete(s.id);
+      else { skipIds.add(s.id); delete state[stationKey(s)]; }
+      // A station the route passes twice has two rows; keep them in step.
+      if (route.filter(other => other.id === s.id).length > 1) renderRouteList();
+      else showRouteChoice();
+      saveActive();
+    };
+    name.textContent = stationLabel(s);
+    label.append(box, name);
+    li.append(label);
+    $('route-list').append(li);
+  }
+  showRouteChoice();
+}
+
+function showRouteChoice() {
+  const chosen = route.filter(s => !skipIds.has(s.id)).length;
+  $('route-choice').textContent = `${chosen} / ${route.length} station ka log banega. Jiska log nahi chahiye uska tick hata dein.`;
+}
+
+function setAllRouteStations(logged) {
+  if (!route) return;
+  skipIds = new Set(logged ? [] : route.map(s => s.id));
+  if (!logged) for (const s of route) delete state[stationKey(s)];
+  renderRouteList();
+  saveActive();
+}
+
+// Adds a station the estimated route missed, at its place along the route.
+function addRouteStation() {
+  const say = text => { $('add-station-status').textContent = text; };
+  if (!route) return;
+  if (tracking) { say('Station jodne se pehle Stop dabayein.'); return; }
+  const s = findStation($('add-station'));
+  if (!s) { say('Station likhkar neeche aayi list se tap karke chunein.'); return; }
+  if (route.some(other => other.id === s.id)) {
+    skipIds.delete(s.id);
+    say(`${stationLabel(s)} route mein pehle se hai; uska log banega.`);
+  } else {
+    const best = nearestSegment(s.lat, s.lon);
+    if (!best || best.gap > 25000) {
+      say(`${stationLabel(s)} is route se ${best ? Math.round(best.gap / 1000) + ' km' : 'bahut'} door hai; nahi joda.`);
+      return;
+    }
+    // Before the first station or after the last one when it lies beyond that end, otherwise between the two.
+    const at = best.fraction === 0 && best.i === 0 ? 0 : best.fraction === 1 && best.i === route.length - 2 ? route.length : best.i + 1;
+    route.splice(at, 0, s);
+    routeIndex = null;
+    say(`${stationLabel(s)} joda gaya.`);
+  }
+  $('add-station').value = '';
+  renderRouteList();
+}
+
+// The route segment nearest to a point: its index, how far along it, and how far off it (metres).
+function nearestSegment(lat, lon) {
   let best = null;
   for (let i = 0; i < route.length - 1; i++) {
     const a = route[i], b = route[i + 1], scale = Math.cos(lat * Math.PI / 180);
@@ -397,6 +469,12 @@ function routePosition(p) {
     const gap = Math.hypot(ax + fraction * dx, ay + fraction * dy) * Math.PI / 180 * 6371000;
     if (!best || gap < best.gap) best = {i, fraction, gap, span: Math.sqrt(length) * Math.PI / 180 * 6371000};
   }
+  return best;
+}
+
+function routePosition(p) {
+  const lat = p.coords.latitude, lon = p.coords.longitude;
+  const best = nearestSegment(lat, lon);
   // Track curves between stations, so a long gap between two stations allows a wider miss.
   if (!best || best.gap > Math.max(2000, best.span * 0.25)) return null;
   const nearStart = dist(lat, lon, route[best.i].lat, route[best.i].lon) <= R;
@@ -572,6 +650,7 @@ function processPosition(p) {
   for (const s of active) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
+    if (skipIds.has(s.id)) continue; // unticked in the route list
     const k = stationKey(s);
     let st = state[k];
     if (d <= R) {
@@ -608,7 +687,7 @@ function saveActive() {
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
-      mode: $('mode').value, route: route ? route.map(s => s.id) : null, state, last, openStop
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -776,6 +855,10 @@ $('find-route').onclick = selectRoute;
 stationSuggestions('origin', 'origin-options');
 stationSuggestions('destination', 'destination-options');
 for (let i = 1; i <= 3; i++) stationSuggestions('via-' + i, `via-${i}-options`);
+stationSuggestions('add-station', 'add-station-options');
+$('add-station-btn').onclick = addRouteStation;
+$('route-all').onclick = () => setAllRouteStations(true);
+$('route-none').onclick = () => setAllRouteStations(false);
 $('add-via').onclick = () => {
   if (viaCount >= 3) return;
   viaCount++;
@@ -823,11 +906,8 @@ try {
     if (!ids || ids.every(Boolean)) {
       if (ids) {
         route = ids;
-        for (const s of route) {
-          const li = document.createElement('li');
-          li.textContent = stationLabel(s);
-          $('route-list').append(li);
-        }
+        skipIds = new Set(Array.isArray(saved.skip) ? saved.skip.map(id => mergedIds.get(id) || id) : []);
+        renderRouteList();
         $('route-details').hidden = false;
       }
       if (saved.state && typeof saved.state === 'object') state = saved.state;

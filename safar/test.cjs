@@ -29,6 +29,9 @@ function setup(fetch, saved, capacitor = null) {
   return {elements, store, watches};
 }
 
+// A route-list row is <li><label><input type=checkbox><span>name</span></label></li>.
+const rowName = li => li.children[0].children[1].textContent;
+const rowBox = li => li.children[0].children[0];
 const fix = (lat, t, speed = 10, accuracy = 10) =>
   ({coords: {latitude: lat, longitude: 77, accuracy, speed}, timestamp: t});
 const flush = () => new Promise(resolve => setImmediate(resolve));
@@ -189,7 +192,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
   assert.match(routed.elements['route-status'].textContent, /Route bana: 2 stations/);
-  assert.deepEqual(routed.elements['route-list'].children.map(child => child.textContent), ['SON NAGAR (SEB)', 'DEHRI ON SONE (DOS)']);
+  assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'DEHRI ON SONE (DOS)']);
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
   assert.match(routed.elements.next.textContent, /Sambhavit agla station: DEHRI ON SONE \(DOS\)/);
@@ -218,7 +221,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   osmRoute.elements.destination.value = 'OSM:78';
   await osmRoute.elements['find-route'].onclick();
   assert.match(osmRoute.elements['route-status'].textContent, /Route bana: 2 stations/);
-  assert.deepEqual(osmRoute.elements['route-list'].children.map(child => child.textContent),
+  assert.deepEqual(osmRoute.elements['route-list'].children.map(rowName),
     ['OSM Alpha', 'OSM Beta']);
 
   osmRoute.elements.origin.dataset = {};
@@ -264,7 +267,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
   assert.match(bundled.elements['route-status'].textContent, /Route bana: \d+ stations, lagbhag 1\d\d km/);
-  const names = bundled.elements['route-list'].children.map(child => child.textContent);
+  const names = bundled.elements['route-list'].children.map(rowName);
   assert.equal(names[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(names[names.length - 1], 'ALLAHABAD JN (ALD)');
   assert.ok(names.length > 10);
@@ -315,7 +318,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
 
   // Via: the shortest DDU -> Prayagraj route runs through Varanasi; a via station takes it along the Mirzapur line.
-  const routeNames = () => bundled.elements['route-list'].children.map(child => child.textContent);
+  const routeNames = () => bundled.elements['route-list'].children.map(rowName);
   const pickVia = (i, text, label) => {
     bundled.elements['via-' + i].dataset = {};
     bundled.elements['via-' + i].value = text;
@@ -345,6 +348,38 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   bundled.elements['via-1'].value = '';
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
+
+  // Choosing which stations are logged: an unticked route station is skipped, a ticked one is logged, and a
+  // station the route missed can be added at its place.
+  const chosenStations = stationFetcher([['A', 'Alpha', 28, 77], ['B', 'Beta', 28.1, 77], ['C', 'Gamma', 28.2, 77],
+    ['D', 'Delta', 28.3, 77], ['X', 'Extra', 28.15, 77.001], ['FAR', 'Far Away', 20, 70]]);
+  const chosen = setup(async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url));
+  await flush();
+  chosen.elements.origin.value = 'A';
+  chosen.elements.destination.value = 'D';
+  await chosen.elements['find-route'].onclick();
+  const rows = () => chosen.elements['route-list'].children;
+  assert.deepEqual(rows().map(rowName), ['Alpha (A)', 'Beta (B)', 'Gamma (C)', 'Delta (D)']);
+  assert.match(chosen.elements['route-choice'].textContent, /^4 \/ 4 station/);
+  rowBox(rows()[1]).checked = false;
+  rowBox(rows()[1]).onchange();
+  assert.match(chosen.elements['route-choice'].textContent, /^3 \/ 4 station/);
+  chosen.elements['add-station'].value = 'FAR';
+  chosen.elements['add-station-btn'].onclick();
+  assert.match(chosen.elements['add-station-status'].textContent, /door hai; nahi joda/);
+  chosen.elements['add-station'].value = 'X';
+  chosen.elements['add-station-btn'].onclick();
+  assert.deepEqual(rows().map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
+  assert.deepEqual(rows().map(li => rowBox(li).checked), [true, false, true, true, true]);
+  chosen.elements.start.onclick();
+  const run = chosen.watches[chosen.watches.length - 1];
+  for (let i = 0; i <= 80; i++) run.success(fix(27.98 + i * 0.0045, 100000 + i * 10000, 30));
+  assert.deepEqual(JSON.parse(chosen.store.get('trainlog')).map(entry => entry.id), ['A', 'X', 'C', 'D']);
+  chosen.elements['route-none'].onclick();
+  assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
+  chosen.elements['route-all'].onclick();
+  assert.match(chosen.elements['route-choice'].textContent, /^5 \/ 5 station/);
 
   // One station in both lists is one station: the catalog's code at OpenStreetMap's position, logged once.
   const labels = text => {
