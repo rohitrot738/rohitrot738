@@ -20,7 +20,6 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
 <body>
 <header><a href="../index.html" style="color:inherit">← RailTrack</a> · 📍 Suffer Sathi</header>
 <main>
-<p class="small"><a href="https://github.com/rohitrot738/rohitrot738/releases/tag/suffer-sathi-updates" style="color:#93c5fd">App updates dekhein</a></p>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -30,10 +29,9 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
   <input id="destination" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
   <div class="suggest" id="destination-options"></div>
   <button id="find-route" class="alt">Route banayein</button>
-  <div id="route-status" class="small">Route nahi chuna hai. Bina route ke sirf nazdeeki station dikhaya jayega.</div>
+  <div id="route-status" class="small">Route chunna zaroori nahi; bina route ke agla station chalne ki disha se dikhega.</div>
   <details id="route-details" hidden><summary>Anumaanit route ki station list dekhein</summary><ol id="route-list"></ol></details>
 </div>
-<div class="card small" id="network-status">OSM track route data load ho raha hai...</div>
 <div>
   <select id="mode">
     <option value="auto">Auto (GPS, zaroorat par kam accuracy)</option>
@@ -44,19 +42,15 @@ button{background:#2563eb;color:#fff}button.alt{background:#475569}
   <button id="stop" class="alt">Stop</button>
 </div>
 <div class="card" id="status">Status: ruka hua</div>
-<div class="card" id="data-status">Station data: location ka intezar hai</div>
+<div class="card" id="data-status" hidden></div>
 <div class="card" id="speed">Speed: —</div>
 <div class="card" id="now">Nazdiki station: —</div>
-<div class="card" id="next">Agla station: route chunein</div>
+<div class="card" id="next">Agla station: Start dabayein</div>
 <button id="csv" class="alt">CSV download</button>
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
 <div id="log"></div>
-<p class="small">Station aur OSM route lists APK ke saath bundled hain; internet ke bina bhi route aur station logging kaam karni chahiye. Station data purana ya galat ho sakta hai.
-Safar shuru hone se pehle Start dabayein; screen on aur app khula rakhein.
-Browser location ka source khud chunta hai; network location ki accuracy kam ho sakti hai.
-OSM se bana route track connectivity ka anumaan hai, aapki train ka scheduled ya live route nahi. OSM station-code matches abhi review nahi hue aur OSM network ki coverage verify nahi hai. GPS, chhute stations aur galat station data ki wajah se log galat ho sakta hai.
-Station chhodne ke baad log dikhega; purana safar wapas nahi milega. Station catalog: DataMeet-derived (CC0) aur kuch approximate project stations. Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL 1.0).</p>
+<details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
 <script>
 const R = 500;            // station radius (m)
@@ -69,8 +63,11 @@ let nativeFallbackTimer = null, tracking = false;
 const ACTIVE_KEY = 'safar-active';
 let wakeLock = null;
 let route = null, routeIndex = null, edgeGraph = null;
+let heading = null, headingFrom = null, lastActive = null;
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
+// Station-list status stays off screen unless something went wrong.
+function dataStatus(text, problem = false) { const el = $('data-status'); el.textContent = text; el.hidden = !problem; }
 const fmt = t => new Date(t).toLocaleTimeString('hi-IN', {hour12:false});
 
 function dist(a, b, c, d) {
@@ -125,37 +122,61 @@ function findStation(input) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-async function getGraph() {
-  if (edgeGraph) return edgeGraph;
+// Track network for route finding, in metres: the OSM track links plus the older timetable-derived links
+// (edges.json, km), which cover the many stations the OSM graph has no link for yet.
+async function fetchEdges(url, read) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
-  let edges;
   try {
-    const r = await fetch('osm-station-routes.json', {signal: controller.signal});
-    if (!r.ok) throw new Error('OSM route data HTTP ' + r.status);
-    const data = await r.json();
-    if (data.schema_version !== 1 || data.stations_unreviewed !== true || !Array.isArray(data.edges))
-      throw new Error('OSM route data format sahi nahi hai');
-    edges = data.edges;
+    const r = await fetch(url, {signal: controller.signal});
+    if (!r.ok) throw new Error(url + ' HTTP ' + r.status);
+    const rows = read(await r.json());
+    return Array.isArray(rows) ? rows : [];
+  } catch (e) {
+    console.warn('Route data load nahi hua: ' + url, e);
+    return [];
   } finally {
     clearTimeout(timeout);
   }
-  if (!Array.isArray(edges) || !edges.length) throw new Error('Route data khali hai');
+}
+
+async function getGraph() {
+  if (edgeGraph) return edgeGraph;
+  const [osm, timetable] = await Promise.all([
+    fetchEdges('osm-station-routes.json', data => data && data.schema_version === 1 ? data.edges : null),
+    fetchEdges('edges.json', data => data)
+  ]);
   const known = new Set(stations.map(s => s.id));
   const graph = new Map();
-  for (const edge of edges) {
-    if (!Array.isArray(edge) || !known.has(edge[0]) || !known.has(edge[1]) || !Number.isFinite(edge[2]) || edge[2] <= 0) continue;
-    for (const [a, b] of [[edge[0], edge[1]], [edge[1], edge[0]]]) {
-      if (!graph.has(a)) graph.set(a, []);
-      graph.get(a).push([b, edge[2]]);
+  const add = (a, b, metres) => {
+    if (!known.has(a) || !known.has(b) || a === b || !Number.isFinite(metres) || metres <= 0) return;
+    for (const [x, y] of [[a, b], [b, a]]) {
+      if (!graph.has(x)) graph.set(x, new Map());
+      const links = graph.get(x);
+      if (!links.has(y) || metres < links.get(y)) links.set(y, metres);
     }
-  }
-  if (!graph.size) throw new Error('Route data sahi nahi hai');
+  };
+  for (const edge of timetable) if (Array.isArray(edge)) add(edge[0], edge[1], edge[2] * 1000);
+  for (const edge of osm) if (Array.isArray(edge)) add(edge[0], edge[1], edge[2]);
+  if (!graph.size) throw new Error('Route data nahi mila');
   edgeGraph = graph;
   return graph;
 }
 
-function shortestRoute(graph, from, to) {
+const LONG_HOP = 40000, LONG_HOP_PENALTY = 4; // a long jump skips stations; prefer the station-by-station line
+const SNAP_LIMIT = 15000;                      // a station with no link joins the nearest linked stations this close
+
+// Links for a station the network does not know: its nearest linked stations, by straight line plus a margin.
+function snapLinks(graph, station, byId) {
+  const near = [];
+  for (const id of graph.keys()) {
+    const s = byId.get(id), d = dist(station.lat, station.lon, s.lat, s.lon);
+    if (d <= SNAP_LIMIT) near.push([id, Math.max(d * 1.3, 1)]);
+  }
+  return near.sort((a, b) => a[1] - b[1]).slice(0, 2);
+}
+
+function shortestRoute(graph, from, to, extra = new Map()) {
   const distances = new Map([[from, 0]]), previous = new Map(), queue = [[0, from]];
   function push(item) {
     queue.push(item);
@@ -189,8 +210,9 @@ function shortestRoute(graph, from, to) {
       while (ids[0] !== from) ids.unshift(previous.get(ids[0]));
       return ids;
     }
-    for (const [next, weight] of graph.get(id) || []) {
-      const candidate = cost + weight;
+    const links = [...(graph.get(id) || []), ...(extra.get(id) || [])];
+    for (const [next, metres] of links) {
+      const candidate = cost + (metres > LONG_HOP ? metres * LONG_HOP_PENALTY : metres);
       if (candidate < (distances.get(next) ?? Infinity)) {
         distances.set(next, candidate);
         previous.set(next, id);
@@ -208,35 +230,47 @@ async function selectRoute() {
   }
   const from = findStation($('origin')), to = findStation($('destination'));
   if (!from || !to || from.id === to.id) {
-    $('route-status').textContent = stations.length ? 'Shuru aur antim station likhkar neeche aayi list se tap karke chunein; dono alag hone chahiye.' : 'Station list abhi taiyar nahi hai; internet check karein.';
+    $('route-status').textContent = stations.length ? 'Shuru aur antim station likhkar neeche aayi list se tap karke chunein; dono alag hone chahiye.' : 'Station list abhi taiyar nahi hai.';
     return;
   }
   $('find-route').disabled = true;
   $('start').disabled = true;
-  $('route-status').textContent = 'OSM track connectivity par candidate rasta dhoondh rahe hain...';
+  $('route-status').textContent = 'Rasta dhoondh rahe hain...';
   try {
     const graph = await getGraph();
-    const ids = shortestRoute(graph, from.id, to.id);
-    if (!ids) throw new Error('In stations ke beech route nahi mila');
     const byId = new Map(stations.map(s => [s.id, s]));
+    const extra = new Map();
+    for (const end of [from, to]) {
+      if (graph.has(end.id)) continue;
+      for (const [id, metres] of snapLinks(graph, end, byId)) {
+        if (!extra.has(end.id)) extra.set(end.id, []);
+        if (!extra.has(id)) extra.set(id, []);
+        extra.get(end.id).push([id, metres]);
+        extra.get(id).push([end.id, metres]);
+      }
+    }
+    const ids = shortestRoute(graph, from.id, to.id, extra);
+    if (!ids) throw new Error('In stations ke beech route nahi mila');
     route = ids.map(id => byId.get(id));
     routeIndex = null;
     state = {};
     $('route-list').replaceChildren();
-    for (const s of route) {
+    let metres = 0;
+    route.forEach((s, i) => {
+      if (i) metres += dist(route[i - 1].lat, route[i - 1].lon, s.lat, s.lon);
       const li = document.createElement('li');
       li.textContent = `${s.name} (${s.id})`;
       $('route-list').append(li);
-    }
+    });
     $('route-details').hidden = false;
     $('route-details').open = true;
-    $('route-status').textContent = `OSM track-based candidate: ${route.length} stations. Station matches review nahi hue; yeh aapki train ka scheduled ya live route nahi hai.`;
+    $('route-status').textContent = `Route bana: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Train doosri line se gayi to agla station disha se dikhega.`;
     $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
   } catch (e) {
     console.warn('Route nahi bana', e);
     const reason = e.message === 'In stations ke beech route nahi mila'
-      ? 'In stations ke liye OSM track candidate route nahi mila. Station match ya network data adhura ho sakta hai; timetable route se chupke fallback nahi kiya.'
-      : `${e.message}. Internet aur station names check karein.`;
+      ? 'in stations ke beech rasta nahi mila. Doosra nazdeeki station chunkar dekhein.'
+      : `${e.message}.`;
     $('route-status').textContent = `Route nahi bana: ${reason}${route ? ' Pehle chuna route abhi bhi laga hua hai.' : ''}`;
   } finally {
     $('find-route').disabled = false;
@@ -244,26 +278,7 @@ async function selectRoute() {
   }
 }
 
-async function loadNetworkSummary() {
-  try {
-    const r = await fetch('osm-station-route-summary.json');
-    if (!r.ok) throw new Error('Network summary HTTP ' + r.status);
-    const summary = await r.json();
-    if (summary.status !== 'candidate paths only; no train timetable, train-specific route, or live train position')
-      throw new Error('Network summary status sahi nahi hai');
-    $('network-status').textContent =
-      `OSM track graph: ${Number(summary.station_seeds).toLocaleString('en-IN')} unreviewed station matches; ` +
-      `${Number(summary.station_codes_with_candidate_route_edges).toLocaleString('en-IN')} have candidate links of ` +
-      `${Number(summary.station_catalog_records).toLocaleString('en-IN')} app stations; ` +
-      `${Number(summary.candidate_station_route_edges).toLocaleString('en-IN')} candidate track links. ` +
-      `OSM snapshot: ${summary.osm_snapshot_timestamp || 'unknown'}. ` +
-      'Baaki stations ke OSM route links nahi. Coverage/station identity verified nahi; timetable/live train data nahi.';
-  } catch (e) {
-    console.warn('OSM route summary load nahi hui', e);
-    $('network-status').textContent = 'OSM track-route data abhi available nahi. Internet check karein ya baad mein try karein.';
-  }
-}
-
+// Where the fix sits on the chosen route: the index of the station ahead, or null when the train is off it.
 function routePosition(p) {
   const lat = p.coords.latitude, lon = p.coords.longitude;
   let best = null;
@@ -275,22 +290,48 @@ function routePosition(p) {
     if (!length) continue;
     const fraction = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / length));
     const gap = Math.hypot(ax + fraction * dx, ay + fraction * dy) * Math.PI / 180 * 6371000;
-    if (!best || gap < best.gap) best = {i, fraction, gap};
+    if (!best || gap < best.gap) best = {i, fraction, gap, span: Math.sqrt(length) * Math.PI / 180 * 6371000};
   }
-  if (!best || best.gap > 2000) return null;
+  // Track curves between stations, so a long gap between two stations allows a wider miss.
+  if (!best || best.gap > Math.max(2000, best.span * 0.25)) return null;
   const nearStart = dist(lat, lon, route[best.i].lat, route[best.i].lon) <= R;
   const candidate = nearStart ? best.i : best.i + 1;
   routeIndex = routeIndex == null ? candidate : Math.max(routeIndex, candidate);
   return routeIndex;
 }
 
-function showRoutePosition(p) {
-  if (!route) return;
-  const index = routePosition(p);
-  if (index == null) {
-    $('next').textContent = 'Route se location ka milan nahi hua. Chuna hua route aur GPS check karein.';
-    return;
+function bearing(lat1, lon1, lat2, lon2) {
+  const r = Math.PI / 180, y = Math.sin((lon2 - lon1) * r) * Math.cos(lat2 * r);
+  const x = Math.cos(lat1 * r) * Math.sin(lat2 * r) - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lon2 - lon1) * r);
+  return (Math.atan2(y, x) / r + 360) % 360;
+}
+
+// The direction of travel, from two fixes at least 150 m apart.
+function updateHeading(lat, lon) {
+  if (!headingFrom) { headingFrom = {lat, lon}; return; }
+  if (dist(headingFrom.lat, headingFrom.lon, lat, lon) < 150) return;
+  heading = bearing(headingFrom.lat, headingFrom.lon, lat, lon);
+  headingFrom = {lat, lon};
+}
+
+// Without a route (or off it): the nearest station ahead in the direction of travel.
+function showAheadStation(lat, lon) {
+  if (heading == null) { $('next').textContent = 'Agla station: train chalne par dikhega.'; return; }
+  let best = null;
+  for (const s of stations) {
+    const d = dist(lat, lon, s.lat, s.lon);
+    if (d <= R || d > 80000) continue;
+    const turn = Math.abs((bearing(lat, lon, s.lat, s.lon) - heading + 540) % 360 - 180);
+    if (turn > 40) continue;
+    const score = d * (1 + turn / 40);
+    if (!best || score < best.score) best = {s, d, score};
   }
+  $('next').textContent = best
+    ? `Agla station (disha se anumaan): ${stationLabel(best.s)}, ${(best.d / 1000).toFixed(1)} km`
+    : 'Agla station: is disha mein 80 km tak koi station nahi mila.';
+}
+
+function showRoutePosition(p, index) {
   const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
   const label = d <= R ? 'Route par station ke paas' : 'Sambhavit agla station';
   $('next').textContent = `${label}: ${s.name} (${s.id}), ${(d / 1000).toFixed(1)} km — anumaan`;
@@ -299,7 +340,7 @@ function showRoutePosition(p) {
 async function loadStations() {
   if (stationListsLoaded || loading || Date.now() < retryAfter) return;
   loading = true;
-  $('data-status').textContent = 'Station list download ho rahi hai...';
+  dataStatus('Station list download ho rahi hai...', false);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
@@ -317,10 +358,10 @@ async function loadStations() {
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
       console.warn('Station list offline save nahi hui', e);
-      $('data-status').textContent = 'Station list taiyar hai, par offline save nahi hui; internet chahiye hoga.';
+      dataStatus('Station list taiyar hai, par offline save nahi hui; internet chahiye hoga.', false);
     }
     if (!$('data-status').textContent.includes('offline save'))
-      $('data-status').textContent = `Station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`;
+      dataStatus(`Station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
     const queued = pending;
     pending = [];
     for (const p of queued) processPosition(p);
@@ -329,13 +370,13 @@ async function loadStations() {
     console.warn('Station list load nahi hui', e);
     retryAfter = Date.now() + 30000;
     if (stations.length) {
-      $('data-status').textContent = 'Saved station list available hai; OSM station list nahi mili. Internet check karein.';
+      dataStatus('Saved station list available hai; OSM station list nahi mili. Internet check karein.', true);
       const queued = pending;
       pending = [];
       for (const p of queued) processPosition(p);
       if (!queued.length && latestPosition && watchId != null) showNearest(latestPosition);
     } else {
-      $('data-status').textContent = 'Station list nahi mili. Internet check karein aur page refresh karein.';
+      dataStatus('Station list nahi mili. Internet check karein aur page refresh karein.', true);
     }
   } finally {
     clearTimeout(timer);
@@ -381,7 +422,7 @@ function onPos(p) {
   $('status').textContent = `Location mil rahi hai (±${Math.round(accuracy)} m)`;
   if (accuracy > R) {
     showNearest(p);
-    if (route) $('next').textContent = 'GPS accuracy kam hai; agla station nirdharit nahi kar sakte.';
+    $('next').textContent = 'GPS accuracy kam hai; agla station nirdharit nahi kar sakte.';
     $('status').textContent += '. Accuracy kam hai; GPS on karke khule aasman ke neeche try karein.';
     loadStations();
     return;
@@ -390,7 +431,7 @@ function onPos(p) {
     pending.push(p);
     if (pending.length > 200) {
       pending.shift();
-      $('data-status').textContent = 'Station data abhi nahi mila; kuch purani locations chhoot sakti hain.';
+      dataStatus('Station data abhi nahi mila; kuch purani locations chhoot sakti hain.', true);
     }
   } else {
     processPosition(p);
@@ -400,12 +441,19 @@ function onPos(p) {
 
 function processPosition(p) {
   const {latitude: lat, longitude: lon} = p.coords, t = p.timestamp;
-  if (route && routePosition(p) == null) {
-    state = {};
-    last = null;
-    $('next').textContent = 'Route se location ka milan nahi hua. Chuna hua route aur GPS check karein; adhoore visits log nahi honge.';
-    showNearest(p);
-    return;
+  updateHeading(lat, lon);
+  // On the chosen route only its stations are logged; off it (another line, or no route) every station is.
+  const index = route ? routePosition(p) : null;
+  const active = index != null ? route : stations;
+  if (active !== lastActive) {
+    const keep = new Set(active.map(stationKey));
+    const byKey = new Map(stations.map(s => [stationKey(s), s]));
+    for (const k of Object.keys(state)) {
+      if (keep.has(k)) continue;
+      if (byKey.has(k)) finish(byKey.get(k), state[k], t);
+      delete state[k];
+    }
+    lastActive = active;
   }
   let speed = p.coords.speed;
   if ((speed == null || !Number.isFinite(speed)) && last) {
@@ -416,7 +464,7 @@ function processPosition(p) {
   last = {lat, lon, t};
 
   let nearest = null;
-  for (const s of route || stations) {
+  for (const s of active) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
     const k = stationKey(s);
@@ -432,7 +480,8 @@ function processPosition(p) {
   }
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(1)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
-  showRoutePosition(p);
+  if (index != null) showRoutePosition(p, index);
+  else showAheadStation(lat, lon);
   saveActive();
 }
 
@@ -578,6 +627,7 @@ function stop() {
   }
   $('speed').textContent = 'Speed: —';
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
+  heading = null; headingFrom = null; lastActive = null;
   $('status').textContent = 'Tracking band hai. Adhoora station visit log nahi hua.';
 }
 
@@ -619,22 +669,20 @@ try {
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
     stations = [...catalog, ...osmCatalog];
     stationListsLoaded = true;
-    $('data-status').textContent =
-      `Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`;
+    dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {
     const legacy = localStorage.getItem('safar-stations-v1');
     if (legacy) {
       const rows = JSON.parse(legacy);
       const catalog = parseStations(rows, 'DataMeet + project fallback');
       stations = catalog;
-      $('data-status').textContent = `Saved station list taiyar: DataMeet/project ${catalog.length}; OSM update baaki hai`;
+      dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length}; OSM update baaki hai`, false);
     }
   }
 } catch (e) {
   console.warn('Saved station list nahi padh paye', e);
 }
 loadStations();
-loadNetworkSummary();
 try {
   const saved = JSON.parse(localStorage.getItem(ACTIVE_KEY) || 'null');
   if (saved && stations.length) {

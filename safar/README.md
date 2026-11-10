@@ -5,12 +5,20 @@ release requires uninstalling the old debug APK (which removes local app data).
 Subsequent signed releases use the same application ID and signing key, so
 Android can install them over the existing app after the user confirms.
 
-An Android `JobScheduler` job checks the fixed GitHub update release roughly
-every six hours when networking is available. Android may defer checks for
-battery or other restrictions; force-stopping the app prevents checks until
-it is opened again. Notifications must be enabled. Tapping the notification
-opens the release page; the user downloads the named APK and confirms Android's
-installation prompt. This is not a silent installer or a real-time push.
+The app updates itself the way Share Scan does. When it is opened it looks at
+the fixed GitHub update release; if that carries a newer version it asks, then
+downloads the APK with Android's download manager (the download carries on
+with the app closed), checks that the file is this app at that version, and
+hands it to the system installer. Android asks the user to confirm each
+installation, and the first time also to allow installs from this app. This is
+not a silent installer. Debug builds never offer updates: they carry a
+different key.
+
+An Android `JobScheduler` job also checks roughly every six hours when
+networking is available and posts one notification per new version; tapping it
+opens the app on the update prompt. Android may defer checks for battery or
+other restrictions, and force-stopping the app prevents them until it is
+opened again.
 
 ## One-time signing setup
 
