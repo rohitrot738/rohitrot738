@@ -399,6 +399,81 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
 
+  // The limits: a station counts within 250 m, the train is stopped below 0.75 m/s (2.7 km/h), and a stop of
+  // 15 seconds or more is a halt.
+  const limits = setup(stationFetcher([['LIM', 'Limit Station', 28, 77]]));
+  limits.elements.start.onclick();
+  limits.watches[0].success(fix(27.99, 100000));
+  await flush();
+  limits.watches[0].success(fix(27.9975, 110000));          // 278 m away: outside the station
+  limits.watches[0].success(fix(27.9975, 130000, 0));       // standing there is a stop on the way, not at the station
+  limits.watches[0].success(fix(27.998, 160000));           // 222 m away: inside
+  limits.watches[0].success(fix(28, 170000, 0.7));          // below 0.75 m/s: stopped
+  limits.watches[0].success(fix(28, 190000, 0.8));          // above it: moving again, 20 s later
+  limits.watches[0].success(fix(28.01, 260000));
+  const limitLog = JSON.parse(limits.store.get('trainlog'));
+  const stationEntry = limitLog.find(entry => entry.id === 'LIM');
+  assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
+  assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 130000));
+
+  // Rings. The train runs north along longitude 77 in 55 m steps; 0.001 degrees of longitude is about 98 m here.
+  const drive = (app, from, to, t0, speed = 27) => {
+    const watch = app.watches[app.watches.length - 1];
+    let t = t0;
+    for (let lat = from; lat <= to + 1e-9; lat += 0.0005, t += 2000) watch.success(fix(Math.round(lat * 1e4) / 1e4, t, speed));
+    return t;
+  };
+  const logIds = app => JSON.parse(app.store.get('trainlog') || '[]').map(entry => entry.id);
+
+  // A station passed within 100 m is written as soon as the train is 250 m past it, not at the edge of the zone;
+  // one that was in range at the same time but only reached a wide ring is dropped.
+  const rings = setup(stationFetcher([['CLS', 'Close', 28, 77.0005], ['WID', 'Wide', 28.002, 77.006]]));
+  rings.elements.start.onclick();
+  rings.watches[0].success(fix(27.98, 100000, 27));
+  await flush();
+  let clock = drive(rings, 27.9805, 28.002, 102000);
+  assert.deepEqual(logIds(rings), []);                       // 222 m past: still inside the 250 m ring
+  clock = drive(rings, 28.0025, 28.003, clock);
+  assert.deepEqual(logIds(rings), ['CLS']);                  // 278 m past: written, 700 m before the zone ends
+  const closeEntry = JSON.parse(rings.store.get('trainlog'))[0];
+  assert.equal(closeEntry.type, 'pass');
+  assert.ok(closeEntry.near >= 45 && closeEntry.near <= 55);
+  assert.match(rings.elements.log.children[0].children[1].textContent, /^Paar kiya: .+ · \d+ m paas se$/);
+  drive(rings, 28.0035, 28.03, clock);
+  assert.deepEqual(logIds(rings), ['CLS']);                  // Wide (589 m off the line) was beaten by Close
+
+  // A station whose listed position is 589 m off the line is still found, by the 750 m ring, once the zone is left.
+  const wide = setup(stationFetcher([['WID', 'Wide', 28, 77.006]]));
+  wide.elements.start.onclick();
+  wide.watches[0].success(fix(27.98, 100000, 27));
+  await flush();
+  clock = drive(wide, 27.9805, 28.007, 102000);
+  assert.deepEqual(logIds(wide), []);                        // 779 m along: 976 m away, still in the zone
+  drive(wide, 28.0075, 28.01, clock);
+  assert.deepEqual(logIds(wide), ['WID']);
+  const wideEntry = JSON.parse(wide.store.get('trainlog'))[0];
+  assert.ok(wideEntry.near >= 580 && wideEntry.near <= 600);
+
+  // Two stations both passed closely are both written, though they were in range together.
+  const pair = setup(stationFetcher([['ONE', 'One', 28, 77.0005], ['TWO', 'Two', 28.004, 77.002]]));
+  pair.elements.start.onclick();
+  pair.watches[0].success(fix(27.98, 100000, 27));
+  await flush();
+  drive(pair, 27.9805, 28.03, 102000);
+  assert.deepEqual(logIds(pair), ['ONE', 'TWO']);
+
+  // Stop pressed while standing at a station: the halt so far is written, not lost.
+  const arrived = setup(stationFetcher([['END', 'Terminus', 28, 77.0005]]));
+  arrived.elements.start.onclick();
+  arrived.watches[0].success(fix(27.98, 100000, 27));
+  await flush();
+  clock = drive(arrived, 27.9805, 28, 102000);
+  arrived.watches[0].success(fix(28, clock, 0));
+  arrived.watches[0].success(fix(28, clock + 60000, 0));
+  arrived.elements.stop.onclick();
+  const endEntry = JSON.parse(arrived.store.get('trainlog'))[0];
+  assert.deepEqual([endEntry.id, endEntry.type, endEntry.arr, endEntry.dep], ['END', 'halt', clock, clock + 60000]);
+
   // Full-screen clock: only the look changes; a station passed meanwhile is still logged, with its speed shown.
   const big = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
   big.elements.start.onclick();

@@ -119,9 +119,15 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 <details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
 <script>
-const R = 500;            // station radius (m)
-const STOP_SPEED = 1.5;   // m/s se kam = ruka hua
-const MIN_HALT = 30;      // sec, isse zyada ruke to "halt"
+// A station is watched from ZONE away. How close the train came decides what is written: the smallest of RINGS it
+// reached. A visit that came within NEAR is certain: it is written as soon as the train leaves that ring and is
+// never dropped. A visit that only reached a wider ring waits until the train has left the zone, and is dropped
+// when a station seen at the same time was reached at a smaller ring.
+const ZONE = 1000, RINGS = [100, 250, 500, 750, 1000], NEAR = 250;
+const ACCURACY_LIMIT = 500; // m; a fix less accurate than this is not used
+const ring = d => RINGS.find(r => d <= r) ?? ZONE;
+const STOP_SPEED = 0.75;  // m/s (2.7 km/h) se kam = ruka hua
+const MIN_HALT = 15;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
 let loading = false, stationListsLoaded = false, retryAfter = 0, pending = [], latestPosition = null, session = 0;
@@ -133,7 +139,10 @@ let route = null, routeIndex = null, edgeGraph = null;
 let heading = null, headingFrom = null, lastActive = null;
 let skipIds = new Set(); // route stations the user unticked: never logged
 let viaCount = 0; // via boxes shown so far (up to 3)
-let openStop = null; // the train standing still away from any station: {start, near, d}
+let openStop = null;  // the stop in progress: {start, moved, near, d}
+let closed = [];      // visits that only reached a wide ring and left the zone, waiting to be compared
+let recent = [];      // decided visits {key, enter, exit, ring}, for comparing later ones against
+let loggedStops = []; // start times of the stops already written to the log
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
 // Station-list status stays off screen unless something went wrong.
@@ -540,7 +549,7 @@ function routePosition(p) {
   const best = nearestSegment(lat, lon);
   // Track curves between stations, so a long gap between two stations allows a wider miss.
   if (!best || best.gap > Math.max(2000, best.span * 0.25)) return null;
-  const nearStart = dist(lat, lon, route[best.i].lat, route[best.i].lon) <= R;
+  const nearStart = dist(lat, lon, route[best.i].lat, route[best.i].lon) <= NEAR;
   const candidate = nearStart ? best.i : best.i + 1;
   routeIndex = routeIndex == null ? candidate : Math.max(routeIndex, candidate);
   return routeIndex;
@@ -566,7 +575,7 @@ function showAheadStation(lat, lon) {
   let best = null;
   for (const s of stations) {
     const d = dist(lat, lon, s.lat, s.lon);
-    if (d <= R || d > 80000) continue;
+    if (d <= NEAR || d > 80000) continue;
     const turn = Math.abs((bearing(lat, lon, s.lat, s.lon) - heading + 540) % 360 - 180);
     if (turn > 40) continue;
     const score = d * (1 + turn / 40);
@@ -579,7 +588,7 @@ function showAheadStation(lat, lon) {
 
 function showRoutePosition(p, index) {
   const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
-  const label = d <= R ? 'Route par station ke paas' : 'Sambhavit agla station';
+  const label = d <= NEAR ? 'Route par station ke paas' : 'Sambhavit agla station';
   $('next').textContent = `${label}: ${stationLabel(s)}, ${(d / 1000).toFixed(2)} km — anumaan`;
 }
 
@@ -643,13 +652,77 @@ function showNearest(p) {
 function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log)); render(); }
 function stationKey(s) { return s.id || s.name + s.lat; }
 
-function finish(s, st, exitT) {
-  const station = {name: s.name, id: s.id, source: s.source};
-  if (st.stopStart && (st.stopEnd || exitT) && (st.stopEnd || exitT) - st.stopStart >= MIN_HALT * 1000) {
-    addLog({...station, type: 'halt', arr: st.stopStart, dep: st.stopEnd || exitT});
+// A stop away from a station (signal, crossing, outer), written once; only after the train has moved, so sitting
+// still before the journey is not one.
+function logWayStop(stop, name, d) {
+  if (!stop.moved || loggedStops.includes(stop.start)) return;
+  loggedStops.push(stop.start);
+  const place = name ? `Raste mein (${name} se ${(d / 1000).toFixed(2)} km)` : 'Raste mein';
+  addLog({name: place, id: '', source: 'GPS', type: 'halt', arr: stop.start, dep: stop.end});
+}
+
+// Writes a station visit: a halt when the train stood near the station, otherwise a pass at its closest moment.
+// "Near" is the ring the visit reached, and at least NEAR so a long platform still counts. Stops inside the zone
+// but farther out are stops on the way.
+function logVisit(key, s, v) {
+  const reach = Math.max(NEAR, ring(v.bestD));
+  const halts = v.stops.filter(stop => stop.d <= reach && !loggedStops.includes(stop.start));
+  for (const stop of v.stops) if (stop.d > reach) logWayStop(stop, s.name, stop.d);
+  const station = {name: s.name, id: s.id, source: s.source, near: Math.round(v.bestD)};
+  if (halts.length) {
+    for (const stop of halts) loggedStops.push(stop.start);
+    addLog({...station, type: 'halt', arr: Math.min(...halts.map(stop => stop.start)), dep: Math.max(...halts.map(stop => stop.end))});
   } else {
-    addLog({...station, type: 'pass', t: st.bestT});
+    addLog({...station, type: 'pass', t: v.bestT});
   }
+  recent.push({key, enter: v.enter, exit: v.exit ?? null, ring: ring(v.bestD)});
+}
+
+// A visit that left the zone (or whose station is no longer followed): a certain one is written, a wide one waits.
+function closeVisit(key, s, v, t) {
+  if (v.done) {
+    const entry = recent.find(r => r.key === key && r.enter === v.enter);
+    if (entry) entry.exit = t;
+    return;
+  }
+  v.exit = t;
+  if (v.bestD <= NEAR) logVisit(key, s, v);
+  else closed.push({...v, key, s: {name: s.name, id: s.id, source: s.source}});
+}
+
+// Decides the waiting wide visits. One waits while a station that was in range at the same time is still being
+// approached; then it is dropped when such a station was reached at a smaller ring, and written otherwise.
+function decideClosed(force = false) {
+  const open = Object.values(state).filter(v => !v.done);
+  closed.sort((a, b) => ring(a.bestD) - ring(b.bestD) || a.exit - b.exit);
+  closed = closed.filter(v => {
+    if (!force && open.some(o => o.enter < v.exit)) return true;
+    const beaten = recent.some(r => r.key !== v.key && r.enter < v.exit && (r.exit ?? Infinity) > v.enter && r.ring < ring(v.bestD));
+    if (beaten) for (const stop of v.stops) logWayStop(stop, v.s.name, stop.d);
+    else logVisit(v.key, v.s, v);
+    return false;
+  });
+  const oldest = (last ? last.t : 0) - 30 * 60000;
+  recent = recent.filter(r => r.exit == null || r.exit > oldest).slice(-60);
+  loggedStops = loggedStops.slice(-100);
+}
+
+// The stop in progress is over at time t: every station in range remembers it with its own distance; with none in
+// range it is a stop on the way.
+function endStop(t) {
+  if (!openStop) return;
+  if (t - openStop.start >= MIN_HALT * 1000) {
+    const stop = {start: openStop.start, end: t, moved: openStop.moved};
+    let seen = false;
+    for (const v of Object.values(state)) {
+      if (v.done || v.stopD == null) continue;
+      v.stops.push({...stop, d: v.stopD});
+      seen = true;
+    }
+    if (!seen) logWayStop(stop, openStop.near, openStop.d);
+  }
+  for (const v of Object.values(state)) v.stopD = null;
+  openStop = null;
 }
 
 function showSpeed(p, prev) {
@@ -658,7 +731,7 @@ function showSpeed(p, prev) {
     const dt = (p.timestamp - prev.timestamp) / 1000;
     v = dt > 0 ? dist(prev.coords.latitude, prev.coords.longitude, p.coords.latitude, p.coords.longitude) / dt : null;
   }
-  $('speed').textContent = Number.isFinite(v) && p.coords.accuracy <= R
+  $('speed').textContent = Number.isFinite(v) && p.coords.accuracy <= ACCURACY_LIMIT
     ? String(Math.round(v * 3.6)) : '—';
 }
 
@@ -667,7 +740,7 @@ function onPos(p) {
   latestPosition = p;
   const {latitude: lat, longitude: lon, accuracy} = p.coords;
   $('status').textContent = `Location mil rahi hai (±${Math.round(accuracy)} m)`;
-  if (accuracy > R) {
+  if (accuracy > ACCURACY_LIMIT) {
     showNearest(p);
     $('next').textContent = 'GPS accuracy kam hai; agla station nirdharit nahi kar sakte.';
     $('status').textContent += '. Accuracy kam hai; GPS on karke khule aasman ke neeche try karein.';
@@ -697,7 +770,7 @@ function processPosition(p) {
     const byKey = new Map(stations.map(s => [stationKey(s), s]));
     for (const k of Object.keys(state)) {
       if (keep.has(k)) continue;
-      if (byKey.has(k)) finish(byKey.get(k), state[k], t);
+      if (byKey.has(k)) closeVisit(k, byKey.get(k), state[k], t);
       delete state[k];
     }
     lastActive = active;
@@ -710,38 +783,39 @@ function processPosition(p) {
   if (!Number.isFinite(speed)) speed = null;
   last = {lat, lon, t};
 
+  const stopped = speed != null && speed < STOP_SPEED;
+  if (speed != null && !stopped) endStop(t);
+  if (stopped && !openStop) openStop = {start: t, moved: heading != null, near: null, d: 0};
+
   let nearest = null;
   for (const s of active) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
     if (skipIds.has(s.id)) continue; // unticked in the route list
     const k = stationKey(s);
-    let st = state[k];
-    if (d <= R) {
-      if (!st) st = state[k] = {bestD: d, bestT: t, stopStart: null, stopEnd: null};
-      if (d < st.bestD) { st.bestD = d; st.bestT = t; }
-      if (speed != null && speed < STOP_SPEED) { if (!st.stopStart) st.stopStart = t; st.stopEnd = null; }
-      else if (speed != null && st.stopStart && !st.stopEnd) st.stopEnd = t;
-    } else if (st) {
-      finish(s, st, t); delete state[k];
+    let v = state[k];
+    if (d <= ZONE) {
+      if (!v) v = state[k] = {enter: t, bestD: d, bestT: t, stops: [], stopD: null, done: false};
+      if (v.done) continue;
+      if (d < v.bestD) { v.bestD = d; v.bestT = t; }
+      if (stopped) v.stopD = v.stopD == null ? d : Math.min(v.stopD, d);
+      // Came within NEAR and is leaving it: written now, without waiting for the edge of the zone.
+      if (v.bestD <= NEAR && d > NEAR && v.stopD == null) {
+        logVisit(k, s, v);
+        v.done = true;
+        v.stops = [];
+      }
+    } else if (v) {
+      closeVisit(k, s, v, t);
+      delete state[k];
     }
   }
+  if (openStop && openStop.near == null && nearest) { openStop.near = nearest.s.name; openStop.d = nearest.d; }
+  decideClosed();
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
-  // A stop between stations (signal, crossing, outer): logged like a station halt once the train moves again.
-  // Only after the train has moved, so sitting still before the journey is not a halt.
-  const atStation = nearest && nearest.d <= R;
-  if (speed != null && speed < STOP_SPEED && !atStation && heading != null) {
-    if (!openStop) openStop = {start: t, near: nearest ? nearest.s.name : '', d: nearest ? nearest.d : 0};
-    if (t - openStop.start >= MIN_HALT * 1000)
-      $('now').textContent += ` · Raste mein ruki hai: ${Math.round((t - openStop.start) / 6000) / 10} min`;
-  } else if (openStop && (speed != null || atStation)) {
-    if (t - openStop.start >= MIN_HALT * 1000) {
-      const place = openStop.near ? `Raste mein (${openStop.near} se ${(openStop.d / 1000).toFixed(2)} km)` : 'Raste mein';
-      addLog({name: place, id: '', source: 'GPS', type: 'halt', arr: openStop.start, dep: t});
-    }
-    openStop = null;
-  }
+  if (openStop && openStop.moved && nearest && nearest.d > NEAR && t - openStop.start >= MIN_HALT * 1000)
+    $('now').textContent += ` · Raste mein ruki hai: ${Math.round((t - openStop.start) / 6000) / 10} min`;
   if (index != null) showRoutePosition(p, index);
   else showAheadStation(lat, lon);
   saveActive();
@@ -751,7 +825,7 @@ function saveActive() {
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
-      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -894,9 +968,19 @@ function stop() {
     wakeLock = null;
   }
   $('speed').textContent = '—';
+  // What the journey has shown so far is written before the session is cleared: the stop in progress ends now, and
+  // every station in range is treated as left.
+  if (last) {
+    endStop(last.t);
+    const byKey = new Map(stations.map(s => [stationKey(s), s]));
+    for (const k of Object.keys(state)) if (byKey.has(k)) closeVisit(k, byKey.get(k), state[k], last.t);
+    state = {};
+    decideClosed(true);
+  }
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
   heading = null; headingFrom = null; lastActive = null; openStop = null;
-  $('status').textContent = 'Tracking band hai. Adhoora station visit log nahi hua.';
+  closed = []; recent = []; loggedStops = [];
+  $('status').textContent = 'Tracking band hai.';
 }
 
 function render() {
@@ -909,6 +993,8 @@ function render() {
     details.textContent = e.type === 'halt'
       ? `Ruka: ${fmt(e.arr)} se ${fmt(e.dep)} tak (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
       : `Paar kiya: ${fmt(e.t)}`;
+    // How close the train came to the station's listed position.
+    if (Number.isFinite(e.near)) details.textContent += ` · ${e.near} m paas se`;
     card.append(title, details);
     $('log').append(card);
   }
@@ -976,8 +1062,23 @@ try {
         renderRouteList();
         $('route-details').hidden = false;
       }
-      if (saved.state && typeof saved.state === 'object') state = saved.state;
-      if (saved.openStop && Number.isFinite(saved.openStop.start)) { openStop = saved.openStop; heading = 0; }
+      if (saved.state && typeof saved.state === 'object') {
+        // A session saved by an older version kept one stop per station; bring it into today's shape.
+        for (const [k, v] of Object.entries(saved.state)) {
+          if (!v || !Number.isFinite(v.bestD)) continue;
+          state[k] = Array.isArray(v.stops) ? v : {
+            enter: v.bestT, bestD: v.bestD, bestT: v.bestT, stopD: null, done: false,
+            stops: v.stopStart ? [{start: v.stopStart, end: v.stopEnd || v.bestT, d: v.bestD, moved: true}] : []
+          };
+        }
+      }
+      if (Array.isArray(saved.closed)) closed = saved.closed;
+      if (Array.isArray(saved.recent)) recent = saved.recent;
+      if (Array.isArray(saved.loggedStops)) loggedStops = saved.loggedStops;
+      if (saved.openStop && Number.isFinite(saved.openStop.start)) {
+        openStop = {moved: true, near: null, d: 0, ...saved.openStop};
+        heading = 0;
+      }
       if (saved.mode) $('mode').value = saved.mode;
       start();
       $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
