@@ -23,7 +23,7 @@ function setup(fetch, saved, capacitor = null) {
     watchPosition(success, error, options) { watches.push({success, error, options}); return watches.length; },
     clearWatch(id) { watches[id - 1].cleared = true; }
   };
-  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: fn => { elements.clockTick = fn; return 0; }, String,
+  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: (fn, ms) => { (elements.intervals ||= []).push({fn, ms}); elements.clockTick = fn; return 0; }, String,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
   return {elements, store, watches};
@@ -93,6 +93,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const nativeCapacitor = {
     isNativePlatform: () => true,
     registerPlugin: name => {
+      if (name === 'SafarBuffer') return {drain: async () => ({fixes: []}), clear: async () => {}};
       assert.equal(name, 'BackgroundGeolocation');
       return {
         addWatcher: async (_options, callback) => { nativeCallback = callback; return 'native-watch'; },
@@ -415,6 +416,33 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const stationEntry = limitLog.find(entry => entry.id === 'LIM');
   assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
   assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 130000));
+
+  // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
+  // page runs again it reads them and the log has the station, at the time the train was really there.
+  const missed = [];
+  let liveFix, buffersCleared = 0;
+  const asleep = setup(stationFetcher([['SLP', 'Sleep Station', 28, 77.0005]]), null, {
+    isNativePlatform: () => true,
+    registerPlugin: name => name === 'SafarBuffer'
+      ? {drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}), clear: async () => { buffersCleared++; }}
+      : {addWatcher: async (_options, callback) => { liveFix = callback; return 'w'; }, removeWatcher: async () => {}}
+  });
+  asleep.elements.start.onclick();
+  await flush();
+  assert.equal(buffersCleared, 1);
+  liveFix({latitude: 27.98, longitude: 77, accuracy: 10, speed: 27, time: 100000}, null);
+  await flush();
+  for (let i = 1; i <= 100; i++)
+    missed.push({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
+  assert.equal(asleep.store.has('trainlog'), false);
+  await asleep.elements.intervals.find(timer => timer.ms === 15000).fn();
+  const sleptLog = JSON.parse(asleep.store.get('trainlog'));
+  assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
+  // A fix the page already read from the buffer is not used twice when it arrives late.
+  liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 180000}, null);
+  liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 290000}, null);
+  assert.equal(JSON.parse(asleep.store.get('trainlog')).length, 1);
+  assert.match(asleep.elements.status.textContent, /Location mil rahi hai/);
 
   // Rings. The train runs north along longitude 77 in 55 m steps; 0.001 degrees of longitude is about 98 m here.
   const drive = (app, from, to, t0, speed = 27) => {

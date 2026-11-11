@@ -821,7 +821,38 @@ function processPosition(p) {
   saveActive();
 }
 
+// With the screen off or the app minimised Android may stop running this page, and the fixes of that time never
+// reach it. The app keeps them on the native side; here the page reads the ones it missed, in order and each with
+// its own time, so the log comes out as if it had been running all along.
+let fixBuffer = null, lastFixTime = 0, draining = false, replaying = false;
+async function drainFixes() {
+  if (!tracking || !fixBuffer?.drain || draining) return;
+  draining = true;
+  const mySession = session;
+  try {
+    const result = await fixBuffer.drain({after: lastFixTime});
+    const fixes = Array.isArray(result?.fixes) ? result.fixes : [];
+    replaying = true;
+    for (let i = 0; i < fixes.length; i++) {
+      if (mySession !== session || !tracking) break;
+      const fix = fixes[i];
+      if (!Number.isFinite(fix.time) || fix.time <= lastFixTime) continue;
+      lastFixTime = fix.time;
+      onPos({coords: {latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, speed: fix.speed}, timestamp: fix.time});
+      // A long gap is replayed in pieces so the screen stays responsive.
+      if (i % 200 === 199) await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  } catch (e) {
+    console.warn('Chhooti hui locations nahi mili', e);
+  } finally {
+    replaying = false;
+    draining = false;
+    saveActive();
+  }
+}
+
 function saveActive() {
+  if (replaying) return; // saved once, when the replay ends
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
@@ -868,6 +899,10 @@ function start() {
   };
   const capacitor = window.Capacitor;
   const backgroundGeo = capacitor?.isNativePlatform?.() && capacitor.registerPlugin?.('BackgroundGeolocation');
+  // The app keeps every fix on the native side too (SafarBuffer); a new journey starts with none.
+  fixBuffer = backgroundGeo ? capacitor.registerPlugin?.('SafarBuffer') : null;
+  lastFixTime = 0;
+  try { fixBuffer?.clear?.()?.catch?.(() => {}); } catch (e) { fixBuffer = null; }
   if (!backgroundGeo) {
     startWeb(mode !== 'network');
   } else {
@@ -910,6 +945,11 @@ function start() {
         return;
       }
       gotFix = true;
+      // Already written from the native buffer (drainFixes): the page was not running when this fix came.
+      if (Number.isFinite(location.time)) {
+        if (location.time <= lastFixTime) return;
+        lastFixTime = location.time;
+      }
       if (webStarted && nativeWatcher) {
         if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
         webStarted = false;
@@ -1000,7 +1040,12 @@ function render() {
   }
 }
 
-$('start').onclick = start; $('stop').onclick = stop;
+$('start').onclick = start;
+// What the page missed is read first, so stopping does not lose it.
+$('stop').onclick = () => (tracking && fixBuffer?.drain ? drainFixes().then(stop, stop) : stop());
+// Back on screen, and every 15 seconds while it is running: read whatever was missed.
+document.addEventListener?.('visibilitychange', () => { if (!document.hidden) drainFixes(); });
+setInterval(drainFixes, 15000);
 $('find-route').onclick = selectRoute;
 stationSuggestions('origin', 'origin-options');
 stationSuggestions('destination', 'destination-options');

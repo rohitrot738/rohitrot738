@@ -3,16 +3,22 @@ package com.railtrack.app;
 import android.Manifest;
 import android.app.job.JobInfo;
 import android.app.job.JobScheduler;
+import android.content.BroadcastReceiver;
 import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.os.Build;
+import android.location.Location;
 import android.os.Bundle;
+import android.os.PowerManager;
 import android.os.SystemClock;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -32,9 +38,34 @@ public class MainActivity extends BridgeActivity {
     /** The version the user put off; it is not offered again until the app is restarted or a notification is tapped. */
     private volatile long putOff;
 
+    /** The location plugin's own broadcast of each fix; the same action its bridge to the page listens for. */
+    private static final String FIX_BROADCAST = "com.equimaps.capacitor_background_geolocation.broadcast";
+    private PowerManager.WakeLock fixWakeLock;
+    /**
+     * Keeps every fix of the running journey for the page to read later, and keeps the processor awake while fixes
+     * arrive: with the screen off the page's script may not run, and the phone may otherwise doze between fixes.
+     */
+    private final BroadcastReceiver fixReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            Location location = intent.getParcelableExtra("location");
+            if (location == null) return;
+            FixBuffer.add(location);
+            // Renewed by every fix, so it lapses by itself two minutes after tracking stops.
+            if (fixWakeLock != null) fixWakeLock.acquire(2 * 60 * 1000L);
+        }
+    };
+
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(SafarBufferPlugin.class);
         super.onCreate(savedInstanceState);
+        PowerManager power = (PowerManager) getSystemService(POWER_SERVICE);
+        if (power != null) {
+            fixWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SufferSathi:fixes");
+            fixWakeLock.setReferenceCounted(false);
+        }
+        LocalBroadcastManager.getInstance(this).registerReceiver(fixReceiver, new IntentFilter(FIX_BROADCAST));
         JobScheduler scheduler = (JobScheduler) getSystemService(JOB_SCHEDULER_SERVICE);
         JobInfo job = new JobInfo.Builder(73418, new ComponentName(this, UpdateCheckService.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
@@ -78,6 +109,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onDestroy() {
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(fixReceiver);
+        if (fixWakeLock != null && fixWakeLock.isHeld()) fixWakeLock.release();
         updates.shutdownNow();
         if (updateDialog != null) updateDialog.dismiss();
         super.onDestroy();

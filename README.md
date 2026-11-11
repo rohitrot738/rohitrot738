@@ -26,7 +26,7 @@ Install the file named in the release notes (`Suffer-Sathi-<version>.apk`). Once
 
 ## Logging with the screen off
 
-Three phone settings are needed, otherwise the phone stops the app in the background:
+While tracking, the app keeps every location fix on the native side as well. If Android pauses the app's screen while it is off or minimised, the missed fixes are read back when the screen returns and the log is filled in with the real times. That only works while Android keeps the app itself alive, so three phone settings are needed:
 
 1. Location permission: **Allow all the time**.
 2. Battery: **Unrestricted** for Suffer Sathi.
