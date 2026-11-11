@@ -4,4 +4,7 @@
     <string name="title_activity_main">Suffer Sathi</string>
     <string name="package_name">com.railtrack.app</string>
     <string name="custom_url_scheme">com.railtrack.app</string>
+    <!-- The location plugin's tracking notification: its status-bar icon and the name of its channel. -->
+    <string name="capacitor_background_geolocation_notification_icon">drawable/ic_tracking</string>
+    <string name="capacitor_background_geolocation_notification_channel_name">Safar tracking</string>
 </resources>

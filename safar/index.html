@@ -864,6 +864,7 @@ async function showBackgroundStatus() {
   try {
     const status = await fixBuffer.status();
     const missing = [];
+    if (status.locationOn === false) missing.push('Location (GPS) chalu karein');
     if (status.backgroundLocation === false) missing.push('Location permission "Allow all the time" karein');
     if (status.batteryUnrestricted === false) missing.push('Battery "Unrestricted / No restrictions" karein');
     if (status.notifications === false) missing.push('Notification chalu karein');
@@ -1002,7 +1003,9 @@ function start() {
         if (error.code === 'NOT_AUTHORIZED') {
           $('status').textContent = 'Location permission nahi mili. Phone settings mein Suffer Sathi ke liye location allow karein.';
         }
-        fallback(error.message || 'native location error');
+        // The native watcher stays: it starts delivering once location is switched on or allowed, and it alone
+        // works with the screen off. Browser location only fills in until then.
+        fallback(error.message || 'native location error', true);
         return;
       }
       if (!Number.isFinite(location?.latitude) || !Number.isFinite(location?.longitude)) {

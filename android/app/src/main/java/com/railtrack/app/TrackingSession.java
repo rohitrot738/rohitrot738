@@ -2,6 +2,7 @@ package com.railtrack.app;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -30,7 +31,8 @@ import com.getcapacitor.JSObject;
 final class TrackingSession {
     private static final String TAG = "SathiTracking";
     private static final int BACKGROUND_REQUEST = 7341;
-    private static boolean active, gpsStarted, askedBackground, askedBattery;
+    private static final int NOTIFICATION_REQUEST = 7342;
+    private static boolean active, gpsStarted, askedBackground, askedBattery, askedLocationOn, askedNotifications;
     private static PowerManager.WakeLock wakeLock;
     private static final LocationListener gps = new LocationListener() {
         @Override
@@ -55,6 +57,8 @@ final class TrackingSession {
         active = true;
         askedBackground = false;
         askedBattery = false;
+        askedLocationOn = false;
+        askedNotifications = false;
         FixBuffer.clear();
         if (wakeLock == null) {
             PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
@@ -84,6 +88,11 @@ final class TrackingSession {
         if (active && !gpsStarted) startGps(context.getApplicationContext());
     }
 
+    /** Back on screen: location or its permission may have been switched on meanwhile. */
+    static synchronized void retryGps(Context context) {
+        if (active && !gpsStarted) startGps(context.getApplicationContext());
+    }
+
     private static void startGps(Context app) {
         if (gpsStarted || !granted(app, Manifest.permission.ACCESS_FINE_LOCATION)) return;
         LocationManager manager = (LocationManager) app.getSystemService(Context.LOCATION_SERVICE);
@@ -98,13 +107,49 @@ final class TrackingSession {
     }
 
     /**
-     * Asks, once each per journey and one at a time, for what background tracking needs: first the battery question,
-     * which is a plain dialog, then "Allow all the time". Called when the journey starts, whenever the app comes back
-     * to the screen, and after a permission answer, so one question follows the other even when Android answers a
-     * request without showing anything.
+     * Asks, once each per journey and one at a time, for what tracking needs: location switched on, notifications
+     * (the tracking notification is what keeps Android from stopping the app), no battery restriction, and "Allow all
+     * the time". Called when the journey starts, whenever the app comes back to the screen, and after a permission
+     * answer, so one question follows the other even when Android answers a request without showing anything.
      */
     static synchronized void prompt(Activity activity) {
-        if (!active || activity.isFinishing()) return;
+        if (!active || activity.isFinishing() || activity.isDestroyed()) return;
+        if (!askedLocationOn && !locationOn(activity)) {
+            askedLocationOn = true;
+            new AlertDialog.Builder(activity)
+                .setTitle("Location (GPS) band hai")
+                .setMessage("Safar ka log banane ke liye phone ki Location chalu honi chahiye. Abhi chalu karein?")
+                .setPositiveButton("Chalu karein", (dialog, which) -> {
+                    try {
+                        activity.startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "Location settings could not be opened", e);
+                    }
+                })
+                .setNegativeButton("Baad mein", (dialog, which) -> prompt(activity))
+                .setCancelable(false)
+                .show();
+            return;
+        }
+        if (!askedNotifications && !NotificationManagerCompat.from(activity).areNotificationsEnabled()) {
+            askedNotifications = true;
+            if (Build.VERSION.SDK_INT >= 33 && !granted(activity, Manifest.permission.POST_NOTIFICATIONS)
+                && ActivityCompat.shouldShowRequestPermissionRationale(activity, Manifest.permission.POST_NOTIFICATIONS)) {
+                // Turned down once: Android will still show its own question.
+                ActivityCompat.requestPermissions(activity, new String[] {Manifest.permission.POST_NOTIFICATIONS}, NOTIFICATION_REQUEST);
+                return;
+            }
+            // Never asked, or turned down for good: Android's question may not appear, so the app's notification
+            // settings are opened instead.
+            try {
+                Intent intent = new Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                    .putExtra(Settings.EXTRA_APP_PACKAGE, activity.getPackageName());
+                activity.startActivity(intent);
+                return;
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Notification settings could not be opened", e);
+            }
+        }
         if (!askedBattery && !batteryUnrestricted(activity)) {
             askedBattery = true;
             try {
@@ -125,6 +170,17 @@ final class TrackingSession {
         }
     }
 
+    private static boolean locationOn(Context context) {
+        LocationManager manager = (LocationManager) context.getSystemService(Context.LOCATION_SERVICE);
+        if (manager == null) return true;
+        if (Build.VERSION.SDK_INT >= 28) return manager.isLocationEnabled();
+        try {
+            return manager.isProviderEnabled(LocationManager.GPS_PROVIDER);
+        } catch (RuntimeException e) {
+            return true;
+        }
+    }
+
     /** Opens this app's page in the phone's settings, where location and battery are set by hand. */
     static void openSettings(Activity activity) {
         try {
@@ -142,6 +198,7 @@ final class TrackingSession {
         result.put("batteryUnrestricted", batteryUnrestricted(context));
         result.put("notifications", NotificationManagerCompat.from(context).areNotificationsEnabled());
         result.put("gps", gpsStarted);
+        result.put("locationOn", locationOn(context));
         try {
             result.put("version", AppUpdate.installedCode(context));
         } catch (PackageManager.NameNotFoundException e) {
