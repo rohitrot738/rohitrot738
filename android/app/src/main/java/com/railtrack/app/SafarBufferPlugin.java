@@ -6,7 +6,7 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
-/** Lets the page read the fixes it missed while its script was not running (see FixBuffer). */
+/** The page's way to the native side of a journey: the fixes it missed (FixBuffer) and background tracking. */
 @CapacitorPlugin(name = "SafarBuffer")
 public class SafarBufferPlugin extends Plugin {
     /** The fixes later than "after" (a time in milliseconds), oldest first. */
@@ -18,10 +18,25 @@ public class SafarBufferPlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** A new journey starts: the fixes of the last one are dropped. */
+    /** A journey starts: old fixes are dropped and the native side keeps tracking alive (see TrackingSession). */
     @PluginMethod
-    public void clear(PluginCall call) {
-        FixBuffer.clear();
+    public void begin(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            TrackingSession.begin(getActivity());
+            call.resolve();
+        });
+    }
+
+    /** The journey is over. */
+    @PluginMethod
+    public void end(PluginCall call) {
+        TrackingSession.end(getContext());
         call.resolve();
+    }
+
+    /** Whether Android will let tracking go on with the screen off, for the page to show. */
+    @PluginMethod
+    public void status(PluginCall call) {
+        call.resolve(TrackingSession.status(getContext()));
     }
 }

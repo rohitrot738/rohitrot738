@@ -311,7 +311,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(outer.store.has('trainlog'), false);
   outer.watches[0].success(fix(28.06, 200000, 0));
   outer.watches[0].success(fix(28.06, 260000, 0));
-  assert.match(outer.elements.now.textContent, /Raste mein ruki hai: 1 min/);
+  assert.match(outer.elements['live-stop'].textContent, /^Abhi ruki hai: Raste mein \(Halt se 6\.\d\d km\) — .+ se \(1 min\)$/);
+  assert.equal(outer.elements['live-stop'].hidden, false);
   outer.watches[0].success(fix(28.061, 270000, 10));
   const outerLog = JSON.parse(outer.store.get('trainlog'));
   assert.equal(outerLog.length, 1);
@@ -415,16 +416,22 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const limitLog = JSON.parse(limits.store.get('trainlog'));
   const stationEntry = limitLog.find(entry => entry.id === 'LIM');
   assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
-  assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 130000));
+  assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
 
   // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
   // page runs again it reads them and the log has the station, at the time the train was really there.
   const missed = [];
-  let liveFix, buffersCleared = 0;
+  let liveFix, buffersCleared = 0, sessionsEnded = 0;
+  let backgroundState = {backgroundLocation: false, batteryUnrestricted: false, notifications: true};
   const asleep = setup(stationFetcher([['SLP', 'Sleep Station', 28, 77.0005]]), null, {
     isNativePlatform: () => true,
     registerPlugin: name => name === 'SafarBuffer'
-      ? {drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}), clear: async () => { buffersCleared++; }}
+      ? {
+        drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}),
+        begin: async () => { buffersCleared++; },
+        end: async () => { sessionsEnded++; },
+        status: async () => backgroundState
+      }
       : {addWatcher: async (_options, callback) => { liveFix = callback; return 'w'; }, removeWatcher: async () => {}}
   });
   asleep.elements.start.onclick();
@@ -435,7 +442,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   for (let i = 1; i <= 100; i++)
     missed.push({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
   assert.equal(asleep.store.has('trainlog'), false);
-  await asleep.elements.intervals.find(timer => timer.ms === 15000).fn();
+  // The page says what Android still needs for tracking with the screen off, and when it is all in place.
+  assert.match(asleep.elements['background-status'].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein$/);
+  assert.equal(asleep.elements['background-status'].hidden, false);
+  backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true};
+  await asleep.elements.intervals.find(timer => timer.ms === 5000).fn();
+  await flush();
+  assert.match(asleep.elements['background-status'].textContent, /settings theek hain/);
   const sleptLog = JSON.parse(asleep.store.get('trainlog'));
   assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
   // A fix the page already read from the buffer is not used twice when it arrives late.
@@ -443,6 +456,37 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 290000}, null);
   assert.equal(JSON.parse(asleep.store.get('trainlog')).length, 1);
   assert.match(asleep.elements.status.textContent, /Location mil rahi hai/);
+  await asleep.elements.stop.onclick();
+  assert.equal(sessionsEnded, 1);
+  assert.equal(asleep.elements['background-status'].hidden, true);
+
+  // A standing train with the screen off: the phone sends no fixes while it sits still. The silence is filled in
+  // as a stop from the last fix, so the halt has its real start, not the time fixes came back.
+  const silent = setup(stationFetcher([['SIL', 'Silent Station', 28, 77.0005]]));
+  silent.elements.start.onclick();
+  silent.watches[0].success(fix(27.98, 100000, 27));
+  await flush();
+  for (let i = 1; i <= 40; i++) silent.watches[0].success(fix(Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, 100000 + i * 2000, i === 40 ? 4 : 27));
+  // The last fix, at the platform, still shows the train rolling in at 4 m/s. Then four minutes of silence.
+  assert.equal(silent.elements['live-stop'].hidden, true);
+  silent.watches[0].success(fix(28.0001, 420000, 3));       // rolling out again, 11 m on
+  assert.equal(silent.elements['live-stop'].hidden, true);
+  for (let i = 1; i <= 10; i++) silent.watches[0].success(fix(Math.round((28.0001 + i * 0.0005) * 1e4) / 1e4, 420000 + i * 2000, 27));
+  const silentEntry = JSON.parse(silent.store.get('trainlog'))[0];
+  assert.deepEqual([silentEntry.id, silentEntry.type, silentEntry.arr, silentEntry.dep], ['SIL', 'halt', 180001, 420000]);
+
+  // The stop in progress shows above the log as soon as it counts, at a station by the station's name.
+  const standing = setup(stationFetcher([['STD', 'Standing Station', 28, 77.0005]]));
+  standing.elements.start.onclick();
+  standing.watches[0].success(fix(27.999, 100000, 27));
+  await flush();
+  standing.watches[0].success(fix(28, 104000, 0));
+  standing.watches[0].success(fix(28, 110000, 0));
+  assert.equal(standing.elements['live-stop'].hidden, true);  // 6 seconds: not a halt yet
+  standing.watches[0].success(fix(28, 119000, 0));
+  assert.match(standing.elements['live-stop'].textContent, /^Abhi ruki hai: Standing Station \(STD\) — .+ se \(0\.3 min\)$/);
+  standing.watches[0].success(fix(28.0005, 130000, 10));
+  assert.equal(standing.elements['live-stop'].hidden, true);
 
   // Rings. The train runs north along longitude 77 in 55 m steps; 0.001 degrees of longitude is about 98 m here.
   const drive = (app, from, to, t0, speed = 27) => {

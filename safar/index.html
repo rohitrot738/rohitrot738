@@ -108,6 +108,7 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
   <button id="stop" class="alt">Stop</button>
 </div>
 <div class="card" id="status">Status: ruka hua</div>
+<div class="card small" id="background-status" hidden></div>
 <div class="card" id="data-status" hidden></div>
 <div class="speedo" aria-label="Speed"><b id="speed">—</b><span>km/h</span></div>
 <div class="card" id="now">Nazdiki station: —</div>
@@ -115,6 +116,7 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 <button id="csv" class="alt">CSV download</button>
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
+<div class="card stop" id="live-stop" hidden></div>
 <div id="log"></div>
 <details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
@@ -759,7 +761,33 @@ function onPos(p) {
   loadStations();
 }
 
+// A phone that sits still with its screen off stops sending fixes, so a standing train shows up as a silence: the
+// next fix comes minutes later, from almost the same spot. That silence is filled in as a stop, from just after the
+// last fix until just before this one, so the stop is noted with its real start and not from when fixes resumed.
+const GAP_MS = 10000;
+let fillingGap = false;
+function fillGap(p) {
+  if (fillingGap || !last) return;
+  const t = p.timestamp, seconds = (t - last.t) / 1000;
+  if (t - last.t <= GAP_MS || dist(last.lat, last.lon, p.coords.latitude, p.coords.longitude) / seconds >= STOP_SPEED) return;
+  const still = time => ({coords: {latitude: last.lat, longitude: last.lon, accuracy: p.coords.accuracy, speed: 0}, timestamp: time});
+  const first = still(last.t + 1), second = still(t - 1);
+  fillingGap = true;
+  try { processPosition(first); processPosition(second); } finally { fillingGap = false; }
+}
+
+// The stop in progress, shown above the log from the moment it counts as a halt; the finished entry follows when
+// the train moves on.
+let liveStop = null; // {where, start}
+function showLiveStop(now) {
+  const card = $('live-stop');
+  if (!liveStop) { card.hidden = true; return; }
+  card.textContent = `Abhi ruki hai: ${liveStop.where} — ${fmt(liveStop.start)} se (${Math.round(Math.max(0, now - liveStop.start) / 6000) / 10} min)`;
+  card.hidden = false;
+}
+
 function processPosition(p) {
+  fillGap(p);
   const {latitude: lat, longitude: lon} = p.coords, t = p.timestamp;
   updateHeading(lat, lon);
   // On the chosen route only its stations are logged; off it (another line, or no route) every station is.
@@ -814,8 +842,12 @@ function processPosition(p) {
   decideClosed();
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
-  if (openStop && openStop.moved && nearest && nearest.d > NEAR && t - openStop.start >= MIN_HALT * 1000)
-    $('now').textContent += ` · Raste mein ruki hai: ${Math.round((t - openStop.start) / 6000) / 10} min`;
+  liveStop = null;
+  if (openStop && nearest && t - openStop.start >= MIN_HALT * 1000) {
+    if (nearest.d <= NEAR) liveStop = {where: stationLabel(nearest.s), start: openStop.start};
+    else if (openStop.moved) liveStop = {where: `Raste mein (${nearest.s.name} se ${(nearest.d / 1000).toFixed(2)} km)`, start: openStop.start};
+  }
+  showLiveStop(t);
   if (index != null) showRoutePosition(p, index);
   else showAheadStation(lat, lon);
   saveActive();
@@ -825,7 +857,25 @@ function processPosition(p) {
 // reach it. The app keeps them on the native side; here the page reads the ones it missed, in order and each with
 // its own time, so the log comes out as if it had been running all along.
 let fixBuffer = null, lastFixTime = 0, draining = false, replaying = false;
+// Tells the user what still stands in the way of tracking with the screen off, by what Android reports.
+async function showBackgroundStatus() {
+  const card = $('background-status');
+  if (!tracking || !fixBuffer?.status) { card.hidden = true; return; }
+  try {
+    const status = await fixBuffer.status();
+    const missing = [];
+    if (status.backgroundLocation === false) missing.push('Location permission "Allow all the time" karein');
+    if (status.batteryUnrestricted === false) missing.push('Battery "Unrestricted / No restrictions" karein');
+    if (status.notifications === false) missing.push('Notification chalu karein');
+    card.textContent = missing.length
+      ? 'Screen band par log ke liye phone ki settings mein: ' + missing.join(' · ')
+      : 'Screen band par tracking: settings theek hain ✓';
+    card.hidden = !tracking;
+  } catch (e) { card.hidden = true; }
+}
+
 async function drainFixes() {
+  showBackgroundStatus();
   if (!tracking || !fixBuffer?.drain || draining) return;
   draining = true;
   const mySession = session;
@@ -902,7 +952,10 @@ function start() {
   // The app keeps every fix on the native side too (SafarBuffer); a new journey starts with none.
   fixBuffer = backgroundGeo ? capacitor.registerPlugin?.('SafarBuffer') : null;
   lastFixTime = 0;
-  try { fixBuffer?.clear?.()?.catch?.(() => {}); } catch (e) { fixBuffer = null; }
+  // The native side drops the last journey's fixes, keeps the phone awake, listens to the GPS receiver itself and
+  // asks for "Allow all the time" and for no battery restriction.
+  try { (fixBuffer?.begin ?? fixBuffer?.clear)?.call(fixBuffer)?.catch?.(() => {}); } catch (e) { fixBuffer = null; }
+  showBackgroundStatus();
   if (!backgroundGeo) {
     startWeb(mode !== 'network');
   } else {
@@ -1020,6 +1073,9 @@ function stop() {
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
   heading = null; headingFrom = null; lastActive = null; openStop = null;
   closed = []; recent = []; loggedStops = [];
+  liveStop = null; showLiveStop(0);
+  try { fixBuffer?.end?.()?.catch?.(() => {}); } catch (e) { /* not native */ }
+  $('background-status').hidden = true;
   $('status').textContent = 'Tracking band hai.';
 }
 
@@ -1043,9 +1099,9 @@ function render() {
 $('start').onclick = start;
 // What the page missed is read first, so stopping does not lose it.
 $('stop').onclick = () => (tracking && fixBuffer?.drain ? drainFixes().then(stop, stop) : stop());
-// Back on screen, and every 15 seconds while it is running: read whatever was missed.
+// Back on screen, and every 5 seconds while it is running: read whatever was missed.
 document.addEventListener?.('visibilitychange', () => { if (!document.hidden) drainFixes(); });
-setInterval(drainFixes, 15000);
+setInterval(drainFixes, 5000);
 $('find-route').onclick = selectRoute;
 stationSuggestions('origin', 'origin-options');
 stationSuggestions('destination', 'destination-options');
@@ -1141,6 +1197,8 @@ function showClock() {
   const now = new Date(), two = n => String(n).padStart(2, '0');
   $('clock-hm').textContent = `${two(now.getHours())}:${two(now.getMinutes())}`;
   $('clock-sec').textContent = two(now.getSeconds());
+  // The standing time keeps counting between fixes.
+  if (tracking && liveStop && !replaying) showLiveStop(now.getTime());
   $('clock-date').textContent = `${DAYS[now.getDay()]}, ${two(now.getDate())} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 }
 showClock();
