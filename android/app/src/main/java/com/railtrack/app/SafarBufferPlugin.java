@@ -1,5 +1,11 @@
 package com.railtrack.app;
 
+import android.view.Window;
+
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.view.WindowInsetsControllerCompat;
+
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -39,6 +45,23 @@ public class SafarBufferPlugin extends Plugin {
     public void openSettings(PluginCall call) {
         getActivity().runOnUiThread(() -> {
             TrackingSession.openSettings(getActivity());
+            call.resolve();
+        });
+    }
+
+    /** Hides the phone's status bar and buttons for the full-screen clock ("on"), or brings them back. */
+    @PluginMethod
+    public void fullScreen(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        getActivity().runOnUiThread(() -> {
+            Window window = getActivity().getWindow();
+            WindowInsetsControllerCompat bars = WindowCompat.getInsetsController(window, window.getDecorView());
+            if (on) {
+                bars.setSystemBarsBehavior(WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                bars.hide(WindowInsetsCompat.Type.systemBars());
+            } else {
+                bars.show(WindowInsetsCompat.Type.systemBars());
+            }
             call.resolve();
         });
     }
