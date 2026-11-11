@@ -46,10 +46,10 @@ body.clockmode{overflow:hidden}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
 box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:10px 16px}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1;margin-top:-.08em}
+body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1;transform-origin:left top}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
-body.clockmode #clock-date{margin-top:4px}
+body.clockmode #clock-date{position:relative}
 body.clockmode #clock-full{position:absolute;top:auto;right:auto;left:16px;bottom:12px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
 body.clockmode #clock-color-row{display:none}
 body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;bottom:14px}
@@ -1248,6 +1248,7 @@ function fitClock() {
   document.body.className = clockMode ? (turned ? 'clockmode turned' : 'clockmode') : '';
   if (!clockMode || !known) {
     card.style.width = card.style.height = time.style.fontSize = date.style.fontSize = '';
+    time.style.transform = time.style.marginTop = date.style.marginTop = '';
     return;
   }
   const long = Math.max(w, h), short = Math.min(w, h);
@@ -1256,15 +1257,19 @@ function fitClock() {
   time.style.fontSize = '100px';
   const hmWidth = $('clock-hm').offsetWidth || 260;   // at 100 px
   const room = long - 16 - (14 + 182 + 10);           // left padding; the dial and a gap before it
-  const secWidth = $('clock-sec').offsetWidth || 45;   // at 100 px, with its gap
-  // The digits' foot is 0.77 of their size below the top edge (the line is pulled up into its own blank top).
-  // The seconds stand at the foot of the digits, where the dial is. Either the digits fill the width and stay
-  // low enough for the seconds to pass above the dial, or the seconds too stop before the dial: whichever is bigger.
-  const above = Math.min(room / hmWidth * 100, (short - 212) / 0.77);
-  const beside = room / (hmWidth + secWidth) * 100;
-  const size = Math.max(40, Math.min(short * 0.6, Math.max(above, beside)));
+  // The digits run from the left edge to the dial, and are stretched upright to fill from the top edge down to
+  // just above the dial, where the seconds pass over it. A digit is 0.71 of the font size tall and starts 0.135
+  // below the top of its line.
+  const DIGIT = 0.71, BLANK = 0.135, TOP = 6;
+  const tall = short - TOP - (14 + 182 + 16);          // digit height that fits above the dial
+  const size = Math.max(40, Math.min(room / hmWidth * 100, tall / DIGIT));
+  const stretch = Math.max(1, Math.min(1.8, tall / (DIGIT * size)));
   time.style.fontSize = size + 'px';
-  date.style.fontSize = Math.min(size * 0.26, short * 0.1) + 'px';
+  time.style.transform = `scaleY(${stretch.toFixed(3)})`;
+  time.style.marginTop = (TOP - 10 - BLANK * stretch * size) + 'px';
+  // The stretch does not move what follows, so the date is placed under the foot of the digits by hand.
+  date.style.fontSize = Math.min(size * 0.26, short * 0.1, room / 12.5) + 'px';   // the date also stops before the dial
+  date.style.marginTop = ((BLANK + DIGIT) * stretch * size - size + 10) + 'px';
 }
 window.addEventListener?.('resize', fitClock);
 
