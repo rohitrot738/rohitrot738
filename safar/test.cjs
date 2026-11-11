@@ -178,7 +178,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list available/);
 
   const database = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'stations.json'), 'utf8'));
-  assert.equal(database.length, 8702);
+  assert.equal(database.length, 8703);
   const delhi = database.find(row => row[0] === 'NDLS');
   assert.equal(delhi[1], 'NEW DELHI');
   const real = setup(stationFetcher(database));
@@ -321,6 +321,15 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   outer.watches[0].success(fix(28.07, 300000, 0));
   outer.watches[0].success(fix(28.07, 310000, 10));
   assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
+
+  // Son Nagar Flyover Cabin (FOCS) is found by name and code, and a route down the Garhwa Road line passes it.
+  assert.equal(firstOption('FOCS'), 'SON NAGAR FLYOVER CABIN (FOCS)');
+  assert.equal(firstOption('son nagar fly'), 'SON NAGAR FLYOVER CABIN (FOCS)');
+  pick('origin', 'origin-options', 'SEB', 'SON NAGAR (SEB)');
+  pick('destination', 'destination-options', 'ANH', 'ANKORAH AKORHA (ANH)');
+  await bundled.elements['find-route'].onclick();
+  assert.deepEqual(bundled.elements['route-list'].children.map(rowName),
+    ['SON NAGAR (SEB)', 'SON NAGAR FLYOVER CABIN (FOCS)', 'BAGAHABISHUNPUR (BCJ)', 'ANKORAH AKORHA (ANH)']);
 
   // Via: the shortest DDU -> Prayagraj route runs through Varanasi; a via station takes it along the Mirzapur line.
   const routeNames = () => bundled.elements['route-list'].children.map(rowName);

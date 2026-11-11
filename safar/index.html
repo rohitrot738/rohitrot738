@@ -38,15 +38,16 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 #clock-color-menu button{width:28px;height:28px;margin:4px;padding:0;border-radius:50%;border:2px solid #1e293b}
 #clock-color-menu button.on{border-color:#fff;box-shadow:0 0 0 2px #334155,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
-   (body.turned). Hours and minutes start at the left edge with the small seconds right after them; the speed dial
+   (body.turned). Hours and minutes start at the left edge with the small seconds right after them, level with the
+   bottom of the digits; the speed dial
    (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the bottom corner. fitClock() sets the
    sizes from the real screen, since vh/vw are not dependable inside the app. Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
 box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:10px 16px}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{display:flex;align-items:flex-start;line-height:1}
-body.clockmode #clock-sec{font-size:.34em;margin:.1em 0 0 .08em}
+body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1}
+body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
 body.clockmode #clock-date{margin-top:4px}
 body.clockmode #clock-full{position:absolute;top:auto;right:auto;left:16px;bottom:12px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
@@ -1240,7 +1241,8 @@ function fitClock() {
   time.style.fontSize = '100px';
   const hmWidth = $('clock-hm').offsetWidth || 260;   // at 100 px
   const room = long - 16 - (14 + 182 + 10);           // left padding; the dial and a gap before it
-  const size = Math.max(40, Math.min(room / hmWidth * 100, short * 0.6));
+  // Also low enough that the seconds, which sit on the same line as the bottom of the digits, clear the dial.
+  const size = Math.max(40, Math.min(room / hmWidth * 100, short * 0.6, (short - 214) / 0.9));
   time.style.fontSize = size + 'px';
   date.style.fontSize = Math.min(size * 0.26, short * 0.1) + 'px';
 }
