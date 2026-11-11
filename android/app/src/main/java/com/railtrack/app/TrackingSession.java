@@ -107,13 +107,15 @@ final class TrackingSession {
     }
 
     /**
-     * Asks, once each per journey and one at a time, for what tracking needs: location switched on, notifications
-     * (the tracking notification is what keeps Android from stopping the app), no battery restriction, and "Allow all
-     * the time". Called when the journey starts, whenever the app comes back to the screen, and after a permission
-     * answer, so one question follows the other even when Android answers a request without showing anything.
+     * Asks, one at a time, for what tracking needs: location switched on, notifications (the tracking notification
+     * is what keeps Android from stopping the app), no battery restriction, and "Allow all the time". Each is asked
+     * once when the app is opened and once more when a journey starts, if it is still missing. Called whenever the
+     * app comes to the screen, when a journey starts, and after a permission answer, so one question follows the
+     * other even when Android answers a request without showing anything. "Allow all the time" can only be asked
+     * once ordinary location access has been given, which the first journey asks for.
      */
     static synchronized void prompt(Activity activity) {
-        if (!active || activity.isFinishing() || activity.isDestroyed()) return;
+        if (activity.isFinishing() || activity.isDestroyed()) return;
         if (!askedLocationOn && !locationOn(activity)) {
             askedLocationOn = true;
             new AlertDialog.Builder(activity)
