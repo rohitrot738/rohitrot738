@@ -161,13 +161,22 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
   if (!Array.isArray(rows) || (!rows.length && source !== 'OpenStreetMap')) throw new Error('Station list khali hai');
   const parsed = rows.filter(r => Array.isArray(r) && typeof r[0] === 'string' &&
     typeof r[1] === 'string' && Number.isFinite(r[2]) && Number.isFinite(r[3]))
-    .map(([id, name, lat, lon]) => ({id, name, lat, lon, source}));
+    .map(([id, name, lat, lon, code]) => (typeof code === 'string' && code ? {id, name, lat, lon, source, code} : {id, name, lat, lon, source}));
   if (!parsed.length && source !== 'OpenStreetMap') throw new Error('Station list sahi nahi hai');
   return parsed;
 }
 
-// OSM-only stations have no station code; their internal id is not shown.
-function stationLabel(s) { return s.id && !s.id.startsWith('OSM:') ? `${s.name} (${s.id})` : s.name; }
+// A catalog station's id is its station code. An OpenStreetMap station has an internal id, which is not shown, and
+// a code of its own when OSM has one.
+function stationCode(s) { return s.code || (s.id && !s.id.startsWith('OSM:') ? s.id : ''); }
+function stationLabel(s) { const code = stationCode(s); return code ? `${s.name} (${code})` : s.name; }
+
+// Both lists together. An OSM station keeps its code only when the catalog has no station of that code, so a code
+// names one station.
+function combineStations(catalog, osmCatalog) {
+  const codes = new Set(catalog.map(s => s.id));
+  return [...catalog, ...osmCatalog.map(s => (s.code && codes.has(s.code) ? {...s, code: undefined} : s))];
+}
 
 // Stations renamed since the catalog was made: catalog code -> [today's code, today's name], so both find them.
 const RENAMED = {
@@ -182,11 +191,11 @@ const RENAMED = {
 function searchStations(text, limit = 40) {
   const found = [];
   for (const s of stations) {
-    const id = s.id.toUpperCase(), name = s.name.toUpperCase(), renamed = RENAMED[s.id];
+    const id = s.id.toUpperCase(), code = stationCode(s).toUpperCase(), name = s.name.toUpperCase(), renamed = RENAMED[s.id];
     const newId = renamed ? renamed[0] : '', newName = renamed ? renamed[1].toUpperCase() : '';
     let rank;
-    if (id === text || newId === text) rank = 0;
-    else if ((!id.startsWith('OSM:') && id.startsWith(text)) || newId.startsWith(text)) rank = 1;
+    if (code === text || newId === text) rank = 0;
+    else if ((code && code.startsWith(text)) || newId.startsWith(text)) rank = 1;
     else if (name.startsWith(text) || newName.startsWith(text)) rank = 2;
     else if (name.includes(text) || newName.includes(text) || id.startsWith(text)) rank = 3;
     else continue;
@@ -229,8 +238,11 @@ function findStation(input) {
     if (byId && stationLabel(byId) === input.value) return byId;
   }
   const value = input.value.trim().toUpperCase();
-  const matches = stations.filter(s => s.id.toUpperCase() === value || RENAMED[s.id]?.[0] === value ||
-    stationLabel(s).toUpperCase() === value || s.name.toUpperCase() === value);
+  // A station's own code or id first; a renamed station's new code only when no station carries that code itself.
+  const own = stations.filter(s => s.id.toUpperCase() === value || stationCode(s).toUpperCase() === value);
+  if (own.length === 1) return own[0];
+  const matches = stations.filter(s => s.id.toUpperCase() === value || stationCode(s).toUpperCase() === value ||
+    RENAMED[s.id]?.[0] === value || stationLabel(s).toUpperCase() === value || s.name.toUpperCase() === value);
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -611,7 +623,7 @@ async function loadStations() {
     const rows = await r.json(), osmRows = await osmResponse.json();
     const catalog = parseStations(rows, 'DataMeet + project fallback');
     const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
-    stations = [...catalog, ...osmCatalog];
+    stations = combineStations(catalog, osmCatalog);
     stationListsLoaded = true;
     restoreRoute();
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
@@ -672,6 +684,7 @@ function logVisit(key, s, v) {
   const halts = v.stops.filter(stop => stop.d <= reach && !loggedStops.includes(stop.start));
   for (const stop of v.stops) if (stop.d > reach) logWayStop(stop, s.name, stop.d);
   const station = {name: s.name, id: s.id, source: s.source, near: Math.round(v.bestD)};
+  if (s.code) station.code = s.code;
   if (halts.length) {
     for (const stop of halts) loggedStops.push(stop.start);
     addLog({...station, type: 'halt', arr: Math.min(...halts.map(stop => stop.start)), dep: Math.max(...halts.map(stop => stop.end))});
@@ -690,7 +703,7 @@ function closeVisit(key, s, v, t) {
   }
   v.exit = t;
   if (v.bestD <= NEAR) logVisit(key, s, v);
-  else closed.push({...v, key, s: {name: s.name, id: s.id, source: s.source}});
+  else closed.push({...v, key, s: {name: s.name, id: s.id, source: s.source, code: s.code}});
 }
 
 // Decides the waiting wide visits. One waits while a station that was in range at the same time is still being
@@ -1151,7 +1164,7 @@ try {
     const data = JSON.parse(cached);
     const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
-    stations = [...catalog, ...osmCatalog];
+    stations = combineStations(catalog, osmCatalog);
     stationListsLoaded = true;
     dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {

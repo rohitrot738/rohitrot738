@@ -607,7 +607,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     return bundled.elements['origin-options'].children.map(option => option.textContent);
   };
   assert.deepEqual(labels('Baruna').filter(label => /^baruna( \(|$)/i.test(label)).sort(), ['BARUNA (BUE)', 'Baruna']);
-  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction (DDU)'));
+  // An OpenStreetMap station shows the code OSM has for it and is found by it, unless the catalog already has a
+  // station of that code: then only the catalog's entry carries it.
+  assert.equal(labels('EKNR')[0], 'Kevadiya (EKNR)');
+  assert.equal(labels('NKMG')[0], 'New Karimganj Junction (NKMG)');
+  assert.equal(labels('PRYJ').filter(label => /Prayagraj Junction \(PRYJ\)/.test(label)).length, 1);
+  assert.deepEqual(labels('Baruna').filter(label => /\(BUE\)/.test(label)), ['BARUNA (BUE)']);
   assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
   assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));
 
