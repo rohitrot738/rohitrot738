@@ -38,22 +38,22 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 #clock-color-menu button{width:28px;height:28px;margin:4px;padding:0;border-radius:50%;border:2px solid #1e293b}
 #clock-color-menu button.on{border-color:#fff;box-shadow:0 0 0 2px #334155,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
-   (body.turned). Hours and minutes start at the left edge with the small seconds right after them, level with the
-   bottom of the digits; the speed dial
-   (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the bottom corner. fitClock() sets the
-   sizes from the real screen, since vh/vw are not dependable inside the app. Everything underneath keeps running. */
+   (body.turned). The speed dial (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the top
+   corner, the date and EXIT beside it, and the time fills the width below, the small seconds level with the foot
+   of the digits. fitClock() sets sizes and places from the real screen, since vh/vw are not dependable inside the
+   app. Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
-box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:10px 16px}
+box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:14px 16px}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1;transform-origin:left top}
+body.clockmode #clock-time{position:absolute;display:flex;align-items:baseline;line-height:1;margin:0;transform-origin:left top}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
-body.clockmode #clock-date{position:relative}
-body.clockmode #clock-full{position:absolute;top:auto;right:auto;left:16px;bottom:12px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
+body.clockmode #clock-date{margin:0}
+body.clockmode #clock-full{position:static;margin-top:14px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
 body.clockmode #clock-color-row{display:none}
-body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;bottom:14px}
-body.clockmode.turned .speedo{right:auto;left:14px;transform:rotate(90deg)}
+body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;top:14px;bottom:auto}
+body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
 </style>
 </head>
@@ -1248,7 +1248,7 @@ function fitClock() {
   document.body.className = clockMode ? (turned ? 'clockmode turned' : 'clockmode') : '';
   if (!clockMode || !known) {
     card.style.width = card.style.height = time.style.fontSize = date.style.fontSize = '';
-    time.style.transform = time.style.marginTop = date.style.marginTop = '';
+    time.style.transform = time.style.left = time.style.top = '';
     return;
   }
   const long = Math.max(w, h), short = Math.min(w, h);
@@ -1256,20 +1256,19 @@ function fitClock() {
   card.style.height = turned ? short + 'px' : '';
   time.style.fontSize = '100px';
   const hmWidth = $('clock-hm').offsetWidth || 260;   // at 100 px
-  const room = long - 16 - (14 + 182 + 10);           // left padding; the dial and a gap before it
-  // The digits run from the left edge to the dial, and are stretched upright to fill from the top edge down to
-  // just above the dial, where the seconds pass over it. A digit is 0.71 of the font size tall and starts 0.135
-  // below the top of its line.
-  const DIGIT = 0.71, BLANK = 0.135, TOP = 6;
-  const tall = short - TOP - (14 + 182 + 16);          // digit height that fits above the dial
-  const size = Math.max(40, Math.min(room / hmWidth * 100, tall / DIGIT));
-  const stretch = Math.max(1, Math.min(1.8, tall / (DIGIT * size)));
+  const secWidth = $('clock-sec').offsetWidth || 45;  // at 100 px, with its gap
+  // The dial takes the top corner (14 + 182 px and a gap); the time has the full width under it. A digit is 0.71
+  // of the font size tall and starts 0.135 below the top of its line; the digits are stretched upright, a little
+  // at most, to fill the height left.
+  const DIGIT = 0.71, BLANK = 0.135, EDGE = 12, DIAL = 14 + 182 + 8;
+  const tall = short - DIAL - EDGE;                   // digit height that fits under the dial
+  const size = Math.max(40, Math.min((long - 2 * EDGE) / (hmWidth + secWidth) * 100, tall / DIGIT));
+  const stretch = Math.max(1, Math.min(1.3, tall / (DIGIT * size)));
   time.style.fontSize = size + 'px';
   time.style.transform = `scaleY(${stretch.toFixed(3)})`;
-  time.style.marginTop = (TOP - 10 - BLANK * stretch * size) + 'px';
-  // The stretch does not move what follows, so the date is placed under the foot of the digits by hand.
-  date.style.fontSize = Math.min(size * 0.26, short * 0.1, room / 12.5) + 'px';   // the date also stops before the dial
-  date.style.marginTop = ((BLANK + DIGIT) * stretch * size - size + 10) + 'px';
+  time.style.left = Math.max(EDGE, (long - (hmWidth + secWidth) * size / 100) / 2) + 'px';
+  time.style.top = (short - EDGE - (BLANK + DIGIT) * stretch * size) + 'px';   // the digits' foot near the bottom edge
+  date.style.fontSize = Math.min(short * 0.1, (long - DIAL - 32) / 12.5) + 'px';   // the date stops before the dial
 }
 window.addEventListener?.('resize', fitClock);
 
@@ -1277,6 +1276,9 @@ function setClockMode(on) {
   clockMode = on;
   fitClock();
   $('clock-full').innerHTML = on ? 'EXIT' : FULLSCREEN_ICON;
+  // In the app, the phone's own bars (status bar on top, buttons below) are hidden while the clock is up.
+  try { window.Capacitor?.isNativePlatform?.() && window.Capacitor.registerPlugin?.('SafarBuffer')?.fullScreen?.({on})?.catch?.(() => {}); }
+  catch (e) { console.warn('Full screen nahi hua', e); }
   if (on) {
     navigator.wakeLock?.request('screen').then(lock => {
       if (clockMode) clockLock = lock; else lock.release();
