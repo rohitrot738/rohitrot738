@@ -421,8 +421,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
   // page runs again it reads them and the log has the station, at the time the train was really there.
   const missed = [];
-  let liveFix, buffersCleared = 0, sessionsEnded = 0;
-  let backgroundState = {backgroundLocation: false, batteryUnrestricted: false, notifications: true};
+  let liveFix, buffersCleared = 0, sessionsEnded = 0, settingsOpened = 0;
+  let backgroundState = {backgroundLocation: false, batteryUnrestricted: false, notifications: true, version: 100080};
   const asleep = setup(stationFetcher([['SLP', 'Sleep Station', 28, 77.0005]]), null, {
     isNativePlatform: () => true,
     registerPlugin: name => name === 'SafarBuffer'
@@ -430,7 +430,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
         drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}),
         begin: async () => { buffersCleared++; },
         end: async () => { sessionsEnded++; },
-        status: async () => backgroundState
+        status: async () => backgroundState,
+        openSettings: async () => { settingsOpened++; }
       }
       : {addWatcher: async (_options, callback) => { liveFix = callback; return 'w'; }, removeWatcher: async () => {}}
   });
@@ -443,12 +444,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     missed.push({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
   assert.equal(asleep.store.has('trainlog'), false);
   // The page says what Android still needs for tracking with the screen off, and when it is all in place.
-  assert.match(asleep.elements['background-status'].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein$/);
-  assert.equal(asleep.elements['background-status'].hidden, false);
-  backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true};
+  const backgroundCard = asleep.elements['background-status'];
+  assert.match(backgroundCard.children[0].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein · app version 100080$/);
+  assert.equal(backgroundCard.hidden, false);
+  // With something missing there is a button that opens the phone's settings for the app.
+  assert.equal(backgroundCard.children[1].textContent, 'Phone ki settings kholein');
+  backgroundCard.children[1].onclick();
+  assert.equal(settingsOpened, 1);
+  backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true, version: 100080};
   await asleep.elements.intervals.find(timer => timer.ms === 5000).fn();
   await flush();
-  assert.match(asleep.elements['background-status'].textContent, /settings theek hain/);
+  assert.match(backgroundCard.children[0].textContent, /settings theek hain ✓ · app version 100080$/);
+  assert.equal(backgroundCard.children.length, 1);
   const sleptLog = JSON.parse(asleep.store.get('trainlog'));
   assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
   // A fix the page already read from the buffer is not used twice when it arrives late.

@@ -867,9 +867,21 @@ async function showBackgroundStatus() {
     if (status.backgroundLocation === false) missing.push('Location permission "Allow all the time" karein');
     if (status.batteryUnrestricted === false) missing.push('Battery "Unrestricted / No restrictions" karein');
     if (status.notifications === false) missing.push('Notification chalu karein');
-    card.textContent = missing.length
+    const text = document.createElement('div');
+    text.textContent = (missing.length
       ? 'Screen band par log ke liye phone ki settings mein: ' + missing.join(' · ')
-      : 'Screen band par tracking: settings theek hain ✓';
+      : 'Screen band par tracking: settings theek hain ✓')
+      + (status.version ? ` · app version ${status.version}` : '');
+    card.replaceChildren();
+    card.append(text);
+    // Android does not always show its own question; this opens the app's settings page directly.
+    if (missing.length && fixBuffer.openSettings) {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.textContent = 'Phone ki settings kholein';
+      open.onclick = () => { try { fixBuffer.openSettings()?.catch?.(() => {}); } catch (e) { /* not native */ } };
+      card.append(open);
+    }
     card.hidden = !tracking;
   } catch (e) { card.hidden = true; }
 }

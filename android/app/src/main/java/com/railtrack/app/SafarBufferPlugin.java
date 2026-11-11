@@ -34,6 +34,15 @@ public class SafarBufferPlugin extends Plugin {
         call.resolve();
     }
 
+    /** Opens the app's page in the phone's settings. */
+    @PluginMethod
+    public void openSettings(PluginCall call) {
+        getActivity().runOnUiThread(() -> {
+            TrackingSession.openSettings(getActivity());
+            call.resolve();
+        });
+    }
+
     /** Whether Android will let tracking go on with the screen off, for the page to show. */
     @PluginMethod
     public void status(PluginCall call) {

@@ -98,27 +98,40 @@ final class TrackingSession {
     }
 
     /**
-     * Asks, once each per journey and one at a time, for what background tracking needs. Called when the journey
-     * starts and whenever the app comes back to the screen, so the second question follows the first.
+     * Asks, once each per journey and one at a time, for what background tracking needs: first the battery question,
+     * which is a plain dialog, then "Allow all the time". Called when the journey starts, whenever the app comes back
+     * to the screen, and after a permission answer, so one question follows the other even when Android answers a
+     * request without showing anything.
      */
     static synchronized void prompt(Activity activity) {
         if (!active || activity.isFinishing()) return;
-        if (Build.VERSION.SDK_INT >= 29 && !askedBackground
-            && granted(activity, Manifest.permission.ACCESS_FINE_LOCATION)
-            && !granted(activity, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
-            askedBackground = true;
-            // Android 11 and later answer this with the screen that offers "Allow all the time".
-            ActivityCompat.requestPermissions(activity, new String[] {Manifest.permission.ACCESS_BACKGROUND_LOCATION}, BACKGROUND_REQUEST);
-            return;
-        }
         if (!askedBattery && !batteryUnrestricted(activity)) {
             askedBattery = true;
             try {
                 activity.startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
                     Uri.parse("package:" + activity.getPackageName())));
+                return;
             } catch (RuntimeException e) {
                 Log.w(TAG, "Battery question could not be shown", e);
             }
+        }
+        if (Build.VERSION.SDK_INT >= 29 && !askedBackground
+            && granted(activity, Manifest.permission.ACCESS_FINE_LOCATION)
+            && !granted(activity, Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+            askedBackground = true;
+            // Android 11 and later answer this with the screen that offers "Allow all the time", or with nothing at
+            // all when the user has turned it down before; the page's settings button covers that case.
+            ActivityCompat.requestPermissions(activity, new String[] {Manifest.permission.ACCESS_BACKGROUND_LOCATION}, BACKGROUND_REQUEST);
+        }
+    }
+
+    /** Opens this app's page in the phone's settings, where location and battery are set by hand. */
+    static void openSettings(Activity activity) {
+        try {
+            activity.startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", activity.getPackageName(), null)));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "App settings could not be opened", e);
         }
     }
 
@@ -129,6 +142,11 @@ final class TrackingSession {
         result.put("batteryUnrestricted", batteryUnrestricted(context));
         result.put("notifications", NotificationManagerCompat.from(context).areNotificationsEnabled());
         result.put("gps", gpsStarted);
+        try {
+            result.put("version", AppUpdate.installedCode(context));
+        } catch (PackageManager.NameNotFoundException e) {
+            result.put("version", 0);
+        }
         result.put("fixes", FixBuffer.size());
         result.put("lastFixTime", FixBuffer.lastTime());
         return result;
