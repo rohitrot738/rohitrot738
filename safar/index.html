@@ -115,6 +115,7 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 <button id="csv" class="alt">CSV download</button>
 <button id="clear" class="alt">Log clear</button>
 <h3>Safar ka log</h3>
+<div class="card stop" id="live-stop" hidden></div>
 <div id="log"></div>
 <details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
@@ -759,7 +760,33 @@ function onPos(p) {
   loadStations();
 }
 
+// A phone that sits still with its screen off stops sending fixes, so a standing train shows up as a silence: the
+// next fix comes minutes later, from almost the same spot. That silence is filled in as a stop, from just after the
+// last fix until just before this one, so the stop is noted with its real start and not from when fixes resumed.
+const GAP_MS = 10000;
+let fillingGap = false;
+function fillGap(p) {
+  if (fillingGap || !last) return;
+  const t = p.timestamp, seconds = (t - last.t) / 1000;
+  if (t - last.t <= GAP_MS || dist(last.lat, last.lon, p.coords.latitude, p.coords.longitude) / seconds >= STOP_SPEED) return;
+  const still = time => ({coords: {latitude: last.lat, longitude: last.lon, accuracy: p.coords.accuracy, speed: 0}, timestamp: time});
+  const first = still(last.t + 1), second = still(t - 1);
+  fillingGap = true;
+  try { processPosition(first); processPosition(second); } finally { fillingGap = false; }
+}
+
+// The stop in progress, shown above the log from the moment it counts as a halt; the finished entry follows when
+// the train moves on.
+let liveStop = null; // {where, start}
+function showLiveStop(now) {
+  const card = $('live-stop');
+  if (!liveStop) { card.hidden = true; return; }
+  card.textContent = `Abhi ruki hai: ${liveStop.where} — ${fmt(liveStop.start)} se (${Math.round(Math.max(0, now - liveStop.start) / 6000) / 10} min)`;
+  card.hidden = false;
+}
+
 function processPosition(p) {
+  fillGap(p);
   const {latitude: lat, longitude: lon} = p.coords, t = p.timestamp;
   updateHeading(lat, lon);
   // On the chosen route only its stations are logged; off it (another line, or no route) every station is.
@@ -814,8 +841,12 @@ function processPosition(p) {
   decideClosed();
   if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
   else $('now').textContent = 'Nazdiki station: data nahi mila';
-  if (openStop && openStop.moved && nearest && nearest.d > NEAR && t - openStop.start >= MIN_HALT * 1000)
-    $('now').textContent += ` · Raste mein ruki hai: ${Math.round((t - openStop.start) / 6000) / 10} min`;
+  liveStop = null;
+  if (openStop && nearest && t - openStop.start >= MIN_HALT * 1000) {
+    if (nearest.d <= NEAR) liveStop = {where: stationLabel(nearest.s), start: openStop.start};
+    else if (openStop.moved) liveStop = {where: `Raste mein (${nearest.s.name} se ${(nearest.d / 1000).toFixed(2)} km)`, start: openStop.start};
+  }
+  showLiveStop(t);
   if (index != null) showRoutePosition(p, index);
   else showAheadStation(lat, lon);
   saveActive();
@@ -1020,6 +1051,7 @@ function stop() {
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
   heading = null; headingFrom = null; lastActive = null; openStop = null;
   closed = []; recent = []; loggedStops = [];
+  liveStop = null; showLiveStop(0);
   $('status').textContent = 'Tracking band hai.';
 }
 
@@ -1141,6 +1173,8 @@ function showClock() {
   const now = new Date(), two = n => String(n).padStart(2, '0');
   $('clock-hm').textContent = `${two(now.getHours())}:${two(now.getMinutes())}`;
   $('clock-sec').textContent = two(now.getSeconds());
+  // The standing time keeps counting between fixes.
+  if (tracking && liveStop && !replaying) showLiveStop(now.getTime());
   $('clock-date').textContent = `${DAYS[now.getDay()]}, ${two(now.getDate())} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
 }
 showClock();
