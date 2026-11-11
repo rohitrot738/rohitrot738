@@ -46,7 +46,7 @@ body.clockmode{overflow:hidden}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
 box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:10px 16px}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1}
+body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1;margin-top:-.08em}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
 body.clockmode #clock-date{margin-top:4px}
@@ -1254,8 +1254,13 @@ function fitClock() {
   time.style.fontSize = '100px';
   const hmWidth = $('clock-hm').offsetWidth || 260;   // at 100 px
   const room = long - 16 - (14 + 182 + 10);           // left padding; the dial and a gap before it
-  // Also low enough that the seconds, which sit on the same line as the bottom of the digits, clear the dial.
-  const size = Math.max(40, Math.min(room / hmWidth * 100, short * 0.6, (short - 214) / 0.9));
+  const secWidth = $('clock-sec').offsetWidth || 45;   // at 100 px, with its gap
+  // The digits' foot is 0.77 of their size below the top edge (the line is pulled up into its own blank top).
+  // The seconds stand at the foot of the digits, where the dial is. Either the digits fill the width and stay
+  // low enough for the seconds to pass above the dial, or the seconds too stop before the dial: whichever is bigger.
+  const above = Math.min(room / hmWidth * 100, (short - 212) / 0.77);
+  const beside = room / (hmWidth + secWidth) * 100;
+  const size = Math.max(40, Math.min(short * 0.6, Math.max(above, beside)));
   time.style.fontSize = size + 'px';
   date.style.fontSize = Math.min(size * 0.26, short * 0.1) + 'px';
 }
