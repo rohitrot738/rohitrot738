@@ -92,6 +92,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         visible = new WeakReference<>(this);
+        TrackingSession.retryGps(this);
         TrackingSession.prompt(this);
         boolean asked = getIntent() != null && getIntent().getBooleanExtra(AppUpdate.EXTRA_UPDATE, false);
         if (asked) getIntent().removeExtra(AppUpdate.EXTRA_UPDATE);
