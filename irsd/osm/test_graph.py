@@ -138,5 +138,14 @@ class GraphTest(unittest.TestCase):
                 build_graph.build(io.BytesIO(data), os.path.join(tmp, "db"), os.path.join(tmp, "report"))
 
 
+
+    def test_station_code_is_the_railway_ref(self):
+        self.assertEqual(build_graph.station_code({"ref": "DDU"}), "DDU")
+        self.assertEqual(build_graph.station_code({"ref": " pryj ; x1"}), "PRYJ")
+        self.assertIsNone(build_graph.station_code({"ref": "12"}))
+        self.assertIsNone(build_graph.station_code({"name": "No ref"}))
+        self.assertIsNone(build_graph.station_code({"ref": "KMRP", "station": "subway"}))
+        self.assertIsNone(build_graph.station_code({"ref": "AB", "network": "Delhi Metro"}))
+
 if __name__ == "__main__":
     unittest.main()

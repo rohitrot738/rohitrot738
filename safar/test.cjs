@@ -178,7 +178,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list available/);
 
   const database = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'stations.json'), 'utf8'));
-  assert.equal(database.length, 8702);
+  assert.equal(database.length, 8703);
   const delhi = database.find(row => row[0] === 'NDLS');
   assert.equal(delhi[1], 'NEW DELHI');
   const real = setup(stationFetcher(database));
@@ -322,6 +322,15 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   outer.watches[0].success(fix(28.07, 310000, 10));
   assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
 
+  // Son Nagar Flyover Cabin (FOCS) is found by name and code, and a route down the Garhwa Road line passes it.
+  assert.equal(firstOption('FOCS'), 'SON NAGAR FLYOVER CABIN (FOCS)');
+  assert.equal(firstOption('son nagar fly'), 'SON NAGAR FLYOVER CABIN (FOCS)');
+  pick('origin', 'origin-options', 'SEB', 'SON NAGAR (SEB)');
+  pick('destination', 'destination-options', 'ANH', 'ANKORAH AKORHA (ANH)');
+  await bundled.elements['find-route'].onclick();
+  assert.deepEqual(bundled.elements['route-list'].children.map(rowName),
+    ['SON NAGAR (SEB)', 'SON NAGAR FLYOVER CABIN (FOCS)', 'BAGAHABISHUNPUR (BCJ)', 'ANKORAH AKORHA (ANH)']);
+
   // Via: the shortest DDU -> Prayagraj route runs through Varanasi; a via station takes it along the Mirzapur line.
   const routeNames = () => bundled.elements['route-list'].children.map(rowName);
   const pickVia = (i, text, label) => {
@@ -421,8 +430,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
   // page runs again it reads them and the log has the station, at the time the train was really there.
   const missed = [];
-  let liveFix, buffersCleared = 0, sessionsEnded = 0;
-  let backgroundState = {backgroundLocation: false, batteryUnrestricted: false, notifications: true};
+  let liveFix, buffersCleared = 0, sessionsEnded = 0, settingsOpened = 0;
+  let backgroundState = {backgroundLocation: false, batteryUnrestricted: false, notifications: true, version: 100080};
   const asleep = setup(stationFetcher([['SLP', 'Sleep Station', 28, 77.0005]]), null, {
     isNativePlatform: () => true,
     registerPlugin: name => name === 'SafarBuffer'
@@ -430,7 +439,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
         drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}),
         begin: async () => { buffersCleared++; },
         end: async () => { sessionsEnded++; },
-        status: async () => backgroundState
+        status: async () => backgroundState,
+        openSettings: async () => { settingsOpened++; }
       }
       : {addWatcher: async (_options, callback) => { liveFix = callback; return 'w'; }, removeWatcher: async () => {}}
   });
@@ -443,12 +453,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     missed.push({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
   assert.equal(asleep.store.has('trainlog'), false);
   // The page says what Android still needs for tracking with the screen off, and when it is all in place.
-  assert.match(asleep.elements['background-status'].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein$/);
-  assert.equal(asleep.elements['background-status'].hidden, false);
-  backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true};
+  const backgroundCard = asleep.elements['background-status'];
+  assert.match(backgroundCard.children[0].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein · app version 100080$/);
+  assert.equal(backgroundCard.hidden, false);
+  // With something missing there is a button that opens the phone's settings for the app.
+  assert.equal(backgroundCard.children[1].textContent, 'Phone ki settings kholein');
+  backgroundCard.children[1].onclick();
+  assert.equal(settingsOpened, 1);
+  backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true, version: 100080};
   await asleep.elements.intervals.find(timer => timer.ms === 5000).fn();
   await flush();
-  assert.match(asleep.elements['background-status'].textContent, /settings theek hain/);
+  assert.match(backgroundCard.children[0].textContent, /settings theek hain ✓ · app version 100080$/);
+  assert.equal(backgroundCard.children.length, 1);
   const sleptLog = JSON.parse(asleep.store.get('trainlog'));
   assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
   // A fix the page already read from the buffer is not used twice when it arrives late.
@@ -591,7 +607,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     return bundled.elements['origin-options'].children.map(option => option.textContent);
   };
   assert.deepEqual(labels('Baruna').filter(label => /^baruna( \(|$)/i.test(label)).sort(), ['BARUNA (BUE)', 'Baruna']);
-  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction (DDU)'));
+  // An OpenStreetMap station shows the code OSM has for it and is found by it, unless the catalog already has a
+  // station of that code: then only the catalog's entry carries it.
+  assert.equal(labels('EKNR')[0], 'Kevadiya (EKNR)');
+  assert.equal(labels('NKMG')[0], 'New Karimganj Junction (NKMG)');
+  assert.equal(labels('PRYJ').filter(label => /Prayagraj Junction \(PRYJ\)/.test(label)).length, 1);
+  assert.deepEqual(labels('Baruna').filter(label => /\(BUE\)/.test(label)), ['BARUNA (BUE)']);
   assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
   assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));
 

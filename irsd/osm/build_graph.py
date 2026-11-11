@@ -343,6 +343,22 @@ def match_independent_stations(database, station_file, output, summary_file,
         f.write("\n")
 
 
+def station_code(tags):
+    """The Indian Railways station code mapped on an OSM station (its ref), or None.
+
+    Metro, light-rail and monorail stations carry refs of their own that are not railway station codes.
+    """
+    if tags.get("station") in ("subway", "light_rail", "monorail") or tags.get("subway") == "yes":
+        return None
+    if "metro" in tags.get("network", "").lower():
+        return None
+    for token in re.split(r"[;,/]", tags.get("ref", "")):
+        token = token.strip().upper()
+        if re.fullmatch(r"[A-Z]{1,5}", token):
+            return token
+    return None
+
+
 def export_osm_station_catalog(database, candidates, output):
     if os.path.exists(output):
         raise FileExistsError(f"Refusing to overwrite {output}")
@@ -373,7 +389,12 @@ def export_osm_station_catalog(database, candidates, output):
             name = tags.get("name:en") or tags.get("name") or tags.get("ref") or f"Railway station {node_id}"
             if not first:
                 f.write(",")
-            json.dump([f"OSM:{node_id}", name, lat, lon], f, ensure_ascii=False, separators=(",", ":"))
+            row = [f"OSM:{node_id}", name, lat, lon]
+            # The station's code, when OSM has it: the app shows it and finds the station by it.
+            code = station_code(tags)
+            if code:
+                row.append(code)
+            json.dump(row, f, ensure_ascii=False, separators=(",", ":"))
             first = False
             count += 1
         f.write("]\n")

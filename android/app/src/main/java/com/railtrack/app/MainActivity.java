@@ -76,6 +76,13 @@ public class MainActivity extends BridgeActivity {
     }
 
     @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        // One answer in: ask the next thing background tracking needs, if any.
+        TrackingSession.prompt(this);
+    }
+
+    @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
@@ -85,6 +92,7 @@ public class MainActivity extends BridgeActivity {
     public void onResume() {
         super.onResume();
         visible = new WeakReference<>(this);
+        TrackingSession.retryGps(this);
         TrackingSession.prompt(this);
         boolean asked = getIntent() != null && getIntent().getBooleanExtra(AppUpdate.EXTRA_UPDATE, false);
         if (asked) getIntent().removeExtra(AppUpdate.EXTRA_UPDATE);

@@ -22,6 +22,9 @@ if [[ "$previous" == 100037 ]]; then
 fi
 adb install -r "$new_apk"
 adb shell pm grant "$package" android.permission.POST_NOTIFICATIONS
+# On opening, the app asks for what tracking needs. The battery question is a system screen that would cover the
+# app, so the exemption it asks for is given beforehand.
+adb shell dumpsys deviceidle whitelist "+$package"
 adb logcat -c
 adb shell am start -W -n "$package/.MainActivity"
 sleep 15

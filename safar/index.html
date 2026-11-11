@@ -38,15 +38,16 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 #clock-color-menu button{width:28px;height:28px;margin:4px;padding:0;border-radius:50%;border:2px solid #1e293b}
 #clock-color-menu button.on{border-color:#fff;box-shadow:0 0 0 2px #334155,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
-   (body.turned). Hours and minutes start at the left edge with the small seconds right after them; the speed dial
+   (body.turned). Hours and minutes start at the left edge with the small seconds right after them, level with the
+   bottom of the digits; the speed dial
    (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the bottom corner. fitClock() sets the
    sizes from the real screen, since vh/vw are not dependable inside the app. Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
 box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:10px 16px}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{display:flex;align-items:flex-start;line-height:1}
-body.clockmode #clock-sec{font-size:.34em;margin:.1em 0 0 .08em}
+body.clockmode #clock-time{display:flex;align-items:baseline;line-height:1}
+body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
 body.clockmode #clock-date{margin-top:4px}
 body.clockmode #clock-full{position:absolute;top:auto;right:auto;left:16px;bottom:12px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
@@ -160,13 +161,22 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
   if (!Array.isArray(rows) || (!rows.length && source !== 'OpenStreetMap')) throw new Error('Station list khali hai');
   const parsed = rows.filter(r => Array.isArray(r) && typeof r[0] === 'string' &&
     typeof r[1] === 'string' && Number.isFinite(r[2]) && Number.isFinite(r[3]))
-    .map(([id, name, lat, lon]) => ({id, name, lat, lon, source}));
+    .map(([id, name, lat, lon, code]) => (typeof code === 'string' && code ? {id, name, lat, lon, source, code} : {id, name, lat, lon, source}));
   if (!parsed.length && source !== 'OpenStreetMap') throw new Error('Station list sahi nahi hai');
   return parsed;
 }
 
-// OSM-only stations have no station code; their internal id is not shown.
-function stationLabel(s) { return s.id && !s.id.startsWith('OSM:') ? `${s.name} (${s.id})` : s.name; }
+// A catalog station's id is its station code. An OpenStreetMap station has an internal id, which is not shown, and
+// a code of its own when OSM has one.
+function stationCode(s) { return s.code || (s.id && !s.id.startsWith('OSM:') ? s.id : ''); }
+function stationLabel(s) { const code = stationCode(s); return code ? `${s.name} (${code})` : s.name; }
+
+// Both lists together. An OSM station keeps its code only when the catalog has no station of that code, so a code
+// names one station.
+function combineStations(catalog, osmCatalog) {
+  const codes = new Set(catalog.map(s => s.id));
+  return [...catalog, ...osmCatalog.map(s => (s.code && codes.has(s.code) ? {...s, code: undefined} : s))];
+}
 
 // Stations renamed since the catalog was made: catalog code -> [today's code, today's name], so both find them.
 const RENAMED = {
@@ -181,11 +191,11 @@ const RENAMED = {
 function searchStations(text, limit = 40) {
   const found = [];
   for (const s of stations) {
-    const id = s.id.toUpperCase(), name = s.name.toUpperCase(), renamed = RENAMED[s.id];
+    const id = s.id.toUpperCase(), code = stationCode(s).toUpperCase(), name = s.name.toUpperCase(), renamed = RENAMED[s.id];
     const newId = renamed ? renamed[0] : '', newName = renamed ? renamed[1].toUpperCase() : '';
     let rank;
-    if (id === text || newId === text) rank = 0;
-    else if ((!id.startsWith('OSM:') && id.startsWith(text)) || newId.startsWith(text)) rank = 1;
+    if (code === text || newId === text) rank = 0;
+    else if ((code && code.startsWith(text)) || newId.startsWith(text)) rank = 1;
     else if (name.startsWith(text) || newName.startsWith(text)) rank = 2;
     else if (name.includes(text) || newName.includes(text) || id.startsWith(text)) rank = 3;
     else continue;
@@ -228,8 +238,11 @@ function findStation(input) {
     if (byId && stationLabel(byId) === input.value) return byId;
   }
   const value = input.value.trim().toUpperCase();
-  const matches = stations.filter(s => s.id.toUpperCase() === value || RENAMED[s.id]?.[0] === value ||
-    stationLabel(s).toUpperCase() === value || s.name.toUpperCase() === value);
+  // A station's own code or id first; a renamed station's new code only when no station carries that code itself.
+  const own = stations.filter(s => s.id.toUpperCase() === value || stationCode(s).toUpperCase() === value);
+  if (own.length === 1) return own[0];
+  const matches = stations.filter(s => s.id.toUpperCase() === value || stationCode(s).toUpperCase() === value ||
+    RENAMED[s.id]?.[0] === value || stationLabel(s).toUpperCase() === value || s.name.toUpperCase() === value);
   return matches.length === 1 ? matches[0] : null;
 }
 
@@ -610,7 +623,7 @@ async function loadStations() {
     const rows = await r.json(), osmRows = await osmResponse.json();
     const catalog = parseStations(rows, 'DataMeet + project fallback');
     const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
-    stations = [...catalog, ...osmCatalog];
+    stations = combineStations(catalog, osmCatalog);
     stationListsLoaded = true;
     restoreRoute();
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
@@ -671,6 +684,7 @@ function logVisit(key, s, v) {
   const halts = v.stops.filter(stop => stop.d <= reach && !loggedStops.includes(stop.start));
   for (const stop of v.stops) if (stop.d > reach) logWayStop(stop, s.name, stop.d);
   const station = {name: s.name, id: s.id, source: s.source, near: Math.round(v.bestD)};
+  if (s.code) station.code = s.code;
   if (halts.length) {
     for (const stop of halts) loggedStops.push(stop.start);
     addLog({...station, type: 'halt', arr: Math.min(...halts.map(stop => stop.start)), dep: Math.max(...halts.map(stop => stop.end))});
@@ -689,7 +703,7 @@ function closeVisit(key, s, v, t) {
   }
   v.exit = t;
   if (v.bestD <= NEAR) logVisit(key, s, v);
-  else closed.push({...v, key, s: {name: s.name, id: s.id, source: s.source}});
+  else closed.push({...v, key, s: {name: s.name, id: s.id, source: s.source, code: s.code}});
 }
 
 // Decides the waiting wide visits. One waits while a station that was in range at the same time is still being
@@ -864,12 +878,25 @@ async function showBackgroundStatus() {
   try {
     const status = await fixBuffer.status();
     const missing = [];
+    if (status.locationOn === false) missing.push('Location (GPS) chalu karein');
     if (status.backgroundLocation === false) missing.push('Location permission "Allow all the time" karein');
     if (status.batteryUnrestricted === false) missing.push('Battery "Unrestricted / No restrictions" karein');
     if (status.notifications === false) missing.push('Notification chalu karein');
-    card.textContent = missing.length
+    const text = document.createElement('div');
+    text.textContent = (missing.length
       ? 'Screen band par log ke liye phone ki settings mein: ' + missing.join(' · ')
-      : 'Screen band par tracking: settings theek hain ✓';
+      : 'Screen band par tracking: settings theek hain ✓')
+      + (status.version ? ` · app version ${status.version}` : '');
+    card.replaceChildren();
+    card.append(text);
+    // Android does not always show its own question; this opens the app's settings page directly.
+    if (missing.length && fixBuffer.openSettings) {
+      const open = document.createElement('button');
+      open.type = 'button';
+      open.textContent = 'Phone ki settings kholein';
+      open.onclick = () => { try { fixBuffer.openSettings()?.catch?.(() => {}); } catch (e) { /* not native */ } };
+      card.append(open);
+    }
     card.hidden = !tracking;
   } catch (e) { card.hidden = true; }
 }
@@ -990,7 +1017,9 @@ function start() {
         if (error.code === 'NOT_AUTHORIZED') {
           $('status').textContent = 'Location permission nahi mili. Phone settings mein Suffer Sathi ke liye location allow karein.';
         }
-        fallback(error.message || 'native location error');
+        // The native watcher stays: it starts delivering once location is switched on or allowed, and it alone
+        // works with the screen off. Browser location only fills in until then.
+        fallback(error.message || 'native location error', true);
         return;
       }
       if (!Number.isFinite(location?.latitude) || !Number.isFinite(location?.longitude)) {
@@ -1135,7 +1164,7 @@ try {
     const data = JSON.parse(cached);
     const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
-    stations = [...catalog, ...osmCatalog];
+    stations = combineStations(catalog, osmCatalog);
     stationListsLoaded = true;
     dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {
@@ -1225,7 +1254,8 @@ function fitClock() {
   time.style.fontSize = '100px';
   const hmWidth = $('clock-hm').offsetWidth || 260;   // at 100 px
   const room = long - 16 - (14 + 182 + 10);           // left padding; the dial and a gap before it
-  const size = Math.max(40, Math.min(room / hmWidth * 100, short * 0.6));
+  // Also low enough that the seconds, which sit on the same line as the bottom of the digits, clear the dial.
+  const size = Math.max(40, Math.min(room / hmWidth * 100, short * 0.6, (short - 214) / 0.9));
   time.style.fontSize = size + 'px';
   date.style.fontSize = Math.min(size * 0.26, short * 0.1) + 'px';
 }
