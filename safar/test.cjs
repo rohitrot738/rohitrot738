@@ -421,11 +421,17 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
   // page runs again it reads them and the log has the station, at the time the train was really there.
   const missed = [];
-  let liveFix, buffersCleared = 0;
+  let liveFix, buffersCleared = 0, sessionsEnded = 0;
+  let backgroundState = {backgroundLocation: false, batteryUnrestricted: false, notifications: true};
   const asleep = setup(stationFetcher([['SLP', 'Sleep Station', 28, 77.0005]]), null, {
     isNativePlatform: () => true,
     registerPlugin: name => name === 'SafarBuffer'
-      ? {drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}), clear: async () => { buffersCleared++; }}
+      ? {
+        drain: async ({after}) => ({fixes: missed.filter(f => f.time > after)}),
+        begin: async () => { buffersCleared++; },
+        end: async () => { sessionsEnded++; },
+        status: async () => backgroundState
+      }
       : {addWatcher: async (_options, callback) => { liveFix = callback; return 'w'; }, removeWatcher: async () => {}}
   });
   asleep.elements.start.onclick();
@@ -436,7 +442,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   for (let i = 1; i <= 100; i++)
     missed.push({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
   assert.equal(asleep.store.has('trainlog'), false);
-  await asleep.elements.intervals.find(timer => timer.ms === 15000).fn();
+  // The page says what Android still needs for tracking with the screen off, and when it is all in place.
+  assert.match(asleep.elements['background-status'].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein$/);
+  assert.equal(asleep.elements['background-status'].hidden, false);
+  backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true};
+  await asleep.elements.intervals.find(timer => timer.ms === 5000).fn();
+  await flush();
+  assert.match(asleep.elements['background-status'].textContent, /settings theek hain/);
   const sleptLog = JSON.parse(asleep.store.get('trainlog'));
   assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
   // A fix the page already read from the buffer is not used twice when it arrives late.
@@ -444,6 +456,9 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 290000}, null);
   assert.equal(JSON.parse(asleep.store.get('trainlog')).length, 1);
   assert.match(asleep.elements.status.textContent, /Location mil rahi hai/);
+  await asleep.elements.stop.onclick();
+  assert.equal(sessionsEnded, 1);
+  assert.equal(asleep.elements['background-status'].hidden, true);
 
   // A standing train with the screen off: the phone sends no fixes while it sits still. The silence is filled in
   // as a stop from the last fix, so the halt has its real start, not the time fixes came back.

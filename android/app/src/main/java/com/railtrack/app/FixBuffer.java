@@ -49,6 +49,15 @@ final class FixBuffer {
         return result;
     }
 
+    static synchronized int size() {
+        return fixes.size();
+    }
+
+    /** The time of the newest fix, or 0 when there is none. */
+    static synchronized long lastTime() {
+        return fixes.isEmpty() ? 0 : (long) fixes.peekLast()[0];
+    }
+
     static synchronized void clear() {
         fixes.clear();
     }
