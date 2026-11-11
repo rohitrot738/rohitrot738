@@ -39,7 +39,7 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 #clock-color-menu button.on{border-color:#fff;box-shadow:0 0 0 2px #334155,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
    (body.turned). The speed dial (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the top
-   corner, the date and EXIT beside it, and the time fills the width below, the small seconds level with the foot
+   corner, EXIT in the other top corner with the date under it, and the time fills the width below, the small seconds level with the foot
    of the digits. fitClock() sets sizes and places from the real screen, since vh/vw are not dependable inside the
    app. Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
@@ -49,8 +49,8 @@ body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:t
 body.clockmode #clock-time{position:absolute;display:flex;align-items:baseline;line-height:1;margin:0;transform-origin:left top}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
-body.clockmode #clock-date{margin:0}
-body.clockmode #clock-full{position:static;margin-top:14px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
+body.clockmode #clock-date{order:2;margin:12px 0 0}
+body.clockmode #clock-full{order:1;position:static;margin:0;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
 body.clockmode #clock-color-row{display:none}
 body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;top:14px;bottom:auto}
 body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
