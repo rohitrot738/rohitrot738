@@ -610,7 +610,7 @@ function showRoutePosition(p, index) {
 async function loadStations() {
   if (stationListsLoaded || loading || Date.now() < retryAfter) return;
   loading = true;
-  dataStatus('Station list download ho rahi hai...', false);
+  if (!stations.length) dataStatus('Station list download ho rahi hai...', false);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
@@ -625,6 +625,7 @@ async function loadStations() {
     const osmCatalog = parseStations(osmRows, 'OpenStreetMap');
     stations = combineStations(catalog, osmCatalog);
     stationListsLoaded = true;
+    edgeGraph = null;   // links were filtered by the stations known when the graph was built
     restoreRoute();
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
@@ -1165,7 +1166,8 @@ try {
     const catalog = parseStations(data.catalog, 'DataMeet + project fallback');
     const osmCatalog = parseStations(data.osm, 'OpenStreetMap');
     stations = combineStations(catalog, osmCatalog);
-    stationListsLoaded = true;
+    // Not marked as loaded: this is the list an earlier version saved. The list this version ships is still read
+    // below, or an update would never bring its new stations.
     dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {
     const legacy = localStorage.getItem('safar-stations-v1');

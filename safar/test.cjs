@@ -162,9 +162,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(inaccurate.elements.now.textContent, /Test Station/);
   assert.equal(inaccurate.store.has('trainlog'), false);
 
-  const offline = setup(async () => { throw new Error('offline cache should avoid fetch'); }, app.store);
+  // With no network the saved list carries on (the shipped list is still asked for, and fails).
+  const offline = setup(async () => { throw new Error('offline'); }, app.store);
   offline.elements.start.onclick();
   offline.watches[0].success(fix(28, 100000));
+  assert.match(offline.elements.now.textContent, /Test Station/);
+  assert.match(offline.elements['data-status'].textContent, /Saved station list/);
+  await flush();
   assert.match(offline.elements.now.textContent, /Test Station/);
   assert.match(offline.elements['data-status'].textContent, /Saved station list/);
 
@@ -246,6 +250,20 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(resumed.watches.length, 1);
   osmRoute.elements.stop.onclick();
   assert.equal(osmRoute.store.get('safar-active'), undefined);
+
+  // A station list saved by an older version must not hide the list this version ships: the new stations and the
+  // links through them have to be there after an update.
+  const updated = setup(async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A','N',50],['N','B',50],['A','X',10],['X','Y',400],['Y','B',10]]}
+    : url === 'osm-station-routes.json' ? {ok: true, json: async () => ({schema_version: 1, edges: []})}
+    : stationFetcher([['A','A',28,77],['B','B',29,77],['X','X',28.1,78],['Y','Y',28.9,78],['N','New Cabin',28.5,77]])(url),
+    [['safar-stations-v2', JSON.stringify({catalog: [['A','A',28,77],['B','B',29,77],['X','X',28.1,78],['Y','Y',28.9,78]], osm: []})]]);
+  await flush();
+  updated.elements.origin.value = 'A';
+  updated.elements.destination.value = 'B';
+  await updated.elements['find-route'].onclick();
+  assert.deepEqual(updated.elements['route-list'].children.map(rowName), ['A (A)', 'New Cabin (N)', 'B (B)']);
+  assert.equal(JSON.parse(updated.store.get('safar-stations-v2')).catalog.length, 5);
 
   const badRoute = setup(async url => url === 'osm-station-routes.json'
     ? {ok: true, json: async () => ({schema_version: 1, stations_unreviewed: true, edges: [['A','B',100]]})}
