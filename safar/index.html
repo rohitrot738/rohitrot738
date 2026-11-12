@@ -40,30 +40,58 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 #clock-color-menu button.on{border-color:#fff;box-shadow:0 0 0 2px #334155,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
    (body.turned). The speed dial (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the top
-   corner, EXIT in the other top corner with the date under it, and the time fills the width below, the small
-   seconds level with the foot of the digits. fitClock() sets sizes and places from the real screen and the real
-   font, since neither vh/vw nor a font's size can be relied on inside the app. A dark sheet lies under the clock
-   (body::before) so the page never shows at its edges. Everything underneath keeps running. */
+   corner, EXIT and the small gear for sizes in the other top corner with the date under them, and the time fills
+   the width below, the small seconds level with the foot of the digits. fitClock() sets sizes and places from the
+   real screen and the real font, since neither vh/vw nor a font's size can be relied on inside the app. A dark
+   sheet lies under the clock (body::before) so the page never shows at its edges, then the dial, then the clock's
+   own parts, which alone take touches. Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
 body.clockmode::before{content:"";position:fixed;top:-100px;right:-100px;bottom:-100px;left:-100px;z-index:7;background:#0f172a}
-body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
-box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:14px 16px}
+body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:10;margin:0;border-radius:0;background:transparent;
+box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:14px 16px;pointer-events:none}
+body.clockmode .clock>*{pointer-events:auto}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{position:absolute;display:flex;align-items:baseline;line-height:1;margin:0;white-space:nowrap;transform-origin:left top}
+body.clockmode #clock-time{position:absolute;z-index:1;display:flex;align-items:baseline;line-height:1;margin:0;white-space:nowrap;transform-origin:left top}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
-body.clockmode #clock-date{order:2;margin:10px 0 0;white-space:nowrap}
-body.clockmode #clock-full{order:1;position:static;margin:0;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
+body.clockmode #clock-date{order:2;position:relative;z-index:2;margin:10px 0 0;white-space:nowrap}
+body.clockmode #clock-buttons{order:1;position:relative;z-index:3;display:flex;gap:10px}
+body.clockmode #clock-full{position:static;margin:0;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
+#clock-edit,#clock-sizes{display:none}
+body.clockmode #clock-edit{display:block;margin:0;padding:0 8px;line-height:0;background:#334155;color:#cbd5e1}
+body.clockmode #clock-edit svg{width:22px;height:22px}
+body.clockmode #clock-edit.on{background:#2563eb;color:#fff}
 body.clockmode #clock-color-row{display:none}
 body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;top:14px;bottom:auto}
 body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
+/* The bar for the sizes, opened with the gear: which part, Auto or Custom, a slider with - and +, back to the
+   sizes the clock lays out by itself, and done. It sits at the top while the time is sized and at the bottom
+   otherwise, so it never hides what is being sized; that part is outlined. */
+body.clockmode .sizing{outline:2px dashed #60a5fa;outline-offset:6px}
+body.clockmode #clock-sizes:not([hidden]){display:block;position:absolute;z-index:4;left:12px;right:12px;top:12px;padding:4px 8px;
+border-radius:12px;background:rgba(30,41,59,.97);box-shadow:0 6px 18px rgba(0,0,0,.6);touch-action:none}
+body.clockmode #clock-sizes.low{top:auto;bottom:12px}
+#clock-sizes .size-row{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+#clock-sizes button{margin:3px 0;padding:7px 10px;font-size:15px;line-height:1.2;background:#334155;color:#e2e8f0}
+#clock-sizes button.on{background:#2563eb;color:#fff}
+#size-modes{margin-left:auto;display:flex}
+#size-modes button{border-radius:0}#size-modes button:first-child{border-radius:8px 0 0 8px}#size-modes button:last-child{border-radius:0 8px 8px 0}
+#clock-sizes #size-down,#clock-sizes #size-up{width:42px;padding:3px 0;font-size:22px}
+#size-track{flex:1;min-width:110px;height:36px;position:relative;touch-action:none}
+#size-track::before{content:"";position:absolute;left:0;right:0;top:16px;height:4px;border-radius:2px;background:#475569}
+#size-fill{position:absolute;left:0;top:16px;height:4px;border-radius:2px;background:#60a5fa}
+#size-thumb{position:absolute;top:7px;width:22px;height:22px;margin-left:-11px;border-radius:50%;background:#f8fafc}
+#size-value{min-width:48px;text-align:right;font-variant-numeric:tabular-nums}
+#clock-sizes #size-done{background:#2563eb;color:#fff}
 </style>
 </head>
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div></div>
+<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><button id="clock-edit" type="button" aria-label="Ghadi ke size badlein"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
+<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Samay</button><button id="size-dial" type="button">Speed gola</button><button id="size-date" type="button">Din-tarikh</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
+<div class="size-row"><button id="size-down" type="button" aria-label="Chhota karein">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Bada karein">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Pehle jaisa</button><button id="size-done" type="button">Ho gaya</button></div></div></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -114,7 +142,7 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 <div class="card" id="status">Status: ruka hua</div>
 <div class="card small" id="background-status" hidden></div>
 <div class="card" id="data-status" hidden></div>
-<div class="speedo" aria-label="Speed"><b id="speed">—</b><span>km/h</span></div>
+<div class="speedo" id="speedo" aria-label="Speed"><b id="speed">—</b><span id="speed-unit">km/h</span></div>
 <div class="card" id="now">Nazdiki station: —</div>
 <div class="card" id="next">Agla station: Start dabayein</div>
 <button id="csv" class="alt">CSV download</button>
@@ -1404,22 +1432,27 @@ try {
 }
 restoreRoute();
 
-// Clock: date and time with seconds.
+// Clock: date and time with seconds. clockMode: whether it is the full-screen clock (below).
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+let clockMode = false, clockLock = null;
 function showClock() {
   const now = new Date(), two = n => String(n).padStart(2, '0');
   $('clock-hm').textContent = `${two(now.getHours())}:${two(now.getMinutes())}`;
   $('clock-sec').textContent = two(now.getSeconds());
   // The standing time keeps counting between fixes.
   if (tracking && liveStop && !replaying) showLiveStop(now.getTime());
-  $('clock-date').textContent = `${DAYS[now.getDay()]}, ${two(now.getDate())} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  const date = `${DAYS[now.getDay()]}, ${two(now.getDate())} ${MONTHS[now.getMonth()]} ${now.getFullYear()}`;
+  if ($('clock-date').textContent !== date) {
+    $('clock-date').textContent = date;
+    // A new day may be longer to write ("Wednesday" after "Tuesday"): the full-screen clock is laid out again.
+    if (clockMode) fitClock();
+  }
 }
 showClock();
 setInterval(showClock, 1000);
 
 // Full-screen clock. Only the look changes: tracking and the log go on underneath, and the screen is kept on.
-let clockMode = false, clockLock = null;
 // The four-corners sign video apps use for full screen.
 const FULLSCREEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>';
 // What the clock's time really measures here, for every 100 px of font size: its width (hours, minutes and the
@@ -1443,42 +1476,219 @@ function clockMetrics(time) {
   return {width, digit, foot};
 }
 
-// Lays the full-screen clock out for the real screen: turned when the phone is upright, the speed dial in the top
-// corner, and the time filling the room under it from edge to edge, stretched a little either way if its own shape
-// would leave some of that room empty.
+// Where the full-screen clock's parts go on a screen `long` wide and `short` tall (the clock's own measure, turned
+// or not). m: the time's measures for 100 px of font (width, digit, foot, as clockMetrics gives them), the date's
+// (dateWide, dateTall) and where it starts (dateTop), and how wide EXIT and the gear are together (buttonsWide).
+//
+// By itself (every size 1) the dial is 182 px in the top corner, the date runs from the left edge towards it, and
+// the time fills the room under the dial from edge to edge, stretched a little either way (up to STRETCH) if its own
+// shape would leave some of that room empty. sizes = {time, dial, date} changes that in one of two ways:
+// - auto: the dial is made larger or smaller, and the time and the date fill what it leaves them, scaled down by
+//   their own sizes (1 = all of it). A larger dial takes room from both, a smaller one gives it back, and nothing
+//   covers anything. A dial too tall to leave the time room under it has the time beside it instead.
+// - otherwise (Custom): each part keeps the size it is given against that first layout, whatever the others do, and
+//   may run into another. The time, which already fills the width, grows taller once it does.
+// Gives the sizes used (held to their limits), the limits, the dial's size, the date's font size, the time's font
+// size, stretch and place, and the boxes the parts take (the time's without the empty top of its line).
+const CLOCK_EDGE = 12, DIAL_SIZE = 182, DIAL_EDGE = 14, CLOCK_GAP = 8, CLOCK_SIDE = 16, STRETCH = 1.3;
+function clockLayout(long, short, m, sizes, auto) {
+  const fitTime = (wide, tall) => {
+    const font = Math.max(10, Math.min(wide / m.width, tall / m.digit) * 100);
+    return {font, wide: Math.max(1, Math.min(STRETCH, wide / (m.width * font / 100))),
+      tall: Math.max(1, Math.min(STRETCH, tall / (m.digit * font / 100)))};
+  };
+  const under = dial => DIAL_EDGE + dial + CLOCK_GAP;                    // the dial's corner and the gap below it
+  // The date's font size when it takes the room left of a dial, up to a share of the screen's height.
+  const dateFont = (dial, share) =>
+    Math.max(12, Math.min((long - under(dial) - 2 * CLOCK_SIDE - CLOCK_GAP) / m.dateWide, short * share / m.dateTall) * 100);
+  const date1 = dateFont(DIAL_SIZE, 0.17);
+  const time1 = fitTime(long - 2 * CLOCK_EDGE, short - under(DIAL_SIZE) - CLOCK_EDGE);
+  const timeWide1 = m.width * time1.font / 100 * time1.wide, timeTall1 = m.digit * time1.font / 100 * time1.tall;
+  const widest = long - 2 * CLOCK_EDGE, grow = Math.max(1, widest / timeWide1);   // larger than this, it is too wide
+  const limits = {
+    dial: [0.4, Math.max(0.4, Math.min(short - 2 * DIAL_EDGE, long * 0.55) / DIAL_SIZE)],
+    time: [0.3, auto ? 1 : Math.max(1, Math.min(grow * STRETCH / time1.tall, (short - 2 * CLOCK_EDGE) / timeTall1))],
+    date: [0.3, auto ? 1 : Math.max(1, Math.min((long - 2 * CLOCK_SIDE) / m.dateWide, short * 0.3 / m.dateTall) * 100 / date1)]
+  };
+  const held = {};
+  for (const part of ['time', 'dial', 'date']) {
+    const value = Number(sizes?.[part]);
+    held[part] = Math.min(limits[part][1], Math.max(limits[part][0], Number.isFinite(value) ? value : 1));
+  }
+  const dial = DIAL_SIZE * held.dial;
+  let date, time, room;
+  if (auto) {
+    date = dateFont(dial, 0.17) * held.date;
+    const dateBottom = m.dateTop + m.dateTall * date / 100;
+    // The time's room: the whole width under the dial and the date, or beside the dial under the date; the one
+    // where it comes out larger.
+    const rooms = [
+      {left: CLOCK_EDGE, wide: widest, top: Math.max(under(dial), dateBottom + CLOCK_GAP)},
+      {left: CLOCK_EDGE, wide: long - DIAL_EDGE - dial - CLOCK_GAP - CLOCK_EDGE, top: dateBottom + CLOCK_GAP}
+    ].map(r => ({...r, tall: short - CLOCK_EDGE - r.top})).filter(r => r.wide > 0 && r.tall > 0).map(r => {
+      const fit = fitTime(r.wide, r.tall);
+      return {...r, fit, area: m.width * fit.font / 100 * fit.wide * m.digit * fit.font / 100 * fit.tall};
+    });
+    room = rooms.reduce((best, r) => !best || r.area > best.area ? r : best, null)
+      || {left: CLOCK_EDGE, wide: widest, fit: time1};
+    time = {font: room.fit.font * held.time, wide: room.fit.wide, tall: room.fit.tall};
+  } else {
+    date = date1 * held.date;
+    const across = Math.min(held.time, grow);
+    time = {font: time1.font * across, wide: time1.wide, tall: time1.tall * held.time / across};
+    room = {left: CLOCK_EDGE, wide: widest};
+  }
+  const timeWide = m.width * time.font / 100 * time.wide;
+  time.left = Math.max(0, room.left + (room.wide - timeWide) / 2);
+  time.top = short - CLOCK_EDGE - m.foot * time.font / 100 * time.tall;   // the digits stand near the bottom edge
+  return {sizes: held, limits, dial, date, time, rects: {
+    dial: [long - DIAL_EDGE - dial, DIAL_EDGE, long - DIAL_EDGE, DIAL_EDGE + dial],
+    date: [CLOCK_SIDE, m.dateTop, CLOCK_SIDE + m.dateWide * date / 100, m.dateTop + m.dateTall * date / 100],
+    time: [time.left, time.top + (m.foot - m.digit) * time.font / 100 * time.tall, time.left + timeWide, short - CLOCK_EDGE],
+    buttons: [CLOCK_SIDE, DIAL_EDGE, CLOCK_SIDE + m.buttonsWide, m.dateTop - 10]
+  }};
+}
+
+// The sizes chosen for the full-screen clock, Auto's and Custom's each, and which of the two is in use; kept.
+const CLOCK_SIZES_KEY = 'safar-clock-sizes', CLOCK_PARTS = ['time', 'dial', 'date'];
+const clockSizes = {mode: 'auto', auto: {time: 1, dial: 1, date: 1}, custom: {time: 1, dial: 1, date: 1}};
+try {
+  const saved = JSON.parse(localStorage.getItem(CLOCK_SIZES_KEY) || 'null');
+  if (saved) {
+    clockSizes.mode = saved.mode === 'custom' ? 'custom' : 'auto';
+    for (const mode of ['auto', 'custom']) for (const part of CLOCK_PARTS) {
+      const value = Number(saved[mode]?.[part]);
+      if (Number.isFinite(value) && value > 0) clockSizes[mode][part] = value;
+    }
+  }
+} catch (e) { console.warn('Ghadi ke size nahi padhe', e); }
+// The sizes bar: whether it is open, the part being sized, and the limits and sizes of the last layout (before there
+// is one, as in a browser without a screen size, the widest limits either way allows).
+let clockEditing = false, sizePart = 'time', sizeLimits = null, sizesShown = null, sizeSliding = false;
+const SIZE_LIMITS = {auto: {time: [0.3, 1], dial: [0.4, 2], date: [0.3, 1]}, custom: {time: [0.3, 1.3], dial: [0.4, 2], date: [0.3, 1.5]}};
+const sizesInUse = () => clockSizes[clockSizes.mode];
+const partLimits = () => (sizeLimits || SIZE_LIMITS[clockSizes.mode])[sizePart];
+
+// The speed dial at a size, its ring, number and unit in proportion; without one, at its everyday size.
+function sizeDial(size) {
+  const dial = $('speedo'), k = size / DIAL_SIZE;
+  dial.style.width = dial.style.height = size ? size + 'px' : '';
+  dial.style.borderWidth = size ? 6 * k + 'px' : '';
+  $('speed').style.fontSize = size ? 66 * k + 'px' : '';
+  $('speed-unit').style.fontSize = size ? 18 * k + 'px' : '';
+  $('speed-unit').style.marginTop = size ? 4 * k + 'px' : '';
+}
+
+// Shows the sizes bar as things stand: open only in the full-screen clock after the gear, the part being sized
+// picked and outlined, the way in use, and the slider and percentage at that part's size.
+function showSizes(shown) {
+  sizesShown = shown;
+  const open = clockMode && clockEditing, bar = $('clock-sizes');
+  bar.hidden = !open;
+  bar.className = sizePart === 'time' ? '' : 'low';
+  $('clock-edit').className = open ? 'on' : '';
+  for (const part of CLOCK_PARTS) $('size-' + part).className = part === sizePart ? 'on' : '';
+  $('size-auto').className = clockSizes.mode === 'auto' ? 'on' : '';
+  $('size-custom').className = clockSizes.mode === 'custom' ? 'on' : '';
+  $('clock-time').className = open && sizePart === 'time' ? 'sizing' : '';
+  $('clock-date').className = open && sizePart === 'date' ? 'sizing' : '';
+  $('speedo').className = open && sizePart === 'dial' ? 'speedo sizing' : 'speedo';
+  const [low, high] = partLimits(), value = shown[sizePart];
+  $('size-value').textContent = Math.round(value * 100) + '%';
+  $('size-fill').style.width = $('size-thumb').style.left = (high > low ? (value - low) / (high - low) * 100 : 100).toFixed(1) + '%';
+}
+
+// Lays the full-screen clock out for the real screen (see clockLayout), turned when the phone is upright.
 function fitClock() {
   const card = $('clock-card'), time = $('clock-time'), date = $('clock-date');
   const w = window.innerWidth, h = window.innerHeight, known = Number.isFinite(w) && Number.isFinite(h);
   const turned = clockMode && known && h > w;
   document.body.className = clockMode ? (turned ? 'clockmode turned' : 'clockmode') : '';
+  if (!clockMode) clockEditing = false;
   if (!clockMode || !known) {
     card.style.width = card.style.height = time.style.fontSize = date.style.fontSize = '';
     time.style.transform = time.style.left = time.style.top = '';
+    sizeDial(null);
+    sizeLimits = null;
+    showSizes(sizesInUse());
     return;
   }
   const long = Math.max(w, h), short = Math.min(w, h);
   card.style.width = turned ? long + 'px' : '';
   card.style.height = turned ? short + 'px' : '';
   time.style.transform = time.style.left = time.style.top = '';
-  const EDGE = 12, DIAL = 14 + 182 + 8, STRETCH = 1.3;   // the dial takes the top corner, and a gap under it
-  const {width, digit, foot} = clockMetrics(time);
-  const roomWide = long - 2 * EDGE, roomTall = short - DIAL - EDGE;
-  const size = Math.max(40, Math.min(roomWide / width, roomTall / digit) * 100);
-  const wide = Math.max(1, Math.min(STRETCH, roomWide / (width * size / 100)));
-  const tall = Math.max(1, Math.min(STRETCH, roomTall / (digit * size / 100)));
-  time.style.fontSize = size + 'px';
-  time.style.transform = `scale(${wide.toFixed(3)}, ${tall.toFixed(3)})`;
-  time.style.left = Math.max(0, (long - width * size / 100 * wide) / 2) + 'px';
-  time.style.top = (short - EDGE - foot * size / 100 * tall) + 'px';   // the digits stand near the bottom edge
-  // The date runs from the left edge towards the dial, as large as fits there.
+  const m = clockMetrics(time);
   date.style.fontSize = '100px';
-  const dateWide = date.offsetWidth || 1150, dateTall = date.offsetHeight || 117;
-  date.style.fontSize = Math.max(12, Math.min((long - DIAL - 2 * 16 - 8) / dateWide, short * 0.17 / dateTall) * 100) + 'px';
+  m.dateWide = date.offsetWidth || 1150;
+  m.dateTall = date.offsetHeight || 117;
+  m.dateTop = date.offsetTop || 59;
+  m.buttonsWide = $('clock-buttons').offsetWidth || 92;
+  const laid = clockLayout(long, short, m, sizesInUse(), clockSizes.mode !== 'custom');
+  time.style.fontSize = laid.time.font + 'px';
+  time.style.transform = `scale(${laid.time.wide.toFixed(3)}, ${laid.time.tall.toFixed(3)})`;
+  time.style.left = laid.time.left + 'px';
+  time.style.top = laid.time.top + 'px';
+  date.style.fontSize = laid.date + 'px';
+  sizeDial(laid.dial);
+  sizeLimits = laid.limits;
+  // While the dial is sized, the bar keeps to its left, where there is room for it.
+  const leftOfDial = laid.rects.dial[0] - CLOCK_GAP - CLOCK_EDGE;
+  $('clock-sizes').style.right = sizePart === 'dial' && leftOfDial >= 300 ? long - laid.rects.dial[0] + CLOCK_GAP + 'px' : '';
+  showSizes(laid.sizes);
 }
 window.addEventListener?.('resize', fitClock);
 
+function saveClockSizes() {
+  try { localStorage.setItem(CLOCK_SIZES_KEY, JSON.stringify(clockSizes)); } catch (e) { console.warn('Ghadi ke size save nahi hue', e); }
+  fitClock();
+}
+// Sets the size of the part being sized, held to its limits.
+function setClockSize(value) {
+  const [low, high] = partLimits();
+  sizesInUse()[sizePart] = Math.round(Math.min(high, Math.max(low, value)) * 100) / 100;
+  saveClockSizes();
+}
+function pickSizePart(part) { sizePart = part; fitClock(); }
+function setSizeMode(mode) { clockSizes.mode = mode; saveClockSizes(); }
+$('clock-edit').onclick = () => { if (!clockMode) return; clockEditing = !clockEditing; fitClock(); };
+$('size-done').onclick = () => { clockEditing = false; fitClock(); };
+for (const part of CLOCK_PARTS) $('size-' + part).onclick = () => pickSizePart(part);
+// While the bar is open, a tap on the time, the dial or the date picks it too.
+$('clock-time').onclick = () => { if (clockMode && clockEditing) pickSizePart('time'); };
+$('clock-date').onclick = () => { if (clockMode && clockEditing) pickSizePart('date'); };
+$('speedo').onclick = () => { if (clockMode && clockEditing) pickSizePart('dial'); };
+$('size-auto').onclick = () => setSizeMode('auto');
+$('size-custom').onclick = () => setSizeMode('custom');
+$('size-down').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] - 0.05);
+$('size-up').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] + 0.05);
+// "Pehle jaisa": the way in use goes back to the sizes the clock lays out by itself.
+$('size-reset').onclick = () => {
+  for (const part of CLOCK_PARTS) sizesInUse()[part] = 1;
+  saveClockSizes();
+};
+// The slider: a touch on its track, and the finger drawn along it, set the size. The track lies across the clock,
+// which is turned on its side while the phone is upright, so then it runs down the screen.
+function slideClockSize(event) {
+  const track = $('size-track').getBoundingClientRect(), turned = document.body.className.includes('turned');
+  const along = turned ? (event.clientY - track.top) / track.height : (event.clientX - track.left) / track.width;
+  const [low, high] = partLimits();
+  setClockSize(low + Math.min(1, Math.max(0, along)) * (high - low));
+}
+$('size-track').onpointerdown = event => {
+  sizeSliding = true;
+  try { $('size-track').setPointerCapture?.(event.pointerId); } catch (e) { /* the finger is followed anyway */ }
+  slideClockSize(event);
+};
+$('size-track').onpointermove = event => { if (sizeSliding) slideClockSize(event); };
+$('size-track').onpointerup = $('size-track').onpointercancel = () => { sizeSliding = false; };
+// The slider's touches are the page's own. Otherwise a quick slide ends in a "fling", and the browser drops a tap
+// made while that lasts (it takes it for stopping a scroll): "Ho gaya" right after sliding did nothing, a few
+// times in ten.
+$('size-track').addEventListener?.('touchstart', event => event.preventDefault(), {passive: false});
+
 function setClockMode(on) {
   clockMode = on;
+  if (!on) clockEditing = false;
   fitClock();
   $('clock-full').innerHTML = on ? 'EXIT' : FULLSCREEN_ICON;
   // In the app, the phone's own bars (status bar on top, buttons below) are hidden while the clock is up.
@@ -1500,6 +1710,7 @@ function setClockMode(on) {
 $('clock-full').onclick = () => setClockMode(!clockMode);
 
 $('clock-full').innerHTML = FULLSCREEN_ICON;
+fitClock();
 
 // Colour of the time: a dropdown of ten colours shown as colours, not names; the pick is remembered.
 const CLOCK_COLOR_KEY = 'safar-clock-color';

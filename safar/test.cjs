@@ -26,7 +26,7 @@ function setup(fetch, saved, capacitor = null) {
   const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: (fn, ms) => { (elements.intervals ||= []).push({fn, ms}); elements.clockTick = fn; return 0; }, String,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
-  return {elements, store, watches};
+  return {elements, store, watches, context};
 }
 
 // A route-list row is <li><label><input type=checkbox><span>name</span></label></li>.
@@ -798,6 +798,148 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(recoloured.elements['clock-time'].style.color, '#f472b6');
   assert.equal(recoloured.elements['clock-color-now'].style.background, '#f472b6');
   assert.match(big.elements['clock-full'].innerHTML, /^<svg /);
+
+  // ---- Sizes of the full-screen clock. A small gear next to EXIT, there only in full screen, opens a bar where the
+  // time (hours, minutes and seconds together), the speed dial and the date are each made larger or smaller, in two
+  // ways: Auto, where the time and the date fill what the dial leaves them, and Custom, where each keeps its own size.
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) < 0.01, `${what}: ${a} against ${b}`);
+  const tallness = box => box[3] - box[1], wideness = box => box[2] - box[0];
+  const covers = (a, b) => a[0] < b[2] - 0.5 && b[0] < a[2] - 0.5 && a[1] < b[3] - 0.5 && b[1] < a[3] - 0.5;
+  const within = (box, long, short) => box[0] >= -0.5 && box[1] >= -0.5 && box[2] <= long + 0.5 && box[3] <= short + 0.5;
+  const layout = big.context.clockLayout;
+  const measures = {width: 304, digit: 72, foot: 84, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92};
+  const ones = {time: 1, dial: 1, date: 1};
+  // Untouched, either way lays the clock out exactly as before its sizes could be set.
+  const smallFont = {...measures, width: 244, digit: 57.6, foot: 67, dateWide: 920, dateTall: 94, dateTop: 55};
+  for (const [long, short, m] of [[780, 360, measures], [735, 360, smallFont], [891, 411, measures], [640, 360, measures], [1280, 800, measures]]) {
+    const font = Math.max(40, Math.min((long - 24) / m.width, (short - 216) / m.digit) * 100);
+    const wide = Math.max(1, Math.min(1.3, (long - 24) / (m.width * font / 100)));
+    const tall = Math.max(1, Math.min(1.3, (short - 216) / (m.digit * font / 100)));
+    const date = Math.max(12, Math.min((long - 244) / m.dateWide, short * 0.17 / m.dateTall) * 100);
+    for (const auto of [true, false]) {
+      const got = layout(long, short, m, ones, auto), what = `${long}x${short} ${auto ? 'Auto' : 'Custom'}`;
+      near(got.dial, 182, what + ' dial');
+      near(got.date, date, what + ' date');
+      near(got.time.font, font, what + ' time font');
+      near(got.time.wide, wide, what + ' time stretch across');
+      near(got.time.tall, tall, what + ' time stretch up');
+      near(got.time.left, Math.max(0, (long - m.width * font / 100 * wide) / 2), what + ' time left');
+      near(got.time.top, short - 12 - m.foot * font / 100 * tall, what + ' time top');
+    }
+  }
+  // Auto: a larger dial takes room from the time and the date, a smaller one gives it back. (The time may go beside
+  // a large dial, taller but narrower there; what it takes of the screen only ever shrinks as the dial grows.)
+  const area = box => wideness(box) * tallness(box);
+  const plain = layout(780, 360, measures, ones, true);
+  const larger = layout(780, 360, measures, {...ones, dial: 1.4}, true);
+  const smaller = layout(780, 360, measures, {...ones, dial: 0.6}, true);
+  near(larger.dial, 182 * 1.4, 'larger dial');
+  near(smaller.dial, 182 * 0.6, 'smaller dial');
+  assert.ok(larger.date < plain.date && area(larger.rects.time) < area(plain.rects.time), 'a larger dial makes room');
+  assert.ok(smaller.date > plain.date && tallness(smaller.rects.time) > tallness(plain.rects.time), 'a smaller dial gives room back');
+  for (const [long, short] of [[780, 360], [891, 411], [640, 360]]) {
+    let before = Infinity;
+    for (let dial = 0.4; dial <= 2.2; dial += 0.05) {
+      const now = area(layout(long, short, measures, {...ones, dial}, true).rects.time);
+      assert.ok(now <= before + 0.5, `${long}x${short}: the time never grows as the dial grows (${dial.toFixed(2)})`);
+      before = now;
+    }
+  }
+  // The time's own size: hours, minutes and seconds together, in the same shape, still standing at the bottom.
+  const halfTime = layout(780, 360, measures, {...ones, time: 0.5}, true);
+  near(halfTime.time.font, plain.time.font / 2, 'half time');
+  near(halfTime.time.wide, plain.time.wide, 'half time, same shape');
+  near(halfTime.rects.time[3], 348, 'half time at the bottom');
+  near(layout(780, 360, measures, {...ones, date: 0.5}, true).date, plain.date / 2, 'half date');
+  // Never past what fits: in Auto the time and the date go up to 100 %, the dial up to the screen's height.
+  const most = layout(780, 360, measures, {time: 3, dial: 9, date: 3}, true);
+  assert.deepEqual(most.sizes, {time: 1, dial: most.limits.dial[1], date: 1});
+  near(most.dial, 360 - 28, 'largest dial');
+  assert.deepEqual(layout(780, 360, measures, {time: 0, dial: 0, date: 0}, true).sizes, {time: 0.3, dial: 0.4, date: 0.3});
+  // With the dial as tall as the screen, the time goes beside it instead of under it.
+  assert.ok(most.rects.time[2] <= most.rects.dial[0] && tallness(most.rects.time) > 60, 'the time beside a tall dial');
+  // Whatever the sizes, nothing covers anything else and everything stays on the screen.
+  for (const [long, short] of [[780, 360], [891, 411], [640, 360], [1280, 800], [735, 360]])
+    for (const dial of [0.4, 0.7, 1, 1.3, 1.6, 2, 9]) for (const time of [0.3, 0.7, 1]) for (const date of [0.3, 1]) {
+      const got = layout(long, short, measures, {time, dial, date}, true), r = got.rects, what = `Auto ${long}x${short} ${dial}/${time}/${date}`;
+      for (const [name, box] of Object.entries(r)) assert.ok(within(box, long, short), `${what}: ${name} on the screen ${box}`);
+      for (const [a, b] of [['dial', 'time'], ['dial', 'date'], ['dial', 'buttons'], ['date', 'time'], ['buttons', 'time'], ['buttons', 'date']])
+        assert.ok(!covers(r[a], r[b]), `${what}: ${a} ${r[a].map(Math.round)} clear of ${b} ${r[b].map(Math.round)}`);
+    }
+  // Custom: each keeps its own size; a larger dial leaves the time and the date as they were.
+  const own = layout(780, 360, measures, {...ones, dial: 1.5}, false);
+  near(own.dial, 273, 'Custom dial');
+  near(own.date, plain.date, 'Custom date untouched by the dial');
+  near(own.time.font, plain.time.font, 'Custom time untouched by the dial');
+  // The time already fills the width: larger, it grows taller (up to 1.3 times), smaller it keeps its shape.
+  const tallerTime = layout(780, 360, measures, {...ones, time: 1.2}, false);
+  near(tallness(tallerTime.rects.time), 1.2 * tallness(plain.rects.time), 'Custom taller time');
+  near(wideness(tallerTime.rects.time), wideness(plain.rects.time), 'Custom taller time, same width');
+  const smallerTime = layout(780, 360, measures, {...ones, time: 0.5}, false);
+  near(smallerTime.time.font, plain.time.font / 2, 'Custom smaller time');
+  near(smallerTime.time.wide, plain.time.wide, 'Custom smaller time, same shape');
+  near(layout(780, 360, measures, {...ones, date: 1.3}, false).date, plain.date * 1.3, 'Custom larger date');
+  const ownMost = layout(780, 360, measures, {time: 9, dial: 9, date: 9}, false);
+  assert.deepEqual(ownMost.sizes, {time: ownMost.limits.time[1], dial: ownMost.limits.dial[1], date: ownMost.limits.date[1]});
+  near(ownMost.limits.time[1], 1.3, 'Custom time limit');
+  for (const [name, box] of Object.entries(ownMost.rects)) assert.ok(within(box, 780, 360), `Custom largest: ${name} on the screen ${box}`);
+
+  // The gear and its bar, as the user works them.
+  const sized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
+  const knob = sized.elements;
+  assert.equal(knob['clock-sizes'].hidden, true);
+  knob['clock-edit'].onclick();                       // not in full screen: nothing opens
+  assert.equal(knob['clock-sizes'].hidden, true);
+  knob['clock-full'].onclick();
+  knob['clock-time'].onclick?.();                     // the clock itself changes nothing until the gear is pressed
+  assert.equal(knob['clock-sizes'].hidden, true);
+  knob['clock-edit'].onclick();
+  assert.equal(knob['clock-sizes'].hidden, false);
+  assert.equal(knob['size-time'].className, 'on');    // the time first, in Auto
+  assert.equal(knob['size-auto'].className, 'on');
+  assert.equal(knob['clock-time'].className, 'sizing');
+  assert.equal(knob['size-value'].textContent, '100%');
+  knob['size-down'].onclick();
+  assert.equal(knob['size-value'].textContent, '95%');
+  knob['size-dial'].onclick();
+  assert.equal(knob['size-dial'].className, 'on');
+  assert.equal(knob['size-time'].className, '');
+  assert.equal(knob.speedo.className, 'speedo sizing');
+  assert.equal(knob['clock-time'].className, '');
+  assert.equal(knob['clock-sizes'].className, 'low');  // the bar keeps out of the way of what is being sized
+  knob['size-up'].onclick();
+  knob['size-up'].onclick();
+  assert.equal(knob['size-value'].textContent, '110%');
+  knob['clock-date'].onclick();                       // a tap on the date picks the date
+  assert.equal(knob['size-date'].className, 'on');
+  knob['size-custom'].onclick();                      // Custom has sizes of its own
+  assert.equal(knob['size-custom'].className, 'on');
+  assert.equal(knob['size-auto'].className, '');
+  assert.equal(knob['size-value'].textContent, '100%');
+  knob['size-up'].onclick();
+  assert.equal(knob['size-value'].textContent, '105%');
+  assert.deepEqual(JSON.parse(sized.store.get('safar-clock-sizes')),
+    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: {time: 1, dial: 1, date: 1.05}});
+  knob['size-done'].onclick();
+  assert.equal(knob['clock-sizes'].hidden, true);
+  assert.equal(knob['clock-date'].className, '');
+  // Kept for the next start; "Pehle jaisa" puts the sizes of the way in use back.
+  const resized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), sized.store);
+  const again = resized.elements;
+  again['clock-full'].onclick();
+  again['clock-edit'].onclick();
+  assert.equal(again['size-custom'].className, 'on');
+  again['size-date'].onclick();
+  assert.equal(again['size-value'].textContent, '105%');
+  again['size-reset'].onclick();
+  assert.equal(again['size-value'].textContent, '100%');
+  assert.deepEqual(JSON.parse(resized.store.get('safar-clock-sizes')),
+    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: ones});
+  // EXIT closes the bar with the full-screen clock, and the dial goes back to its everyday size.
+  again['clock-full'].onclick();
+  assert.equal(again['clock-sizes'].hidden, true);
+  assert.equal(again.body.className, '');
+  assert.equal(again.speedo.style.width, '');
 
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
