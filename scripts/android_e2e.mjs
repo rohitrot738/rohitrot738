@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Runs the debug build of the app on an Android emulator and checks, from inside its page, the things that only
 // exist on a phone and that no test on a computer can see: that the page reaches the native side at all, that the
-// full-screen clock hides the phone's bars and fills the screen whatever font size the phone is set to, and that a
-// journey goes on being recorded natively with the screen off.
+// full-screen clock hides the phone's bars and fills the screen whatever font size the phone is set to, that its
+// sizes can be changed by touch from its gear, and that a journey goes on being recorded natively with the screen off.
 //
 // The page is driven through the WebView's own debugging socket (Chrome DevTools Protocol, open in debug builds).
 // Screenshots are saved to e2e-shots/ and also printed to the log, small, as lines of "SHOT <name> <base64>".
@@ -268,6 +268,155 @@ async function clockCheck(page, label) {
   check(after[2] === '' && after[1] === before[1], `${label}: EXIT brings the page and the phone's bars back`, JSON.stringify(after));
 }
 
+// A finger on the page: a tap on an element's middle, or a slide along the sizes slider from one share of it to
+// another (the slider lies across the clock, so down the screen while the clock is turned).
+async function tap(page, selector) {
+  const [x, y] = await page.run(`const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2];`);
+  await page.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [{x, y}]});
+  await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await sleep(400);
+}
+async function slide(page, from, to) {
+  const [left, top, width, height, turned] = await page.run(`const r = document.getElementById('size-track').getBoundingClientRect();
+    return [r.left, r.top, r.width, r.height, document.body.className.includes('turned')];`);
+  const at = share => turned ? {x: left + width / 2, y: top + share * height} : {x: left + share * width, y: top + height / 2};
+  await page.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [at(from)]});
+  for (let step = 1; step <= 10; step++) {
+    await page.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [at(from + (to - from) * step / 10)]});
+    await sleep(16);
+  }
+  await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+}
+// A finger drawn from one point of the page to another; two fingers on a line through a point (along the page's
+// width or height), from one distance apart to another.
+async function drag(page, from, to) {
+  const at = share => ({x: from[0] + (to[0] - from[0]) * share, y: from[1] + (to[1] - from[1]) * share});
+  await page.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [at(0)]});
+  for (let step = 1; step <= 12; step++) {
+    await page.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [at(step / 12)]});
+    await sleep(16);
+  }
+  await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await sleep(300);
+}
+async function pinchAt(page, [x, y], from, to, acrossWidth) {
+  const fingers = gap => acrossWidth ? [{x: x - gap / 2, y, id: 0}, {x: x + gap / 2, y, id: 1}] : [{x, y: y - gap / 2, id: 0}, {x, y: y + gap / 2, id: 1}];
+  await page.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: fingers(from)});
+  for (let step = 1; step <= 12; step++) {
+    await page.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: fingers(from + (to - from) * step / 12)});
+    await sleep(16);
+  }
+  await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await sleep(300);
+}
+// A screenshot once the emulator's screen has caught up: it draws in software, and a frame can lag a second behind.
+async function settledShot(name) { await sleep(1200); shot(name); }
+// The clock's parts as they stand, with the sizes bar.
+const SIZES = CLOCK.replace(/return \{/, `const own = id => box(id).map(Math.round);
+  return {open: !document.getElementById('clock-sizes').hidden, part: sizePart, mode: clockSizes.mode, saved: localStorage.getItem('safar-clock-sizes'),
+    value: document.getElementById('size-value').textContent, gear: own('clock-edit'), bar: own('clock-sizes'),
+    dateFont: parseFloat(document.getElementById('clock-date').style.fontSize),`);
+// The clock's parts that must not cover one another, the time by its digits alone (see clockCheck).
+function clearOfEachOther(clock) {
+  const ink = [...clock.hm];
+  if (clock.inner[1] > clock.inner[0]) ink[2] -= clock.blank; else ink[1] += clock.blank;
+  const parts = {time: ink, dial: clock.dial, date: clock.date, exit: clock.exit, gear: clock.gear};
+  const names = Object.keys(parts), touching = [];
+  for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++)
+    if (overlap(parts[names[i]], parts[names[j]])) touching.push(`${names[i]} ${JSON.stringify(parts[names[i]].map(Math.round))} / ${names[j]} ${JSON.stringify(parts[names[j]].map(Math.round))}`);
+  return touching;
+}
+
+// The sizes of the full-screen clock, worked as a finger would: the gear opens the bar, a part is picked and slid
+// larger, Auto makes room for a larger dial, the sizes stay after leaving the clock, Custom keeps each part's own
+// size, and "Reset" brings the first layout back.
+async function clockSizesCheck(page) {
+  await page.run(`localStorage.removeItem('safar-clock-sizes'); clockSizes.mode = 'auto';
+    for (const mode of ['auto', 'custom']) for (const part of CLOCK_PARTS) clockSizes[mode][part] = 1;
+    document.getElementById('speed').textContent = '105';`);
+  await tap(page, '#clock-full');
+  await sleep(2500);
+  const plain = await page.run(SIZES);
+  log('sizes, plain clock:', JSON.stringify(plain));
+  const [width, height] = plain.inner;
+  check(/clockmode/.test(plain.body) && !plain.open, 'sizes: the full-screen clock opens with the sizes bar closed');
+  check(plain.gear[2] - plain.gear[0] >= 24 && plain.gear[3] - plain.gear[1] >= 24 && plain.gear[0] >= 0 && plain.gear[2] <= width && plain.gear[3] <= height,
+    'sizes: the gear is on the screen, large enough to tap', JSON.stringify(plain.gear));
+  check(!clearOfEachOther(plain).length, 'sizes: the gear, EXIT, the date, the time and the dial do not cover one another', clearOfEachOther(plain).join('; '));
+  await tap(page, '#clock-time');
+  check(!(await page.run(SIZES)).open, 'sizes: a tap on the clock changes nothing until the gear is pressed');
+
+  await tap(page, '#clock-edit');
+  const opened = await page.run(SIZES);
+  check(opened.open && opened.part === 'time' && opened.mode === 'auto', 'sizes: the gear opens the bar, on the time, in Auto', JSON.stringify([opened.open, opened.part, opened.mode]));
+  await settledShot('clock-sizes-bar');
+  await tap(page, '#size-dial');
+  await slide(page, 0.3, 0.8);
+  await sleep(150);
+  await tap(page, '#size-done');   // straight after sliding, as a hand would
+  const larger = await page.run(SIZES);
+  log('sizes, Auto with a larger dial:', JSON.stringify(larger));
+  await settledShot('clock-sizes-auto-larger-dial');
+  const dialOf = clock => clock.dial[2] - clock.dial[0];
+  check(dialOf(larger) > dialOf(plain) + 40, 'sizes: sliding makes the dial larger', `${dialOf(plain)} -> ${dialOf(larger)} px, ${larger.value}`);
+  check(!larger.open, 'sizes: "Done" right after sliding closes the bar');
+  check(larger.dateFont < plain.dateFont, 'sizes: in Auto the date gives the larger dial room', `${plain.dateFont} -> ${larger.dateFont}`);
+  check(!clearOfEachOther(larger).length, 'sizes: in Auto nothing covers anything with the larger dial', clearOfEachOther(larger).join('; '));
+
+  await tap(page, '#clock-full');
+  await sleep(2000);
+  await tap(page, '#clock-full');
+  await sleep(2500);
+  const back = await page.run(SIZES);
+  check(dialOf(back) === dialOf(larger) && JSON.parse(back.saved || '{}').auto?.dial > 1, 'sizes: the sizes stay after leaving the clock and coming back',
+    `${dialOf(larger)} -> ${dialOf(back)} px; kept: ${back.saved}`);
+
+  await tap(page, '#clock-edit');
+  await tap(page, '#size-custom');
+  const custom = await page.run(SIZES);
+  check(custom.mode === 'custom' && dialOf(custom) === dialOf(plain) && custom.font === plain.font,
+    'sizes: Custom starts from the first layout, with sizes of its own', `${dialOf(custom)} px, ${custom.font}`);
+  await tap(page, '#size-dial');
+  for (let i = 0; i < 4; i++) await tap(page, '#size-up');
+  const own = await page.run(SIZES);
+  log('sizes, Custom with a larger dial:', JSON.stringify(own));
+  await settledShot('clock-sizes-custom-larger-dial');
+  check(own.value === '120%' && dialOf(own) > dialOf(plain) + 30, 'sizes: + makes the dial larger in steps', `${own.value}, ${dialOf(own)} px`);
+  check(own.font === plain.font && own.dateFont === plain.dateFont, 'sizes: in Custom the time and the date keep their sizes when the dial grows',
+    `${own.font} / ${own.dateFont} against ${plain.font} / ${plain.dateFont}`);
+
+  // Like a picture: the dial's bottom left handle drawn out, away from the dial's top right corner, makes it larger;
+  // two fingers pinched to half their distance halve it; "Done" straight after the pinch still closes the bar.
+  const [hx, hy, turned, zoom] = await page.run(`const r = document.getElementById('size-handle-3').getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2, document.body.className.includes('turned'), visualViewport.scale];`);
+  await drag(page, [hx, hy], turned ? [hx - 60, hy - 60] : [hx - 60, hy + 60]);
+  const drawnOut = await page.run(SIZES);
+  log('sizes, a corner drawn out:', drawnOut.value, dialOf(drawnOut), 'px');
+  await settledShot('clock-sizes-corner-handles');
+  check(dialOf(drawnOut) > dialOf(own) + 40, 'sizes: a corner handle drawn out makes the dial larger, like a picture', `${dialOf(own)} -> ${dialOf(drawnOut)} px, ${drawnOut.value}`);
+  // Clear of the bar, which lies along the clock's bottom (the page's left edge while turned).
+  await pinchAt(page, turned ? [width / 2 + 60, height / 2] : [width / 2, height / 2 - 60], 240, 120, !turned);
+  const pinched = await page.run(SIZES);
+  const halfOf = Math.max(0.4, Math.round(parseInt(drawnOut.value) / 2) / 100);
+  check(Math.abs(parseInt(pinched.value) / 100 - halfOf) <= 0.02, 'sizes: two fingers pinched to half their distance halve the dial', `${drawnOut.value} -> ${pinched.value}`);
+  check((await page.run(`return visualViewport.scale;`)) === zoom, 'sizes: the page itself does not zoom under two fingers');
+  await tap(page, '#size-done');
+  check(!(await page.run(SIZES)).open, 'sizes: "Done" right after a pinch closes the bar');
+  await tap(page, '#clock-edit');
+
+  await tap(page, '#size-reset');
+  await tap(page, '#size-auto');
+  await tap(page, '#size-reset');
+  await tap(page, '#size-done');
+  const reset = await page.run(SIZES);
+  check(dialOf(reset) === dialOf(plain) && reset.font === plain.font && reset.dateFont === plain.dateFont && !reset.open,
+    '"Reset" brings back the first layout', `${dialOf(reset)} px, ${reset.font}, ${reset.dateFont}`);
+  await tap(page, '#clock-full');
+  await sleep(2000);
+  check((await page.run(`return document.body.className;`)) === '', 'sizes: EXIT leaves the full-screen clock');
+}
+
 // Whether the built app still starts EmojiCompat (its manifest names the initializer), read with aapt2.
 function emojiCompatInManifest() {
   const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
@@ -463,6 +612,7 @@ async function main() {
   launch();
   page = await openPage();
   await clockCheck(page, 'normal-font');
+  await clockSizesCheck(page);
 
   await untilUntied('a second start of the app', 20000);
   page.close();

@@ -49,7 +49,7 @@ public class UpdateCheckService extends JobService {
         }
         long notified = AppUpdate.prefs(this).getLong("notified", 0);
         if (!UpdateVersions.shouldNotify(release.code, AppUpdate.installedCode(this), notified)) return;
-        if (AppUpdate.notifyUser(this, "Suffer Sathi ka naya version aaya hai", "Update karne ke liye dabayein.")) {
+        if (AppUpdate.notifyUser(this, "A new version of Suffer Sathi is out", "Tap to update.")) {
             AppUpdate.prefs(this).edit().putLong("notified", release.code).apply();
         }
     }

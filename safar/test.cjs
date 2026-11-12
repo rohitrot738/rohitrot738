@@ -5,7 +5,7 @@ const assert = require('assert');
 const html = fs.readFileSync(require('path').join(__dirname, 'index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
-function setup(fetch, saved, capacitor = null) {
+function setup(fetch, saved, capacitor = null, screen = null) {
   const elements = {};
   function element() {
     return {
@@ -23,10 +23,10 @@ function setup(fetch, saved, capacitor = null) {
     watchPosition(success, error, options) { watches.push({success, error, options}); return watches.length; },
     clearWatch(id) { watches[id - 1].cleared = true; }
   };
-  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: (fn, ms) => { (elements.intervals ||= []).push({fn, ms}); elements.clockTick = fn; return 0; }, String,
+  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor, ...screen}, fetch, AbortController, setTimeout, clearTimeout, setInterval: (fn, ms) => { (elements.intervals ||= []).push({fn, ms}); elements.clockTick = fn; return 0; }, String,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
-  return {elements, store, watches};
+  return {elements, store, watches, context};
 }
 
 // A route-list row is <li><label><input type=checkbox><span>name</span></label></li>.
@@ -65,7 +65,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(requests, 1);
   assert.equal(JSON.parse(app.store.get('safar-stations-v2')).osm.length, 1);
   assert.match(app.elements.now.textContent, /Test Station/);
-  assert.match(app.elements['data-status'].textContent, /taiyar/);
+  assert.match(app.elements['data-status'].textContent, /ready/);
   assert.equal(app.elements['data-status'].hidden, true);
   assert.doesNotMatch(html, /network-status|App updates dekhein|suffer-sathi-updates/);
   // The log's colours: amber for a halt, green for a pass. (A style rewrite once dropped these rules.)
@@ -172,7 +172,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   slowCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
   assert.equal(slow.watches[0].cleared, true);
   assert.equal(slowRemoved, false);
-  assert.match(slow.elements.status.textContent, /Location mil rahi hai/);
+  assert.match(slow.elements.status.textContent, /Location found/);
   assert.equal(JSON.parse(fs.readFileSync(require('path').join(__dirname, '..', 'capacitor.config.json'), 'utf8')).android.useLegacyBridge, true);
 
   const geo = setup(async () => { throw new Error('offline'); });
@@ -188,7 +188,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   noData.elements.start.onclick();
   noData.watches[0].success(fix(28, 100000));
   await flush();
-  assert.match(noData.elements['data-status'].textContent, /Internet check/);
+  assert.match(noData.elements['data-status'].textContent, /Check the internet/);
   assert.equal(noData.elements['data-status'].hidden, false);
   assert.equal(noData.store.has('trainlog'), false);
 
@@ -196,7 +196,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   inaccurate.elements.start.onclick();
   inaccurate.watches[0].success(fix(28, 100000, 10, 1000));
   await flush();
-  assert.match(inaccurate.elements.status.textContent, /Accuracy kam/);
+  assert.match(inaccurate.elements.status.textContent, /Accuracy is low/);
   assert.match(inaccurate.elements.now.textContent, /Test Station/);
   assert.equal(inaccurate.store.has('trainlog'), false);
 
@@ -217,7 +217,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   legacyOffline.watches[0].success(fix(28, 100000));
   await flush();
   assert.match(legacyOffline.elements.now.textContent, /Cached Station/);
-  assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list available/);
+  assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list in use/);
 
   const database = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'stations.json'), 'utf8'));
   assert.equal(database.length, 8703);
@@ -238,7 +238,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
   // ADSR has no link of its own but lies on the line between the two, so the route takes it in.
-  assert.match(routed.elements['route-status'].textContent, /Route bana: 3 stations/);
+  assert.match(routed.elements['route-status'].textContent, /Route ready: 3 stations/);
   assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'ADSR (ADSR)', 'DEHRI ON SONE (DOS)']);
   // Its tick taken off, it is not logged though the train passes right over it.
   const adsrBox = routed.elements['route-list'].children[1].children[0].children[0];
@@ -246,16 +246,16 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   adsrBox.onchange();
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
-  assert.match(routed.elements.next.textContent, /Sambhavit agla station: DEHRI ON SONE \(DOS\)/);
+  assert.match(routed.elements.next.textContent, /Likely next station: DEHRI ON SONE \(DOS\)/);
   assert.equal(routed.elements.speed.textContent, '36');
   routed.watches[0].success({coords: {latitude: 24.909345, longitude: 84.192214, accuracy: 4, speed: 10}, timestamp: 160000});
   routed.watches[0].success({coords: {latitude: 24.914895, longitude: 84.185434, accuracy: 4, speed: 10}, timestamp: 220000});
   assert.doesNotMatch(routed.store.get('trainlog') || '', /ADSR/);
   routed.watches[0].success({coords: {latitude: 25.5, longitude: 85, accuracy: 4, speed: 10}, timestamp: 280000});
   // Off the chosen route the tracker keeps going: the next station comes from the direction of travel.
-  assert.match(routed.elements.next.textContent, /Agla station \(disha se anumaan\): .+ km/);
+  assert.match(routed.elements.next.textContent, /Next station \(estimated from direction\): .+ km/);
   await routed.elements['find-route'].onclick();
-  assert.match(routed.elements['route-status'].textContent, /Stop dabayein/);
+  assert.match(routed.elements['route-status'].textContent, /^Press Stop before changing the route/);
 
   const osmRoute = setup(async url => url === 'osm-station-routes.json'
     ? {
@@ -271,7 +271,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   osmRoute.elements.origin.value = 'OSM:77';
   osmRoute.elements.destination.value = 'OSM:78';
   await osmRoute.elements['find-route'].onclick();
-  assert.match(osmRoute.elements['route-status'].textContent, /Route bana: 2 stations/);
+  assert.match(osmRoute.elements['route-status'].textContent, /Route ready: 2 stations/);
   assert.deepEqual(osmRoute.elements['route-list'].children.map(rowName),
     ['OSM Alpha', 'OSM Beta']);
 
@@ -315,7 +315,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   badRoute.elements.origin.value = 'A';
   badRoute.elements.destination.value = 'C';
   await badRoute.elements['find-route'].onclick();
-  assert.match(badRoute.elements['route-status'].textContent, /rasta nahi mila/);
+  assert.match(badRoute.elements['route-status'].textContent, /no path found between these stations/);
 
   // The bundled data: the stations from the bug report route to each other, with no link of their own in the
   // OSM graph (the OSM-only station joins its nearest linked neighbour), and step station by station.
@@ -328,10 +328,10 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements[input].oninput();
     bundled.elements[list].children.find(option => option.textContent === label).onclick();
   };
-  pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
-  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
+  pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Route bana: \d+ stations, lagbhag 1\d\d km/);
+  assert.match(bundled.elements['route-status'].textContent, /Route ready: \d+ stations, about 1\d\d km/);
   const names = bundled.elements['route-list'].children.map(rowName);
   assert.equal(names[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(names[names.length - 1], 'ALLAHABAD JN (ALD)');
@@ -351,7 +351,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   };
   for (const [code, label] of [['MB', 'MORADABAD (MB)'], ['HW', 'HARIDWAR JN (HW)'], ['ara', 'ARA (ARA)']])
     assert.equal(firstOption(code), label);
-  assert.match(firstOption('DDU'), /^MUGHAL SARAI JN \(MGS\) — ab Deen Dayal Upadhyaya Jn \(DDU\)$/);
+  assert.match(firstOption('DDU'), /^MUGHAL SARAI JN \(MGS\) — now Deen Dayal Upadhyaya Jn \(DDU\)$/);
   assert.match(firstOption('PRYJ'), /^ALLAHABAD JN \(ALD\)/);
   assert.match(firstOption('prayagraj jn'), /^ALLAHABAD JN \(ALD\)/);
   bundled.elements.origin.dataset = {};
@@ -359,7 +359,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   bundled.elements.destination.dataset = {};
   bundled.elements.destination.value = 'PRYJ';
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Route bana/);
+  assert.match(bundled.elements['route-status'].textContent, /Route ready/);
   assert.doesNotMatch(html, /RailTrack|railtrack/);
 
   // A stop between stations is logged with its times once the train moves on; standing before the journey is not.
@@ -372,13 +372,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(outer.store.has('trainlog'), false);
   outer.watches[0].success(fix(28.06, 200000, 0));
   outer.watches[0].success(fix(28.06, 260000, 0));
-  assert.match(outer.elements['live-stop'].textContent, /^Abhi ruki hai: Raste mein \(Halt se 6\.\d\d km\) — .+ se \(1 min\)$/);
+  assert.match(outer.elements['live-stop'].textContent, /^Stopped now: On the way \(6\.\d\d km from Halt\) — since .+ \(1 min\)$/);
   assert.equal(outer.elements['live-stop'].hidden, false);
   outer.watches[0].success(fix(28.061, 270000, 10));
   const outerLog = JSON.parse(outer.store.get('trainlog'));
   assert.equal(outerLog.length, 1);
-  assert.match(outerLog[0].name, /^Raste mein \(Halt se 6\.\d\d km\)$/);
+  assert.match(outerLog[0].name, /^On the way \(6\.\d\d km from Halt\)$/);
   assert.deepEqual([outerLog[0].type, outerLog[0].arr, outerLog[0].dep], ['halt', 200000, 270000]);
+  // Stops on the way that earlier versions wrote down in Hinglish ("Raste mein (NAME se 1.20 km)") show in English.
+  const older = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), [['trainlog', JSON.stringify([
+    {name: 'Raste mein (BUXAR se 1.20 km)', id: '', source: 'GPS', type: 'halt', arr: 1000, dep: 61000},
+    {name: 'Raste mein', id: '', source: 'GPS', type: 'halt', arr: 70000, dep: 130000}])]]);
+  assert.deepEqual(older.elements.log.children.map(card => card.children[0].textContent), ['On the way', 'On the way (1.20 km from BUXAR)']);
   outer.watches[0].success(fix(28.07, 300000, 0));
   outer.watches[0].success(fix(28.07, 310000, 10));
   assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
@@ -400,8 +405,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements['via-' + i].oninput();
     bundled.elements[`via-${i}-options`].children.find(option => option.textContent === label).onclick();
   };
-  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
-  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
   assert.ok(!routeNames().includes('MIRZAPUR (MZP)'));
@@ -409,7 +414,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(bundled.elements['via-row-1'].hidden, false);
   pickVia(1, 'MZP', 'MIRZAPUR (MZP)');
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\): \d+ stations/);
+  assert.match(bundled.elements['route-status'].textContent, /^Route ready \(via MIRZAPUR\): \d+ stations/);
   const viaRoute = routeNames();
   assert.equal(viaRoute[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(viaRoute[viaRoute.length - 1], 'ALLAHABAD JN (ALD)');
@@ -419,7 +424,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   bundled.elements['via-1'].dataset = {};
   bundled.elements['via-1'].value = 'zzzz';
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Via station 1 nahi mila/);
+  assert.match(bundled.elements['route-status'].textContent, /Via station 1 not found/);
   bundled.elements['via-1'].value = '';
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
@@ -431,7 +436,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements[id].value = code;
   }
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\)/);
+  assert.match(bundled.elements['route-status'].textContent, /^Route ready \(via MIRZAPUR\)/);
   assert.deepEqual(['origin', 'via-1', 'destination'].map(id => bundled.elements[id].value),
     ['MUGHAL SARAI JN (MGS)', 'MIRZAPUR (MZP)', 'ALLAHABAD JN (ALD)']);
   assert.deepEqual(JSON.parse(bundled.store.get('safar-route')).origin, {value: 'MUGHAL SARAI JN (MGS)', id: 'MGS'});
@@ -444,12 +449,12 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(bundled.elements.destination.value, 'ALLAHABAD JN (ALD)');
   // A new start station begins another journey: the via boxes are emptied and put away, and the next route has
   // no via in it.
-  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
   assert.equal(bundled.elements['via-1'].value, '');
   assert.equal(bundled.elements['via-row-1'].hidden, true);
   assert.equal(bundled.elements['add-via'].hidden, false);
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route bana: \d+ stations/);
+  assert.match(bundled.elements['route-status'].textContent, /^Route ready: \d+ stations/);
   assert.ok(routeNames().includes('VARANASI JN (BSB)') && !routeNames().includes('MIRZAPUR (MZP)'));
   // The first via box comes back empty when asked for again.
   bundled.elements['add-via'].onclick();
@@ -512,7 +517,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(chosen.elements['route-choice'].textContent, /^3 \/ 4 station/);
   chosen.elements['add-station'].value = 'FAR';
   chosen.elements['add-station-btn'].onclick();
-  assert.match(chosen.elements['add-station-status'].textContent, /door hai; nahi joda/);
+  assert.match(chosen.elements['add-station-status'].textContent, /from this route; not added/);
   chosen.elements['add-station'].value = 'X';
   chosen.elements['add-station-btn'].onclick();
   assert.deepEqual(rows().map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
@@ -524,14 +529,14 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // The route and its ticks are kept: a fresh start of the app on the same phone shows them again.
   chosen.elements.stop.onclick();
   chosen.elements['route-save'].onclick();
-  assert.match(chosen.elements['route-status'].textContent, /^Save ho gaya: Alpha se Delta, 4 \/ 5 station/);
+  assert.match(chosen.elements['route-status'].textContent, /^Saved: Alpha to Delta, 4 \/ 5 stations/);
   assert.equal(chosen.elements['route-details'].open, false);
   const reopened = setup(async url => url === 'edges.json'
     ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url), chosen.store);
   await flush();
   assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
   assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
-  assert.match(reopened.elements['route-status'].textContent, /^Save kiya hua route: Alpha se Delta\. 4 \/ 5 station/);
+  assert.match(reopened.elements['route-status'].textContent, /^Saved route: Alpha to Delta\. 4 \/ 5 stations/);
   assert.equal(reopened.elements.origin.value, 'Alpha (A)'); // typed as "A": the box shows the station found
   reopened.elements['route-clear'].onclick();
   assert.equal(reopened.store.has('safar-route'), false);
@@ -557,7 +562,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const limitLog = JSON.parse(limits.store.get('trainlog'));
   const stationEntry = limitLog.find(entry => entry.id === 'LIM');
   assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
-  assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
+  assert.ok(limitLog.some(entry => /^On the way \(0\.28 km from Limit Station\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
 
   // Standing still, the train moves off at 2.7 km/h, as asked: the halt runs from the first reading below 5 km/h to
   // the first at 2.7 km/h or more, and the train speeding up from there (3.6 and 4.3 km/h) is not a new stop.
@@ -615,16 +620,16 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(asleep.store.has('trainlog'), false);
   // The page says what Android still needs for tracking with the screen off, and when it is all in place.
   const backgroundCard = asleep.elements['background-status'];
-  assert.match(backgroundCard.children[0].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein · app version 100080$/);
+  assert.match(backgroundCard.children[0].textContent, /location permission to "Allow all the time" · Set battery use to "Unrestricted \/ No restrictions" · app version 100080$/);
   assert.equal(backgroundCard.hidden, false);
   // With something missing there is a button that opens the phone's settings for the app.
-  assert.equal(backgroundCard.children[1].textContent, 'Phone ki settings kholein');
+  assert.equal(backgroundCard.children[1].textContent, 'Open phone settings');
   backgroundCard.children[1].onclick();
   assert.equal(settingsOpened, 1);
   backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true, version: 100080};
   await asleep.elements.intervals.find(timer => timer.ms === 5000).fn();
   await flush();
-  assert.match(backgroundCard.children[0].textContent, /settings theek hain ✓ · app version 100080$/);
+  assert.match(backgroundCard.children[0].textContent, /settings are fine ✓ · app version 100080$/);
   assert.equal(backgroundCard.children.length, 1);
   const sleptLog = JSON.parse(asleep.store.get('trainlog'));
   assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
@@ -632,7 +637,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 180000}, null);
   liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 290000}, null);
   assert.equal(JSON.parse(asleep.store.get('trainlog')).length, 1);
-  assert.match(asleep.elements.status.textContent, /Location mil rahi hai/);
+  assert.match(asleep.elements.status.textContent, /Location found/);
   await asleep.elements.stop.onclick();
   assert.equal(sessionsEnded, 1);
   assert.equal(asleep.elements['background-status'].hidden, true);
@@ -706,7 +711,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   standing.watches[0].success(fix(28, 110000, 0));
   assert.equal(standing.elements['live-stop'].hidden, true);  // 6 seconds: not a halt yet
   standing.watches[0].success(fix(28, 119000, 0));
-  assert.match(standing.elements['live-stop'].textContent, /^Abhi ruki hai: Standing Station \(STD\) — .+ se \(0\.3 min\)$/);
+  assert.match(standing.elements['live-stop'].textContent, /^Stopped now: Standing Station \(STD\) — since .+ \(0\.3 min\)$/);
   standing.watches[0].success(fix(28.0005, 130000, 10));
   assert.equal(standing.elements['live-stop'].hidden, true);
 
@@ -732,7 +737,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const closeEntry = JSON.parse(rings.store.get('trainlog'))[0];
   assert.equal(closeEntry.type, 'pass');
   assert.ok(closeEntry.near >= 45 && closeEntry.near <= 55);
-  assert.match(rings.elements.log.children[0].children[1].textContent, /^Paar kiya: .+ · \d+ m paas se$/);
+  assert.match(rings.elements.log.children[0].children[1].textContent, /^Passed: .+ · within \d+ m$/);
   drive(rings, 28.0035, 28.03, clock);
   assert.deepEqual(logIds(rings), ['CLS']);                  // Wide (589 m off the line) was beaten by Close
 
@@ -799,6 +804,235 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(recoloured.elements['clock-color-now'].style.background, '#f472b6');
   assert.match(big.elements['clock-full'].innerHTML, /^<svg /);
 
+  // ---- Sizes of the full-screen clock. A small gear next to EXIT, there only in full screen, opens a bar where the
+  // time (hours, minutes and seconds together), the speed dial and the date are each made larger or smaller, in two
+  // ways: Auto, where the time and the date fill what the dial leaves them, and Custom, where each keeps its own size.
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) < 0.01, `${what}: ${a} against ${b}`);
+  const tallness = box => box[3] - box[1], wideness = box => box[2] - box[0];
+  const covers = (a, b) => a[0] < b[2] - 0.5 && b[0] < a[2] - 0.5 && a[1] < b[3] - 0.5 && b[1] < a[3] - 0.5;
+  const within = (box, long, short) => box[0] >= -0.5 && box[1] >= -0.5 && box[2] <= long + 0.5 && box[3] <= short + 0.5;
+  const layout = big.context.clockLayout;
+  const measures = {width: 304, digit: 72, foot: 84, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92};
+  const ones = {time: 1, dial: 1, date: 1};
+  // Untouched, either way lays the clock out exactly as before its sizes could be set.
+  const smallFont = {...measures, width: 244, digit: 57.6, foot: 67, dateWide: 920, dateTall: 94, dateTop: 55};
+  for (const [long, short, m] of [[780, 360, measures], [735, 360, smallFont], [891, 411, measures], [640, 360, measures], [1280, 800, measures]]) {
+    const font = Math.max(40, Math.min((long - 24) / m.width, (short - 216) / m.digit) * 100);
+    const wide = Math.max(1, Math.min(1.3, (long - 24) / (m.width * font / 100)));
+    const tall = Math.max(1, Math.min(1.3, (short - 216) / (m.digit * font / 100)));
+    const date = Math.max(12, Math.min((long - 244) / m.dateWide, short * 0.17 / m.dateTall) * 100);
+    for (const auto of [true, false]) {
+      const got = layout(long, short, m, ones, auto), what = `${long}x${short} ${auto ? 'Auto' : 'Custom'}`;
+      near(got.dial, 182, what + ' dial');
+      near(got.date, date, what + ' date');
+      near(got.time.font, font, what + ' time font');
+      near(got.time.wide, wide, what + ' time stretch across');
+      near(got.time.tall, tall, what + ' time stretch up');
+      near(got.time.left, Math.max(0, (long - m.width * font / 100 * wide) / 2), what + ' time left');
+      near(got.time.top, short - 12 - m.foot * font / 100 * tall, what + ' time top');
+    }
+  }
+  // Auto: a larger dial takes room from the time and the date, a smaller one gives it back. (The time may go beside
+  // a large dial, taller but narrower there; what it takes of the screen only ever shrinks as the dial grows.)
+  const area = box => wideness(box) * tallness(box);
+  const plain = layout(780, 360, measures, ones, true);
+  const larger = layout(780, 360, measures, {...ones, dial: 1.4}, true);
+  const smaller = layout(780, 360, measures, {...ones, dial: 0.6}, true);
+  near(larger.dial, 182 * 1.4, 'larger dial');
+  near(smaller.dial, 182 * 0.6, 'smaller dial');
+  assert.ok(larger.date < plain.date && area(larger.rects.time) < area(plain.rects.time), 'a larger dial makes room');
+  assert.ok(smaller.date > plain.date && tallness(smaller.rects.time) > tallness(plain.rects.time), 'a smaller dial gives room back');
+  for (const [long, short] of [[780, 360], [891, 411], [640, 360]]) {
+    let before = Infinity;
+    for (let dial = 0.4; dial <= 2.2; dial += 0.05) {
+      const now = area(layout(long, short, measures, {...ones, dial}, true).rects.time);
+      assert.ok(now <= before + 0.5, `${long}x${short}: the time never grows as the dial grows (${dial.toFixed(2)})`);
+      before = now;
+    }
+  }
+  // The time's own size: hours, minutes and seconds together, in the same shape, still standing at the bottom.
+  const halfTime = layout(780, 360, measures, {...ones, time: 0.5}, true);
+  near(halfTime.time.font, plain.time.font / 2, 'half time');
+  near(halfTime.time.wide, plain.time.wide, 'half time, same shape');
+  near(halfTime.rects.time[3], 348, 'half time at the bottom');
+  near(layout(780, 360, measures, {...ones, date: 0.5}, true).date, plain.date / 2, 'half date');
+  // Never past what fits: in Auto the time and the date go up to 100 %, the dial up to the screen's height.
+  const most = layout(780, 360, measures, {time: 3, dial: 9, date: 3}, true);
+  assert.deepEqual(most.sizes, {time: 1, dial: most.limits.dial[1], date: 1});
+  near(most.dial, 360 - 28, 'largest dial');
+  assert.deepEqual(layout(780, 360, measures, {time: 0, dial: 0, date: 0}, true).sizes, {time: 0.3, dial: 0.4, date: 0.3});
+  // With the dial as tall as the screen, the time goes beside it instead of under it.
+  assert.ok(most.rects.time[2] <= most.rects.dial[0] && tallness(most.rects.time) > 60, 'the time beside a tall dial');
+  // Whatever the sizes, nothing covers anything else and everything stays on the screen.
+  for (const [long, short] of [[780, 360], [891, 411], [640, 360], [1280, 800], [735, 360]])
+    for (const dial of [0.4, 0.7, 1, 1.3, 1.6, 2, 9]) for (const time of [0.3, 0.7, 1]) for (const date of [0.3, 1]) {
+      const got = layout(long, short, measures, {time, dial, date}, true), r = got.rects, what = `Auto ${long}x${short} ${dial}/${time}/${date}`;
+      for (const [name, box] of Object.entries(r)) assert.ok(within(box, long, short), `${what}: ${name} on the screen ${box}`);
+      for (const [a, b] of [['dial', 'time'], ['dial', 'date'], ['dial', 'buttons'], ['date', 'time'], ['buttons', 'time'], ['buttons', 'date']])
+        assert.ok(!covers(r[a], r[b]), `${what}: ${a} ${r[a].map(Math.round)} clear of ${b} ${r[b].map(Math.round)}`);
+    }
+  // Custom: each keeps its own size; a larger dial leaves the time and the date as they were.
+  const own = layout(780, 360, measures, {...ones, dial: 1.5}, false);
+  near(own.dial, 273, 'Custom dial');
+  near(own.date, plain.date, 'Custom date untouched by the dial');
+  near(own.time.font, plain.time.font, 'Custom time untouched by the dial');
+  // The time already fills the width: larger, it grows taller (up to 1.3 times), smaller it keeps its shape.
+  const tallerTime = layout(780, 360, measures, {...ones, time: 1.2}, false);
+  near(tallness(tallerTime.rects.time), 1.2 * tallness(plain.rects.time), 'Custom taller time');
+  near(wideness(tallerTime.rects.time), wideness(plain.rects.time), 'Custom taller time, same width');
+  const smallerTime = layout(780, 360, measures, {...ones, time: 0.5}, false);
+  near(smallerTime.time.font, plain.time.font / 2, 'Custom smaller time');
+  near(smallerTime.time.wide, plain.time.wide, 'Custom smaller time, same shape');
+  near(layout(780, 360, measures, {...ones, date: 1.3}, false).date, plain.date * 1.3, 'Custom larger date');
+  const ownMost = layout(780, 360, measures, {time: 9, dial: 9, date: 9}, false);
+  assert.deepEqual(ownMost.sizes, {time: ownMost.limits.time[1], dial: ownMost.limits.dial[1], date: ownMost.limits.date[1]});
+  near(ownMost.limits.time[1], 1.3, 'Custom time limit');
+  for (const [name, box] of Object.entries(ownMost.rects)) assert.ok(within(box, 780, 360), `Custom largest: ${name} on the screen ${box}`);
+
+  // The gear and its bar, as the user works them.
+  const sized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
+  const knob = sized.elements;
+  assert.equal(knob['clock-sizes'].hidden, true);
+  knob['clock-edit'].onclick();                       // not in full screen: nothing opens
+  assert.equal(knob['clock-sizes'].hidden, true);
+  knob['clock-full'].onclick();
+  knob['clock-time'].onclick?.();                     // the clock itself changes nothing until the gear is pressed
+  assert.equal(knob['clock-sizes'].hidden, true);
+  knob['clock-edit'].onclick();
+  assert.equal(knob['clock-sizes'].hidden, false);
+  assert.equal(knob['size-time'].className, 'on');    // the time first, in Auto
+  assert.equal(knob['size-auto'].className, 'on');
+  assert.equal(knob['size-value'].textContent, '100%');
+  knob['size-down'].onclick();
+  assert.equal(knob['size-value'].textContent, '95%');
+  knob['size-dial'].onclick();
+  assert.equal(knob['size-dial'].className, 'on');
+  assert.equal(knob['size-time'].className, '');
+  assert.equal(knob['clock-sizes'].className, 'low');  // the bar keeps out of the way of what is being sized
+  knob['size-up'].onclick();
+  knob['size-up'].onclick();
+  assert.equal(knob['size-value'].textContent, '110%');
+  knob['clock-date'].onclick();                       // a tap on the date picks the date
+  assert.equal(knob['size-date'].className, 'on');
+  knob['size-custom'].onclick();                      // Custom has sizes of its own
+  assert.equal(knob['size-custom'].className, 'on');
+  assert.equal(knob['size-auto'].className, '');
+  assert.equal(knob['size-value'].textContent, '100%');
+  knob['size-up'].onclick();
+  assert.equal(knob['size-value'].textContent, '105%');
+  assert.deepEqual(JSON.parse(sized.store.get('safar-clock-sizes')),
+    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: {time: 1, dial: 1, date: 1.05}});
+  knob['size-done'].onclick();
+  assert.equal(knob['clock-sizes'].hidden, true);
+  // Kept for the next start; "Reset" puts the sizes of the way in use back.
+  const resized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), sized.store);
+  const again = resized.elements;
+  again['clock-full'].onclick();
+  again['clock-edit'].onclick();
+  assert.equal(again['size-custom'].className, 'on');
+  again['size-date'].onclick();
+  assert.equal(again['size-value'].textContent, '105%');
+  again['size-reset'].onclick();
+  assert.equal(again['size-value'].textContent, '100%');
+  assert.deepEqual(JSON.parse(resized.store.get('safar-clock-sizes')),
+    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: ones});
+  // EXIT closes the bar with the full-screen clock, and the dial goes back to its everyday size.
+  again['clock-full'].onclick();
+  assert.equal(again['clock-sizes'].hidden, true);
+  assert.equal(again.body.className, '');
+  assert.equal(again.speedo.style.width, '');
+
+  // ---- Sizing like a picture. With the bar open, the part being sized sits in a dashed box with a handle at each
+  // corner (top left, top right, bottom right, bottom left, in the clock's own measure). A corner drawn away from
+  // where the part stands makes it larger, drawn towards it smaller, by how much farther or nearer the finger is; two
+  // fingers spread or pinched anywhere on the clock do the same by how much farther apart they are.
+  const fallback = {width: 305, digit: 71.1, foot: 84.5, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92};
+  const drawn = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 360, innerHeight: 735});
+  const hand = drawn.elements;
+  const keptSizes = () => JSON.parse(drawn.store.get('safar-clock-sizes'));
+  const reach = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  // The clock is turned: its left-to-right runs down the page, its top-to-bottom from the page's right edge.
+  const onPage = ([u, v]) => ({clientX: 360 - v, clientY: u});
+  hand['clock-full'].onclick();
+  assert.equal(hand.body.className, 'clockmode turned');
+  assert.equal(hand['size-box'].hidden, true);        // no box or handles until the gear is pressed
+  assert.equal(hand['size-handle-0'].hidden, true);
+  hand['clock-edit'].onclick();
+  hand['size-dial'].onclick();
+  assert.equal(hand['size-box'].hidden, false);
+  for (let i = 0; i < 4; i++) assert.equal(hand[`size-handle-${i}`].hidden, false);
+  const dialBox = drawn.context.clockLayout(735, 360, fallback, ones, true).rects.dial;
+  near(parseFloat(hand['size-box'].style.left), dialBox[0] - 6, 'box round the dial, left');
+  near(parseFloat(hand['size-box'].style.width), dialBox[2] - dialBox[0] + 12, 'box round the dial, width');
+  const lowLeft = [dialBox[0] - 6, dialBox[3] + 6], dialCorner = [dialBox[2], dialBox[1]];
+  near(parseFloat(hand['size-handle-3'].style.left), lowLeft[0], 'bottom left handle, across');
+  near(parseFloat(hand['size-handle-3'].style.top), lowLeft[1], 'bottom left handle, down');
+  // The dial stands in its top right corner: its bottom left corner drawn out makes it larger.
+  const out = [lowLeft[0] - 40, lowLeft[1] + 40];
+  hand['size-handle-3'].onpointerdown({pointerId: 7, ...onPage(lowLeft)});
+  hand['size-handle-3'].onpointermove({pointerId: 7, ...onPage(out)});
+  hand['size-handle-3'].onpointerup({pointerId: 7});
+  const drawnOut = Math.round(reach(out, dialCorner) / reach(lowLeft, dialCorner) * 100) / 100;
+  assert.ok(drawnOut > 1.2);
+  near(keptSizes().auto.dial, drawnOut, 'a corner drawn out');
+  // The handles moved with the larger dial; another finger on another handle, drawn in, makes it smaller again.
+  const grown = drawn.context.clockLayout(735, 360, fallback, {...ones, dial: drawnOut}, true).rects.dial;
+  near(parseFloat(hand['size-handle-0'].style.left), grown[0] - 6, 'top left handle follows the dial');
+  const topLeft = [grown[0] - 6, grown[1] - 6], inward = [topLeft[0] + 60, topLeft[1]];
+  hand['size-handle-0'].onpointerdown({pointerId: 8, ...onPage(topLeft)});
+  hand['size-handle-0'].onpointermove({pointerId: 9, ...onPage([0, 0])});   // another finger's move is not this drag
+  near(keptSizes().auto.dial, drawnOut, 'another finger does not drag');
+  hand['size-handle-0'].onpointermove({pointerId: 8, ...onPage(inward)});
+  hand['size-handle-0'].onpointerup({pointerId: 8});
+  const drawnIn = Math.round(drawnOut * reach(inward, [grown[2], grown[1]]) / reach(topLeft, [grown[2], grown[1]]) * 100) / 100;
+  assert.ok(drawnIn < drawnOut);
+  near(keptSizes().auto.dial, drawnIn, 'a corner drawn in');
+  // The time stands on the middle of its foot; the date in its top left corner.
+  hand['size-time'].onclick();
+  const timeBox = drawn.context.clockLayout(735, 360, fallback, {...ones, dial: drawnIn}, true).rects.time;
+  near(parseFloat(hand['size-box'].style.top), timeBox[1] - 6, 'box round the time');
+  hand['size-date'].onclick();
+  const dateBox = drawn.context.clockLayout(735, 360, fallback, {...ones, dial: drawnIn}, true).rects.date;
+  near(parseFloat(hand['size-box'].style.left), dateBox[0] - 6, 'box round the date');
+  // Two fingers on the dial's size: pinched to half their distance apart, it halves; spread to twice, it doubles.
+  // One finger alone changes nothing.
+  hand['size-dial'].onclick();
+  const body = hand.body;
+  body.onpointerdown({pointerId: 1, clientX: 100, clientY: 300, target: body});
+  body.onpointermove({pointerId: 1, clientX: 60, clientY: 300, target: body});
+  near(keptSizes().auto.dial, drawnIn, 'one finger does not pinch');
+  body.onpointerdown({pointerId: 2, clientX: 160, clientY: 300, target: body});
+  body.onpointermove({pointerId: 2, clientX: 110, clientY: 300, target: body});   // 100 apart -> 50 apart
+  body.onpointerup({pointerId: 2, target: body});
+  body.onpointerup({pointerId: 1, target: body});
+  near(keptSizes().auto.dial, Math.round(drawnIn / 2 * 100) / 100, 'pinched to half');
+  const halved = keptSizes().auto.dial;
+  body.onpointerdown({pointerId: 3, clientX: 100, clientY: 300, target: body});
+  body.onpointerdown({pointerId: 4, clientX: 150, clientY: 300, target: body});
+  body.onpointermove({pointerId: 4, clientX: 200, clientY: 300, target: body});  // 50 apart -> 100 apart
+  body.onpointerup({pointerId: 3, target: body});
+  body.onpointerup({pointerId: 4, target: body});
+  near(keptSizes().auto.dial, Math.round(halved * 2 * 100) / 100, 'spread to twice');
+  // Fingers on the bar or a handle are not a pinch.
+  const onBar = {closest: selector => selector.includes('#clock-sizes') ? {} : null};
+  body.onpointerdown({pointerId: 5, clientX: 100, clientY: 300, target: onBar});
+  body.onpointerdown({pointerId: 6, clientX: 150, clientY: 300, target: body});
+  body.onpointermove({pointerId: 6, clientX: 300, clientY: 300, target: body});
+  body.onpointerup({pointerId: 5, target: onBar});
+  body.onpointerup({pointerId: 6, target: body});
+  near(keptSizes().auto.dial, Math.round(halved * 2 * 100) / 100, 'a finger on the bar is not a pinch');
+  // With the bar closed, no box, no handles, and two fingers change nothing.
+  hand['size-done'].onclick();
+  assert.equal(hand['size-box'].hidden, true);
+  assert.equal(hand['size-handle-2'].hidden, true);
+  const closedSize = keptSizes().auto.dial;
+  body.onpointerdown({pointerId: 10, clientX: 100, clientY: 300, target: body});
+  body.onpointerdown({pointerId: 11, clientX: 150, clientY: 300, target: body});
+  body.onpointermove({pointerId: 11, clientX: 300, clientY: 300, target: body});
+  body.onpointerup({pointerId: 10, target: body});
+  body.onpointerup({pointerId: 11, target: body});
+  near(keptSizes().auto.dial, closedSize, 'no pinch with the bar closed');
+
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
   chosen.elements['route-all'].onclick();
@@ -819,10 +1053,10 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // names one station and a route does not get the same junction twice.
   assert.equal(labels('EKNR')[0], 'Kevadiya (EKNR)');
   assert.equal(labels('NKMG')[0], 'New Karimganj Junction (NKMG)');
-  assert.deepEqual(labels('PRYJ').filter(label => /PRYJ/.test(label)), ['ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)']);
-  assert.deepEqual(labels('DDU').filter(label => /\(DDU\)/.test(label)), ['MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)']);
+  assert.deepEqual(labels('PRYJ').filter(label => /PRYJ/.test(label)), ['ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)']);
+  assert.deepEqual(labels('DDU').filter(label => /\(DDU\)/.test(label)), ['MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)']);
   assert.deepEqual(labels('Baruna').filter(label => /\(BUE\)/.test(label)), ['BARUNA (BUE)']);
-  assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)'));
   assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));
 
   // No route chosen: the next station is the nearest one ahead in the direction of travel (Buxar towards DDU).
@@ -831,9 +1065,101 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   free.elements.start.onclick();
   const at = (lat, lon, t) => ({coords: {latitude: lat, longitude: lon, accuracy: 4, speed: 30}, timestamp: t});
   free.watches[0].success(at(25.5600, 83.9600, 100000));
-  assert.match(free.elements.next.textContent, /train chalne par dikhega/);
+  assert.match(free.elements.next.textContent, /shown once the train moves/);
   free.watches[0].success(at(25.5560, 83.9300, 200000));
-  assert.match(free.elements.next.textContent, /Agla station \(disha se anumaan\): .+\), \d+\.\d\d km/);
+  assert.match(free.elements.next.textContent, /Next station \(estimated from direction\): .+\), \d+\.\d\d km/);
   assert.doesNotMatch(free.elements.next.textContent, /BUXAR/);
+  // ---- Everything the app shows is in English (its name, Suffer Sathi, aside): the page's text, placeholders and
+  // labels, every message its script writes, and the native side's dialogs, toasts and notifications.
+  const HINGLISH = new RegExp('\\b(' + ['karein', 'karo', 'kare', 'karke', 'karne', 'karna', 'kar', 'kiya', 'kiye', 'nahi',
+    'nahin', 'hai', 'hain', 'mein', 'aur', 'abhi', 'pehle', 'baad', 'agla', 'agle', 'nazdiki', 'nazdeeki', 'safar', 'samay',
+    'ghadi', 'tarikh', 'gola', 'shuru', 'antim', 'apna', 'raste', 'rasta', 'ruka', 'ruki', 'rukne', 'anumaan', 'disha',
+    'dobara', 'pichla', 'pichle', 'naya', 'taiyar', 'koshish', 'chalu', 'chahiye', 'sakte', 'saka', 'sakti', 'jaisa',
+    'lagbhag', 'khaali', 'khali', 'dhoondh', 'kholein', 'theek', 'bada', 'chhota', 'padhe', 'hua', 'hui', 'rahe', 'raha',
+    'rahi', 'wali', 'wala', 'kuch', 'koi', 'sab', 'sabse', 'bina', 'zaroori', 'jis', 'jiska', 'uska', 'kiska', 'hata',
+    'hatayein', 'hatane', 'badalne', 'badlein', 'likhein', 'likhkar', 'neeche', 'aayi', 'chunkar', 'chunein', 'chuna',
+    'chunna', 'dekhein', 'mila', 'mili', 'jodein', 'joda', 'jodne', 'dabayein', 'banayein', 'banega', 'bana', 'gaya',
+    'gayi', 'ho', 'ka', 'ki', 'ke', 'ko', 'se', 'tak', 'ya', 'yahi', 'phir', 'sahi', 'intezar', 'aasman', 'khule',
+    'jayein', 'laga', 'hokar', 'jaana', 'chhod', 'paas', 'paar', 'dono', 'alag', 'ek', 'beech', 'doosra', 'liye',
+    'sambhavit', 'nirdharit', 'purani', 'chhoot', 'chhooti', 'maangega', 'pushti', 'sawaal', 'aayega', 'poora', 'ab',
+    'dein', 'dikhega', 'hoga', 'hogi', 'wahi', 'yeh', 'tha', 'thi', 'aaya', 'padh', 'paye', 'dabaiye', 'hue',
+    'gola', 'rang', 'badal', 'kam', 'zaroorat', 'baaki', 'adhoora', 'aane', 'naam', 'bahut', 'jab', 'tab', 'kya', 'bhi',
+    'sirf', 'apni', 'apne', 'upar', 'andar', 'zyada', 'thoda', 'pura', 'poori', 'dabakar', 'chalne', 'rukna', 'intezaar'].join('|') + ')\\b', 'i');
+  // The texts in a script (JavaScript or Java): its strings and the text of its templates, with the strings inside
+  // a template's ${...} too (read the same way), and not its comments or regular expressions.
+  function texts(code) {
+    const found = [];
+    // Reads from i to the end, or (inner) to the } that closes a template's ${, and gives where it stopped.
+    function scan(i, inner) {
+      let before = 'operator', depth = 0;
+      while (i < code.length) {
+        const c = code[i], next = code[i + 1];
+        if (c === '/' && next === '/') { const end = code.indexOf('\n', i); i = end < 0 ? code.length : end; continue; }
+        if (c === '/' && next === '*') { const end = code.indexOf('*/', i + 2); i = end < 0 ? code.length : end + 2; continue; }
+        if (c === "'" || c === '"') {
+          let text = '';
+          for (i++; i < code.length && code[i] !== c; i++) text += code[i] === '\\' ? code[++i] : code[i];
+          found.push(text);
+          i++;
+          before = 'value';
+          continue;
+        }
+        if (c === '`') {
+          let text = '';
+          for (i++; i < code.length && code[i] !== '`'; i++) {
+            if (code[i] === '\\') { text += code[++i]; continue; }
+            if (code[i] === '$' && code[i + 1] === '{') { i = scan(i + 2, true); text += ' '; continue; }
+            text += code[i];
+          }
+          found.push(text);
+          i++;
+          before = 'value';
+          continue;
+        }
+        if (c === '/' && before !== 'value') {           // a regular expression: no value stands before it
+          let inClass = false;
+          for (i++; i < code.length && (code[i] !== '/' || inClass); i++) {
+            if (code[i] === '\\') i++;
+            else if (code[i] === '[') inClass = true;
+            else if (code[i] === ']') inClass = false;
+          }
+          for (i++; /[a-z]/i.test(code[i] || ''); i++);
+          before = 'value';
+          continue;
+        }
+        if (inner && c === '{') { depth++; before = 'operator'; i++; continue; }
+        if (inner && c === '}') { if (!depth) return i; depth--; before = 'value'; i++; continue; }
+        if (/\s/.test(c)) { i++; continue; }
+        if (/[\w$]/.test(c)) {
+          let j = i;
+          while (j < code.length && /[\w$]/.test(code[j])) j++;
+          before = /^(return|typeof|case|in|of)$/.test(code.slice(i, j)) ? 'keyword' : 'value';
+          i = j;
+          continue;
+        }
+        before = c === ')' || c === ']' || c === '}' ? 'value' : 'operator';
+        i++;
+      }
+      return i;
+    }
+    scan(0, false);
+    return found;
+  }
+  const shown = [];
+  const page = html.replace(/<script>[\s\S]*?<\/script>|<style>[\s\S]*?<\/style>/g, '');
+  for (const match of page.matchAll(/>([^<]+)</g)) shown.push(match[1]);
+  for (const match of page.matchAll(/\b(?:placeholder|aria-label|title|alt)="([^"]*)"/g)) shown.push(match[1]);
+  // Keys and file names (no spaces, with - . / or _) are not shown.
+  const words = text => /\s/.test(text.trim()) || !/[-./_]/.test(text);
+  for (const text of texts(script)) if (words(text)) shown.push(text);
+  const nativeDir = require('path').join(__dirname, '..', 'android', 'app', 'src', 'main');
+  const javaDir = require('path').join(nativeDir, 'java', 'com', 'railtrack', 'app');
+  for (const file of fs.readdirSync(javaDir).filter(name => name.endsWith('.java')))
+    for (const text of texts(fs.readFileSync(require('path').join(javaDir, file), 'utf8'))) if (words(text)) shown.push(text);
+  for (const match of fs.readFileSync(require('path').join(nativeDir, 'res', 'values', 'strings.xml'), 'utf8').matchAll(/<string name="[^"]*">([^<]*)</g))
+    shown.push(match[1]);
+  assert.ok(shown.some(text => text.includes('Suffer Sathi')) && shown.length > 100, 'the texts are found');
+  const inHinglish = shown.filter(text => HINGLISH.test(text));
+  assert.deepEqual(inHinglish, [], 'text in Hinglish on the screen:\n' + inHinglish.join('\n'));
   console.log('Safar tracker checks passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });

@@ -119,16 +119,16 @@ final class TrackingSession {
         if (!askedLocationOn && !locationOn(activity)) {
             askedLocationOn = true;
             new AlertDialog.Builder(activity)
-                .setTitle("Location (GPS) band hai")
-                .setMessage("Safar ka log banane ke liye phone ki Location chalu honi chahiye. Abhi chalu karein?")
-                .setPositiveButton("Chalu karein", (dialog, which) -> {
+                .setTitle("Location (GPS) is off")
+                .setMessage("To log the journey, the phone's Location must be on. Turn it on now?")
+                .setPositiveButton("Turn on", (dialog, which) -> {
                     try {
                         activity.startActivity(new Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS));
                     } catch (RuntimeException e) {
                         Log.w(TAG, "Location settings could not be opened", e);
                     }
                 })
-                .setNegativeButton("Baad mein", (dialog, which) -> prompt(activity))
+                .setNegativeButton("Later", (dialog, which) -> prompt(activity))
                 .setCancelable(false)
                 .show();
             return;

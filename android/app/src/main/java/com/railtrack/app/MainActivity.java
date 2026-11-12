@@ -70,10 +70,10 @@ public class MainActivity extends BridgeActivity {
             .build();
         try {
             if (scheduler.schedule(job) != JobScheduler.RESULT_SUCCESS) {
-                showUpdateError("Update check schedule nahi ho saka.", null);
+                showUpdateError("Could not schedule the update check.", null);
             }
         } catch (SecurityException | IllegalArgumentException | IllegalStateException e) {
-            showUpdateError("Update check schedule nahi ho saka.", e);
+            showUpdateError("Could not schedule the update check.", e);
         }
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -224,18 +224,18 @@ public class MainActivity extends BridgeActivity {
     private void offerDownload(AppUpdate.Release release) {
         if (!canShowDialog()) return;
         updateDialog = new AlertDialog.Builder(this)
-            .setTitle("Naya version aaya hai")
-            .setMessage("Suffer Sathi ka naya version (" + release.code + ") taiyar hai. Abhi download karein?")
-            .setPositiveButton("Update karein", (dialog, which) -> {
+            .setTitle("A new version is out")
+            .setMessage("A new version of Suffer Sathi (" + release.code + ") is ready. Download it now?")
+            .setPositiveButton("Update", (dialog, which) -> {
                 if (AppUpdate.startDownload(this, release)) {
-                    Toast.makeText(this, "Download shuru ho gaya. Poora hone par install ka sawaal aayega.",
+                    Toast.makeText(this, "Download started. You will be asked to install it when it is done.",
                         Toast.LENGTH_LONG).show();
                 } else {
-                    Toast.makeText(this, "Download shuru nahi ho saka. Baad mein dobara koshish karein.",
+                    Toast.makeText(this, "The download could not start. Please try again later.",
                         Toast.LENGTH_LONG).show();
                 }
             })
-            .setNegativeButton("Baad mein", (dialog, which) -> putOff = release.code)
+            .setNegativeButton("Later", (dialog, which) -> putOff = release.code)
             .show();
     }
 
@@ -243,18 +243,18 @@ public class MainActivity extends BridgeActivity {
         if (!canShowDialog()) return;
         AppUpdate.cancelNotification(this);
         updateDialog = new AlertDialog.Builder(this)
-            .setTitle("Update taiyar hai")
-            .setMessage("Naya version (" + code + ") download ho gaya. Install karein? Android ek baar pushti maangega.")
-            .setPositiveButton("Install karein", (dialog, which) -> {
+            .setTitle("Update ready")
+            .setMessage("The new version (" + code + ") has downloaded. Install it? Android will ask you to confirm once.")
+            .setPositiveButton("Install", (dialog, which) -> {
                 putOff = code; // back from the installer without installing: do not ask again at once
                 try {
                     AppUpdate.install(this, apk);
                 } catch (RuntimeException e) {
                     Log.e(AppUpdate.TAG, "Installer could not open", e);
-                    Toast.makeText(this, "Installer nahi khul saka.", Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "The installer could not open.", Toast.LENGTH_LONG).show();
                 }
             })
-            .setNegativeButton("Baad mein", (dialog, which) -> putOff = code)
+            .setNegativeButton("Later", (dialog, which) -> putOff = code)
             .show();
     }
 
