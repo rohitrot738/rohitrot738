@@ -12,6 +12,8 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
 import android.view.ViewGroup;
@@ -101,6 +103,11 @@ public class MainActivity extends BridgeActivity {
         }
         getBridge().addWebViewListener(new WebViewListener() {
             @Override
+            public void onPageLoaded(WebView webView) {
+                releaseWebViewFonts();
+            }
+
+            @Override
             public boolean onRenderProcessGone(WebView webView, RenderProcessGoneDetail detail) {
                 Log.w(TrackingSession.TAG, "The page's process ended (" + (detail.didCrash() ? "crashed" : "ended by Android")
                     + "); making the screen again");
@@ -114,6 +121,24 @@ public class MainActivity extends BridgeActivity {
                 return true;
             }
         });
+    }
+
+    /**
+     * When its page starts, the WebView fetches a few fonts from Play services' font provider (Google Sans and an emoji
+     * font, whatever the page shows) and keeps a stable connection to the provider until what it left over is
+     * collected, at times for minutes (seen on the emulator). While that lasts, the app's life is tied to Play services'
+     * process: when that process dies (an update, a crash), Android ends this app too, journey tracking included. So a
+     * collection is asked for, off the main thread, a few times in the first minute after a page loads; the leftovers'
+     * finalizers let go of the provider.
+     */
+    private void releaseWebViewFonts() {
+        Handler main = new Handler(Looper.getMainLooper());
+        for (long delay : new long[] {3000L, 8000L, 15000L, 30000L, 60000L}) {
+            main.postDelayed(() -> new Thread(() -> {
+                Runtime.getRuntime().gc();
+                System.runFinalization();
+            }, "release-webview-fonts").start(), delay);
+        }
     }
 
     @Override

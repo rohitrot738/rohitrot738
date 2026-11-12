@@ -204,6 +204,18 @@ function foreignFiles() {
     .map(line => line.trim().split(/\s+/).slice(5).join(' ')).filter(path => /font|\.ttf|\.otf|gms/i.test(path) && !path.startsWith('/system/')))];
   return {fds, maps};
 }
+// Waits until the app holds no stable connection to a Play services provider, for up to "within" milliseconds.
+async function untilUntied(when, within) {
+  const from = Date.now();
+  let tied = [];
+  do {
+    tied = providerLinks().filter(line => /com\.google\.android\.gms/.test(line.split('->')[0]) && / s[1-9]\d*\//.test(line));
+    if (!tied.length) break;
+    await sleep(2000);
+  } while (Date.now() - from < within);
+  log(`${when}: tied to Play services for ${Math.round((Date.now() - from) / 1000)} s more`, tied.join(' | '));
+  check(!tied.length, `${when}: the app's life is not tied to a Google Play services provider for long`, tied.join(' | '));
+}
 function checkProviderLinks(when) {
   const links = providerLinks();
   log(`provider connections (${when}):`, links.join(' | ') || '(none)');
@@ -294,15 +306,12 @@ async function main() {
   let page = await openPage();
   shot('home-small-font');
 
-  // To show an emoji the WebView fetches fonts (emoji and Google Sans) from Play services' font provider, and the
-  // connection can stay open for minutes: Android then ends the app whenever Play services' process dies, as it did
-  // on the emulator. The page shows no emoji, so the WebView fetches nothing from Play services.
-  await sleep(6000);
-  const opened = foreignFiles();
-  log('fonts, page open:', providerLinks().join(' | ') || '(none)', JSON.stringify(opened));
-  check(!opened.fds.some(line => line.includes('com.google.android.gms')), 'the page as it opens takes no font from Play services',
-    opened.fds.join(' | '));
-  checkProviderLinks('page open');
+  // When its page starts, the WebView fetches fonts (Google Sans and an emoji font) from Play services' font
+  // provider, and its stable connection to the provider used to linger for minutes: Android then ends the app
+  // whenever Play services' process dies, as it did here twice. The app has the leftovers collected; the connection
+  // must be gone within 20 seconds of the page opening.
+  log('fonts, page open:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
+  await untilUntied('page open', 20000);
 
   const bridge = await page.run(`
     const c = window.Capacitor || {};
@@ -439,7 +448,7 @@ async function main() {
   check(recovered.lastFixTime >= crashTo - 15000, 'the new page has the fixes of the time between', `${recovered.lastFixTime} against ${crashTo}`);
   shot('journey-after-page-process-ended');
 
-  checkProviderLinks('after the page was made again');
+  await untilUntied('after the page was made again', 20000);
   await page.run(`document.getElementById('stop').click();`);
   await sleep(2500);
   const stopped = await page.run(`return {watcher: nativeWatcher, tracking};`);
@@ -455,11 +464,7 @@ async function main() {
   page = await openPage();
   await clockCheck(page, 'normal-font');
 
-  // ---- For the record, not a check: an emoji put into the page, and what the WebView fetches for it.
-  await page.run(`const probe = document.createElement('div'); probe.id = 'e2e-emoji';
-    probe.textContent = '\u{1F686} \u{1F689} \u{1F9ED}'; probe.style.fontSize = '40px'; document.body.prepend(probe);`);
-  await sleep(6000);
-  log('fonts, after an emoji was shown:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
+  await untilUntied('a second start of the app', 20000);
   page.close();
 }
 
