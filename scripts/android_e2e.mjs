@@ -163,11 +163,11 @@ function shot(name) {
   fs.writeFileSync(file, execFileSync('adb', ['exec-out', 'screencap', '-p'], {maxBuffer: 64 << 20}));
   // A small copy in the log, for reading the run where its files cannot be fetched.
   try {
-    const small = execFileSync('convert', [file, '-resize', '50%', '-quality', '55', 'jpg:-'], {maxBuffer: 64 << 20});
+    const small = execFileSync('convert', [file, '-resize', '50%', '-quality', '60', 'jpg:-'], {maxBuffer: 64 << 20});
     const text = small.toString('base64');
     for (let i = 0; i < text.length; i += 4000) console.log(`SHOT ${name} ${text.slice(i, i + 4000)}`);
     console.log(`SHOT ${name} END`);
-  } catch (e) { log('no small copy of the screenshot:', e.message.split('\n')[0]); }
+  } catch (e) { log('no small copy of the screenshot (ImageMagick is not installed):', e.message.split('\n')[0]); }
   log('screenshot', file);
 }
 
@@ -177,14 +177,17 @@ function launch() {
 }
 function setFix(lat, lon) { quiet(() => adb('emu', 'geo', 'fix', String(lon), String(lat))); }
 
-// Where things are in the full-screen clock, in the page's own measure.
+// Where things are in the full-screen clock, in the page's own measure. "blank" is how much of the digits' line
+// is empty above the digits themselves, on the screen: the line reaches further up than the ink does.
 const CLOCK = `
   const box = id => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.right, r.bottom].map(Math.round); };
   const dial = (r => [r.left, r.top, r.right, r.bottom].map(Math.round))(document.querySelector('.speedo').getBoundingClientRect());
+  const time = document.getElementById('clock-time'), font = time.style.fontSize, scale = time.style.transform.match(/[\\d.]+/g).map(Number);
+  const metrics = clockMetrics(time);
+  time.style.fontSize = font;
   return {inner: [innerWidth, innerHeight], body: document.body.className, time: box('clock-time'), hm: box('clock-hm'),
-    sec: box('clock-sec'), date: box('clock-date'), exit: box('clock-full'), dial,
-    style: {font: document.getElementById('clock-time').style.fontSize, transform: document.getElementById('clock-time').style.transform},
-    zoom: document.getElementById('clock-date').offsetHeight};`;
+    sec: box('clock-sec'), date: box('clock-date'), exit: box('clock-full'), dial, font, scale, metrics,
+    blank: (metrics.foot - metrics.digit) * parseFloat(font) / 100 * scale[1]};`;
 const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
 async function clockCheck(page, label) {
@@ -201,7 +204,10 @@ async function clockCheck(page, label) {
   const along = height > width ? [clock.time[1], clock.time[3]] : [clock.time[0], clock.time[2]];
   check(along[0] >= 0 && along[0] <= 20 && along[1] <= long + 1 && along[1] >= long - 20,
     `${label}: the time fills the screen from edge to edge`, `${along[0]} to ${along[1]} of ${long}`);
-  check(!overlap(clock.hm, clock.dial), `${label}: the hours and minutes stay clear of the speed dial`);
+  // The digits themselves, without the empty top of their line: turned, the top of the line is its right side.
+  const ink = [...clock.hm];
+  if (height > width) ink[2] -= clock.blank; else ink[1] += clock.blank;
+  check(!overlap(ink, clock.dial), `${label}: the hours and minutes stay clear of the speed dial`, `${JSON.stringify(ink.map(Math.round))} against ${JSON.stringify(clock.dial)}`);
   check(!overlap(clock.date, clock.dial) && !overlap(clock.exit, clock.dial), `${label}: the date and EXIT stay clear of the speed dial`);
   check(!overlap(clock.date, clock.hm) && !overlap(clock.exit, clock.date), `${label}: the date, EXIT and the time do not cover one another`);
   await page.run(`document.getElementById('clock-full').click();`);
@@ -223,6 +229,10 @@ async function main() {
   quiet(() => shell('locksettings set-disabled true'));
   shell('input keyevent KEYCODE_WAKEUP');
   quiet(() => shell('wm dismiss-keyguard'));
+  // A screen 360 wide in the page's measure, like the phone the trouble was seen on.
+  const pixels = Number((shell('wm size').match(/(\d+)x\d+/) || [])[1]);
+  if (pixels >= 720) shell(`wm density ${Math.round(pixels / 360 * 160)}`);
+  log('screen:', shell('wm size').replace(/\n/g, ', '), '|', shell('wm density').replace(/\n/g, ', '));
 
   // ---- The phone's font size set to small, as on the phone where the clock came out too small.
   shell('settings put system font_scale 0.8');
@@ -242,6 +252,25 @@ async function main() {
   check(bridge.status && typeof bridge.status.version !== 'undefined', 'the native side answers the page', JSON.stringify(bridge.status));
 
   await clockCheck(page, 'small-font');
+
+  // ---- A route, built in the app: the stations a link passes by are on it.
+  await page.run(`
+    document.getElementById('origin').value = 'PNBE';
+    document.getElementById('destination').value = 'MGS';
+    document.getElementById('find-route').click();`);
+  let routeNames = [];
+  for (let wait = 0; wait < 30 && !routeNames.length; wait++) {
+    await sleep(1000);
+    routeNames = await page.run(`return Array.from(document.querySelectorAll('#route-list li')).map(li => li.textContent.trim());`);
+  }
+  log('route:', routeNames.length, 'stations;', await page.run(`return document.getElementById('route-status').textContent;`));
+  const place = code => routeNames.findIndex(name => name.endsWith(`(${code})`));
+  for (const [before, code, after] of [['DNR', 'NEO', 'SDE'], ['JMIR', 'ARA', 'JGWL'], ['KCA', 'EOCM', 'MGS']])
+    check(place(before) >= 0 && place(before) < place(code) && place(code) < place(after), `the Patna to Mughal Sarai route has ${code} in its place`);
+  await page.run(`document.getElementById('route-list').scrollIntoView({block: 'start'});`);
+  await sleep(800);
+  shot('route');
+  await page.run(`document.getElementById('route-clear').click(); window.scrollTo(0, 0);`);
 
   // ---- A journey: started in the app, it must be recorded natively, with the screen off as well.
   await page.run(`document.getElementById('start').click();`);
