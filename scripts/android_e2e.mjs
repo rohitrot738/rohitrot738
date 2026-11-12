@@ -176,6 +176,16 @@ const deviceTime = () => Math.round(parseFloat(shell('echo $EPOCHREALTIME')) * 1
 function launch() {
   adb('shell', 'am', 'start', '-W', '-n', `${PACKAGE}/.MainActivity`);
 }
+// What Android did with the app since the logs were last cleared: activities created, destroyed or relaunched,
+// the process started or killed, crashes, configuration changes. For explaining a page that was reloaded.
+function lifeEvents() {
+  const events = quiet(() => adb('logcat', '-d', '-b', 'events', '-v', 'time')).split('\n')
+    .filter(line => line.includes(PACKAGE) || /configuration_changed|am_crash|am_anr|am_low_memory/.test(line));
+  const crashes = quiet(() => adb('logcat', '-d', '-b', 'crash', '-v', 'time')).split('\n').filter(Boolean);
+  const system = quiet(() => adb('logcat', '-d', '-b', 'system', '-v', 'time')).split('\n')
+    .filter(line => line.includes(PACKAGE) && /Kill|Start proc|died|crash|Relaunch|relaunch|config/i.test(line));
+  return [...events.slice(-40), ...crashes.slice(-40), ...system.slice(-20)].join('\n') || '(none)';
+}
 // Whether the app is the activity in front, running (resumed).
 const inFront = () => new RegExp(`(topResumedActivity|mResumedActivity)=[^\\n]*${PACKAGE.replace(/\./g, '\\.')}`)
   .test(quiet(() => shell('dumpsys activity activities')));
@@ -298,6 +308,8 @@ async function main() {
   shot('journey');
 
   await page.run(`window.e2eMark = 'before the screen went off';`);
+  const pidBefore = shell(`pidof ${PACKAGE}`);
+  quiet(() => adb('logcat', '-b', 'all', '-c'));
   const offStart = deviceTime();
   shell('input keyevent KEYCODE_SLEEP');
   for (let i = 0; i < 20; i++) { setFix(25.5513 + i * 0.0003, 84.662596); await sleep(2000); }
@@ -314,7 +326,10 @@ async function main() {
   page.close();
   page = await openPage();
   await sleep(5000);
-  log('the same page as before the screen went off:', await page.run(`return window.e2eMark === 'before the screen went off';`));
+  const samePage = await page.run(`return window.e2eMark === 'before the screen went off';`);
+  const pidAfter = shell(`pidof ${PACKAGE}`);
+  log('the same page as before the screen went off:', samePage, '| process', pidBefore, '->', pidAfter);
+  if (!samePage) log('what Android did meanwhile:\n' + lifeEvents());
   const woke = await page.run(`
     const fixes = (await fixBuffer.drain({after: 0})).fixes.map(f => f.time);
     return {fixes, lastFixTime, last: last && last.t, visible: document.visibilityState, status: document.getElementById('status').textContent,

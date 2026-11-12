@@ -982,7 +982,8 @@ function nativePlugin(name) {
 // With the screen off or the app minimised Android may stop running this page, and the fixes of that time never
 // reach it. The app keeps them on the native side; here the page reads the ones it missed, in order and each with
 // its own time, so the log comes out as if it had been running all along.
-let fixBuffer = null, lastFixTime = 0, draining = false, replaying = false;
+let fixBuffer = null, lastFixTime = 0, draining = false, drainAgain = false, replaying = false;
+let liveFixes = []; // fixes from the plugin waiting for the next drain
 // Tells the user what still stands in the way of tracking with the screen off, by what Android reports.
 async function showBackgroundStatus() {
   const card = $('background-status');
@@ -1013,30 +1014,44 @@ async function showBackgroundStatus() {
   } catch (e) { card.hidden = true; }
 }
 
+function usePosition(fix, time) {
+  onPos({coords: {latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, speed: fix.speed},
+    timestamp: time});
+}
+
+// Takes the fixes the page has not had yet from the native list, in time order, and then any live fix the list
+// did not have. One drain runs at a time; one asked for meanwhile runs right after it.
 async function drainFixes() {
-  showBackgroundStatus();
-  if (!tracking || !fixBuffer?.drain || draining) return;
+  if (!tracking || !fixBuffer?.drain) return;
+  if (draining) { drainAgain = true; return; }
   draining = true;
   const mySession = session;
   try {
-    const result = await fixBuffer.drain({after: lastFixTime});
-    const fixes = Array.isArray(result?.fixes) ? result.fixes : [];
-    replaying = true;
-    for (let i = 0; i < fixes.length; i++) {
-      if (mySession !== session || !tracking) break;
-      const fix = fixes[i];
-      if (!Number.isFinite(fix.time) || fix.time <= lastFixTime) continue;
-      lastFixTime = fix.time;
-      onPos({coords: {latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, speed: fix.speed}, timestamp: fix.time});
-      // A long gap is replayed in pieces so the screen stays responsive.
-      if (i % 200 === 199) await new Promise(resolve => setTimeout(resolve, 0));
-    }
-  } catch (e) {
-    console.warn('Chhooti hui locations nahi mili', e);
+    do {
+      drainAgain = false;
+      let fixes = [];
+      try {
+        const result = await fixBuffer.drain({after: lastFixTime});
+        fixes = Array.isArray(result?.fixes) ? result.fixes : [];
+      } catch (e) { console.warn('Chhooti hui locations nahi mili', e); }
+      const live = liveFixes.splice(0);
+      replaying = true;
+      for (let i = 0; i < fixes.length + live.length; i++) {
+        if (mySession !== session || !tracking) return;
+        const fix = i < fixes.length ? fixes[i] : live[i - fixes.length];
+        if (!Number.isFinite(fix.time) || fix.time <= lastFixTime) continue;
+        lastFixTime = fix.time;
+        usePosition(fix, fix.time);
+        // A long gap is replayed in pieces so the screen stays responsive.
+        if (i % 200 === 199) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      replaying = false;
+    } while (drainAgain && mySession === session && tracking);
   } finally {
     replaying = false;
     draining = false;
-    saveActive();
+    drainAgain = false;
+    if (mySession === session) saveActive();
   }
 }
 
@@ -1045,7 +1060,8 @@ function saveActive() {
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
-      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops,
+      lastFixTime
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -1062,7 +1078,9 @@ document.addEventListener?.('visibilitychange', () => {
   if (document.visibilityState === 'visible' && tracking && !wakeLock) acquireWakeLock(session);
 });
 
-function start() {
+// A new journey, or ({resumeFrom: time}) one that was running when the page was closed, taken up again from the
+// last fix it had.
+function start({resumeFrom = 0} = {}) {
   if (tracking || watchId != null || nativeWatcher != null) return;
   tracking = true;
   const mode = $('mode').value;
@@ -1087,12 +1105,18 @@ function start() {
     }, {enableHighAccuracy: highAccuracy, maximumAge: 5000, timeout: 60000});
   };
   const backgroundGeo = nativePlugin('BackgroundGeolocation');
-  // The app keeps every fix on the native side too (SafarBuffer); a new journey starts with none.
+  // The app keeps every fix on the native side too (SafarBuffer); a new journey starts with none, one taken up
+  // again keeps them.
   fixBuffer = backgroundGeo ? nativePlugin('SafarBuffer') : null;
-  lastFixTime = 0;
-  // The native side drops the last journey's fixes, keeps the phone awake, listens to the GPS receiver itself and
-  // asks for "Allow all the time" and for no battery restriction.
-  try { (fixBuffer?.begin ?? fixBuffer?.clear)?.call(fixBuffer)?.catch?.(() => {}); } catch (e) { fixBuffer = null; }
+  lastFixTime = Number.isFinite(resumeFrom) ? resumeFrom : 0;
+  liveFixes = [];
+  // The native side drops the last journey's fixes (not when one is taken up again), keeps the phone awake,
+  // listens to the GPS receiver itself and asks for "Allow all the time" and for no battery restriction.
+  try {
+    if (fixBuffer?.begin) fixBuffer.begin({keep: lastFixTime > 0})?.catch?.(() => {});
+    else if (!lastFixTime) fixBuffer?.clear?.()?.catch?.(() => {});
+  } catch (e) { fixBuffer = null; }
+  if (lastFixTime) drainFixes(); // the fixes of the time the page was closed
   showBackgroundStatus();
   if (!backgroundGeo) {
     startWeb(mode !== 'network');
@@ -1139,24 +1163,25 @@ function start() {
         return;
       }
       gotFix = true;
-      // Already written from the native buffer (drainFixes): the page was not running when this fix came.
-      if (Number.isFinite(location.time)) {
-        if (location.time <= lastFixTime) return;
-        lastFixTime = location.time;
-      }
       if (webStarted && nativeWatcher) {
         if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
         webStarted = false;
       }
-      onPos({
-        coords: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          accuracy: location.accuracy,
-          speed: location.speed
-        },
-        timestamp: location.time || Date.now()
-      });
+      const fix = {time: location.time, latitude: location.latitude, longitude: location.longitude,
+        accuracy: location.accuracy, speed: location.speed};
+      // Every fix the plugin gives is in the native list too (MainActivity puts it there). Taken from that list,
+      // fixes come in time order, the ones the page missed while it was not running first; this one is used
+      // directly only if the list does not have it.
+      if (fixBuffer?.drain && Number.isFinite(fix.time)) {
+        liveFixes.push(fix);
+        drainFixes();
+        return;
+      }
+      if (Number.isFinite(fix.time)) {
+        if (fix.time <= lastFixTime) return; // already written from the native list
+        lastFixTime = fix.time;
+      }
+      usePosition(fix, Date.now());
     }))).then(id => {
       if (id == null) throw new Error('native GPS start fail');
       nativeStarting = false;
@@ -1238,12 +1263,12 @@ function render() {
   }
 }
 
-$('start').onclick = start;
+$('start').onclick = () => start();
 // What the page missed is read first, so stopping does not lose it.
 $('stop').onclick = () => (tracking && fixBuffer?.drain ? drainFixes().then(stop, stop) : stop());
 // Back on screen, and every 5 seconds while it is running: read whatever was missed.
-document.addEventListener?.('visibilitychange', () => { if (!document.hidden) drainFixes(); });
-setInterval(drainFixes, 5000);
+document.addEventListener?.('visibilitychange', () => { if (!document.hidden) { showBackgroundStatus(); drainFixes(); } });
+setInterval(() => { showBackgroundStatus(); drainFixes(); }, 5000);
 $('find-route').onclick = selectRoute;
 // The via stations belong to the journey that was being planned. A new start station begins another one, so the
 // via boxes are emptied and put away again.
@@ -1337,7 +1362,11 @@ try {
         heading = 0;
       }
       if (saved.mode) $('mode').value = saved.mode;
-      start();
+      if (saved.last && Number.isFinite(saved.last.t) && Number.isFinite(saved.last.lat) && Number.isFinite(saved.last.lon)) last = saved.last;
+      // The page was opened again during a journey (Android may close and reopen it while the screen is off). The
+      // journey goes on from the last fix it had: the native side keeps the fixes of the time between, and they
+      // are taken from there.
+      start({resumeFrom: Number(saved.lastFixTime) || last?.t || 0});
       $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
     }
   }

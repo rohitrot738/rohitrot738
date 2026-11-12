@@ -26,11 +26,16 @@ public class SafarBufferPlugin extends Plugin {
         call.resolve(result);
     }
 
-    /** A journey starts: old fixes are dropped and the native side keeps tracking alive (see TrackingSession). */
+    /**
+     * A journey starts, and the native side keeps tracking alive (see TrackingSession). A new journey drops the
+     * last one's fixes; one taken up again after the page was reopened ("keep") keeps them, since they are the ones
+     * the page missed meanwhile.
+     */
     @PluginMethod
     public void begin(PluginCall call) {
+        boolean keep = call.getData().optBoolean("keep", false);
         getActivity().runOnUiThread(() -> {
-            TrackingSession.begin(getActivity());
+            TrackingSession.begin(getActivity(), keep);
             call.resolve();
         });
     }

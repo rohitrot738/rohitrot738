@@ -108,7 +108,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         LocalBroadcastManager.getInstance(this).unregisterReceiver(fixReceiver);
-        TrackingSession.end(this);
+        // Recreated for a configuration change, the screen comes straight back and its page takes the journey up
+        // again, keeping the fixes; the GPS listener goes on keeping them meanwhile.
+        if (!isChangingConfigurations()) TrackingSession.end(this);
         updates.shutdownNow();
         if (updateDialog != null) updateDialog.dismiss();
         super.onDestroy();

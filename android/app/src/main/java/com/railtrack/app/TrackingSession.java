@@ -52,14 +52,14 @@ final class TrackingSession {
 
     private TrackingSession() {}
 
-    static synchronized void begin(Activity activity) {
+    static synchronized void begin(Activity activity, boolean keepFixes) {
         Context app = activity.getApplicationContext();
         active = true;
         askedBackground = false;
         askedBattery = false;
         askedLocationOn = false;
         askedNotifications = false;
-        FixBuffer.clear();
+        if (!keepFixes) FixBuffer.clear();
         if (wakeLock == null) {
             PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
             if (power != null) {

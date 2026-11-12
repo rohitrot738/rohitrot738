@@ -108,6 +108,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await flush();
   nativeCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 145000}, null);
   nativeCallback({latitude: 28.01, longitude: 77, accuracy: 10, speed: 10, time: 160000}, null);
+  await flush(); // a fix the native list does not have is used after the list is read
   assert.equal(JSON.parse(native.store.get('trainlog'))[0].name, 'Native Station');
   native.elements.stop.onclick();
   await flush();
@@ -140,6 +141,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await flush();
   appCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 145000}, null);
   appCallback({latitude: 28.01, longitude: 77, accuracy: 10, speed: 10, time: 160000}, null);
+  await flush();
   assert.equal(JSON.parse(inApp.store.get('trainlog'))[0].name, 'Native Station');
   inApp.elements.stop.onclick();
   await flush();
@@ -604,6 +606,43 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await asleep.elements.stop.onclick();
   assert.equal(sessionsEnded, 1);
   assert.equal(asleep.elements['background-status'].hidden, true);
+
+  // The native list as the app really keeps it: every fix the plugin gives is in it, and it outlives the page.
+  // While the page is held up (screen off) it gets no fixes; when it runs again, a live fix may reach it before the
+  // next drain. It still takes the fixes it missed first, so a station passed meanwhile is in the log. Then the page
+  // is closed and opened again during the journey (Android may do that while the screen is off): the journey is
+  // taken up from the last fix the page had, the native list is kept (not dropped as for a new journey), and a
+  // station passed while the page was closed is in the log too, at the time the train was there.
+  const kept = [], keepAsked = [];
+  let watcher = null;
+  const nativeList = name => name === 'SafarBuffer'
+    ? {
+      drain: async ({after}) => ({fixes: kept.filter(f => f.time > after)}),
+      begin: async ({keep} = {}) => { keepAsked.push(keep); if (!keep) kept.length = 0; },
+      end: async () => {}, status: async () => ({})
+    }
+    : {addWatcher: async (_options, callback) => { watcher = callback; return 'w'; }, removeWatcher: async () => {}};
+  const along = i => ({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
+  const twoStations = stationFetcher([['ONE', 'Station One', 28, 77.0005], ['TWO', 'Station Two', 28.05, 77.0005]]);
+  const firstPage = setup(twoStations, null, {isNativePlatform: () => true, registerPlugin: nativeList});
+  firstPage.elements.start.onclick();
+  await flush();
+  for (let i = 0; i <= 10; i++) { kept.push(along(i)); watcher(along(i), null); }
+  await flush();
+  for (let i = 11; i <= 60; i++) kept.push(along(i));      // the page is held up: Station One passes at 180000
+  kept.push(along(61));
+  watcher(along(61), null);                                // the first fix the page hears again
+  await flush();
+  assert.deepEqual(JSON.parse(firstPage.store.get('trainlog')).map(entry => [entry.id, entry.type, entry.t]), [['ONE', 'pass', 180000]]);
+  watcher = null;                                          // the page is closed; Station Two passes at 380000
+  for (let i = 62; i <= 200; i++) kept.push(along(i));
+  const secondPage = setup(twoStations, firstPage.store, {isNativePlatform: () => true, registerPlugin: nativeList});
+  await flush();
+  await flush();
+  assert.deepEqual(keepAsked, [false, true]);
+  assert.deepEqual(JSON.parse(secondPage.store.get('trainlog')).map(entry => [entry.id, entry.type, entry.t]),
+    [['ONE', 'pass', 180000], ['TWO', 'pass', 380000]]);
+  await secondPage.elements.stop.onclick();
 
   // A standing train with the screen off: the phone sends no fixes while it sits still. The silence is filled in
   // as a stop from the last fix, so the halt has its real start, not the time fixes came back.
