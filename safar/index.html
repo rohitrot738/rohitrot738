@@ -7,6 +7,7 @@
 <style>
 body{font-family:system-ui,sans-serif;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:12px 16px;background:#1e293b;font-weight:700}
+header .pin{width:1.15em;height:1.15em;vertical-align:-.2em}
 main{padding:12px 16px;max-width:600px;margin:auto}
 select,button,input{font-size:16px;padding:10px;border-radius:8px;border:0;margin:4px 4px 4px 0}
 input{width:100%;max-width:100%;box-sizing:border-box}
@@ -61,7 +62,8 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 </style>
 </head>
 <body>
-<header>📍 Suffer Sathi</header>
+<!-- The pin is drawn, not an emoji: to show an emoji the WebView fetches emoji and Google Sans fonts from Play services, and while it holds them Android ends the app whenever Play services' process dies. -->
+<header><svg class="pin" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7z" fill="#ef4444"/><circle cx="12" cy="9" r="2.6" fill="#fecaca"/></svg> Suffer Sathi</header>
 <main>
 <div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div></div>
 <div class="card">

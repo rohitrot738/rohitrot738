@@ -294,16 +294,15 @@ async function main() {
   let page = await openPage();
   shot('home-small-font');
 
-  // Which part of the app connects to Play services' font provider: the page as it opens, then the page showing
-  // emoji it has not shown yet (the WebView may fetch an emoji font from Play services for them).
-  await sleep(4000);
-  log('fonts, page open:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
-  await page.run(`const probe = document.createElement('div'); probe.id = 'e2e-emoji';
-    probe.textContent = '\u{1F686} \u{1F689} \u{23F1}\u{FE0F} \u{1F9ED} \u{1FAE8}'; probe.style.fontSize = '40px';
-    document.body.prepend(probe);`);
+  // To show an emoji the WebView fetches fonts (emoji and Google Sans) from Play services' font provider, and the
+  // connection can stay open for minutes: Android then ends the app whenever Play services' process dies, as it did
+  // on the emulator. The page shows no emoji, so the WebView fetches nothing from Play services.
   await sleep(6000);
-  log('fonts, after emoji:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
-  await page.run(`document.getElementById('e2e-emoji').remove();`);
+  const opened = foreignFiles();
+  log('fonts, page open:', providerLinks().join(' | ') || '(none)', JSON.stringify(opened));
+  check(!opened.fds.some(line => line.includes('com.google.android.gms')), 'the page as it opens takes no font from Play services',
+    opened.fds.join(' | '));
+  checkProviderLinks('page open');
 
   const bridge = await page.run(`
     const c = window.Capacitor || {};
@@ -455,6 +454,12 @@ async function main() {
   launch();
   page = await openPage();
   await clockCheck(page, 'normal-font');
+
+  // ---- For the record, not a check: an emoji put into the page, and what the WebView fetches for it.
+  await page.run(`const probe = document.createElement('div'); probe.id = 'e2e-emoji';
+    probe.textContent = '\u{1F686} \u{1F689} \u{1F9ED}'; probe.style.fontSize = '40px'; document.body.prepend(probe);`);
+  await sleep(6000);
+  log('fonts, after an emoji was shown:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
   page.close();
 }
 
