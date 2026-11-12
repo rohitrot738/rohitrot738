@@ -174,10 +174,11 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
 function stationCode(s) { return s.code || (s.id && !s.id.startsWith('OSM:') ? s.id : ''); }
 function stationLabel(s) { const code = stationCode(s); return code ? `${s.name} (${code})` : s.name; }
 
-// Both lists together. An OSM station keeps its code only when the catalog has no station of that code, so a code
-// names one station.
+// Both lists together. An OSM station keeps its code only when the catalog has no station of that code, nor one
+// renamed to it (DDU is the catalog's MGS), so a code names one station.
 function combineStations(catalog, osmCatalog) {
   const codes = new Set(catalog.map(s => s.id));
+  for (const id of Object.keys(RENAMED)) if (codes.has(id)) codes.add(RENAMED[id][0]);
   return [...catalog, ...osmCatalog.map(s => (s.code && codes.has(s.code) ? {...s, code: undefined} : s))];
 }
 
@@ -208,12 +209,14 @@ function searchStations(text, limit = 40) {
   return found.slice(0, limit).map(item => item[1]);
 }
 
-function stationSuggestions(inputId, listId) {
+// "changed" is called whenever what is in the box is changed by hand.
+function stationSuggestions(inputId, listId, changed) {
   const input = $(inputId);
   // Keeps the box and its list above the keyboard.
   input.onfocus = () => input.scrollIntoView?.({block: 'start', behavior: 'smooth'});
   input.oninput = () => {
     if (input.dataset) delete input.dataset.stationId;
+    changed?.();
     if (route && tracking) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
     const text = input.value.trim().toUpperCase();
     const list = $(listId);
@@ -445,7 +448,7 @@ async function selectRoute() {
     return;
   }
   // Via stations the route must pass through, in order; an empty box is skipped.
-  const stops = [from];
+  const boxes = [['origin', from]];
   for (let i = 1; i <= viaCount; i++) {
     if (!$('via-' + i).value.trim()) continue;
     const via = findStation($('via-' + i));
@@ -453,12 +456,20 @@ async function selectRoute() {
       $('route-status').textContent = `Via station ${i} nahi mila. Likhkar neeche aayi list se tap karke chunein, ya box khaali kar dein.`;
       return;
     }
-    stops.push(via);
+    boxes.push(['via-' + i, via]);
   }
-  stops.push(to);
+  boxes.push(['destination', to]);
+  const stops = boxes.map(box => box[1]);
   if (stops.some((stop, i) => i && stop.id === stops[i - 1].id)) {
     $('route-status').textContent = 'Ek ke baad ek aane wale station alag hone chahiye (shuru, via, antim).';
     return;
+  }
+  // Each box shows the station that was found, by name and code, also when only its code was typed, and the
+  // list of suggestions under it is put away.
+  for (const [id, station] of boxes) {
+    $(id).value = stationLabel(station);
+    if ($(id).dataset) $(id).dataset.stationId = station.id;
+    $(id + '-options').replaceChildren();
   }
   $('find-route').disabled = true;
   $('start').disabled = true;
@@ -1234,7 +1245,20 @@ $('stop').onclick = () => (tracking && fixBuffer?.drain ? drainFixes().then(stop
 document.addEventListener?.('visibilitychange', () => { if (!document.hidden) drainFixes(); });
 setInterval(drainFixes, 5000);
 $('find-route').onclick = selectRoute;
-stationSuggestions('origin', 'origin-options');
+// The via stations belong to the journey that was being planned. A new start station begins another one, so the
+// via boxes are emptied and put away again.
+function resetVia() {
+  for (let i = 1; i <= 3; i++) {
+    const input = $('via-' + i);
+    input.value = '';
+    if (input.dataset) delete input.dataset.stationId;
+    $(`via-${i}-options`).replaceChildren();
+    $('via-row-' + i).hidden = true;
+  }
+  viaCount = 0;
+  $('add-via').hidden = false;
+}
+stationSuggestions('origin', 'origin-options', resetVia);
 stationSuggestions('destination', 'destination-options');
 for (let i = 1; i <= 3; i++) stationSuggestions('via-' + i, `via-${i}-options`);
 stationSuggestions('add-station', 'add-station-options');

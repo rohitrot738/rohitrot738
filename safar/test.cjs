@@ -422,6 +422,38 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
 
+  // Only a code typed, not picked from the list: after the route is built the boxes show the stations that were
+  // found, by name and code.
+  for (const [id, code] of [['origin', 'ddu'], ['via-1', 'mzp'], ['destination', 'ald']]) {
+    bundled.elements[id].dataset = {};
+    bundled.elements[id].value = code;
+  }
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\)/);
+  assert.deepEqual(['origin', 'via-1', 'destination'].map(id => bundled.elements[id].value),
+    ['MUGHAL SARAI JN (MGS)', 'MIRZAPUR (MZP)', 'ALLAHABAD JN (ALD)']);
+  assert.deepEqual(JSON.parse(bundled.store.get('safar-route')).origin, {value: 'MUGHAL SARAI JN (MGS)', id: 'MGS'});
+  // Suggestions left open under a box are put away once the route is built.
+  bundled.elements.destination.value = 'ald';
+  bundled.elements.destination.oninput();
+  assert.ok(bundled.elements['destination-options'].children.length > 0);
+  await bundled.elements['find-route'].onclick();
+  assert.equal(bundled.elements['destination-options'].children.length, 0);
+  assert.equal(bundled.elements.destination.value, 'ALLAHABAD JN (ALD)');
+  // A new start station begins another journey: the via boxes are emptied and put away, and the next route has
+  // no via in it.
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
+  assert.equal(bundled.elements['via-1'].value, '');
+  assert.equal(bundled.elements['via-row-1'].hidden, true);
+  assert.equal(bundled.elements['add-via'].hidden, false);
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /^Route bana: \d+ stations/);
+  assert.ok(routeNames().includes('VARANASI JN (BSB)') && !routeNames().includes('MIRZAPUR (MZP)'));
+  // The first via box comes back empty when asked for again.
+  bundled.elements['add-via'].onclick();
+  assert.equal(bundled.elements['via-row-1'].hidden, false);
+  assert.equal(bundled.elements['via-1'].value, '');
+
   // A link that passes stations by: the route puts them back. North is known to the timetable between Alpha and
   // Beta, which an OSM link joins directly; Halt has no link at all but lies on the line; Twin is the same place
   // under a second code; Aside is too far off the line, and Loop is linked but lies a long way round.
@@ -498,7 +530,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
   assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
   assert.match(reopened.elements['route-status'].textContent, /^Save kiya hua route: Alpha se Delta\. 4 \/ 5 station/);
-  assert.equal(reopened.elements.origin.value, 'A');
+  assert.equal(reopened.elements.origin.value, 'Alpha (A)'); // typed as "A": the box shows the station found
   reopened.elements['route-clear'].onclick();
   assert.equal(reopened.store.has('safar-route'), false);
   assert.equal(reopened.elements['route-details'].hidden, true);
@@ -704,12 +736,14 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     return bundled.elements['origin-options'].children.map(option => option.textContent);
   };
   assert.deepEqual(labels('Baruna').filter(label => /^baruna( \(|$)/i.test(label)).sort(), ['BARUNA (BUE)', 'Baruna']);
-  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction (DDU)'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction'));
   // An OpenStreetMap station shows the code OSM has for it and is found by it, unless the catalog already has a
-  // station of that code: then only the catalog's entry carries it.
+  // station of that code or one renamed to it: then only the catalog's entry carries it, so that a typed code
+  // names one station and a route does not get the same junction twice.
   assert.equal(labels('EKNR')[0], 'Kevadiya (EKNR)');
   assert.equal(labels('NKMG')[0], 'New Karimganj Junction (NKMG)');
-  assert.equal(labels('PRYJ').filter(label => /Prayagraj Junction \(PRYJ\)/.test(label)).length, 1);
+  assert.deepEqual(labels('PRYJ').filter(label => /PRYJ/.test(label)), ['ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)']);
+  assert.deepEqual(labels('DDU').filter(label => /\(DDU\)/.test(label)), ['MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)']);
   assert.deepEqual(labels('Baruna').filter(label => /\(BUE\)/.test(label)), ['BARUNA (BUE)']);
   assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
   assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));

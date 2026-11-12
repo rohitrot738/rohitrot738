@@ -266,6 +266,8 @@ async function main() {
     routeNames = await page.run(`return Array.from(document.querySelectorAll('#route-list li')).map(li => li.textContent.trim());`);
   }
   log('route:', routeNames.length, 'stations;', await page.run(`return document.getElementById('route-status').textContent;`));
+  const typed = await page.run(`return [document.getElementById('origin').value, document.getElementById('destination').value];`);
+  check(typed[0] === 'PATNA JN (PNBE)' && typed[1] === 'MUGHAL SARAI JN (MGS)', 'a typed code is shown with its station name once the route is built', typed.join(' / '));
   const place = code => routeNames.findIndex(name => name.endsWith(`(${code})`));
   for (const [before, code, after] of [['DNR', 'NEO', 'SDE'], ['JMIR', 'ARA', 'JGWL'], ['KCA', 'EOCM', 'MGS']])
     check(place(before) >= 0 && place(before) < place(code) && place(code) < place(after), `the Patna to Mughal Sarai route has ${code} in its place`);
