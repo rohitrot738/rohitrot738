@@ -202,7 +202,7 @@ async function clockCheck(page, label) {
   check(height > before[1], `${label}: the phone's bars are hidden (the page grew taller)`, `${before[1]} -> ${height}`);
   // The time runs along the long side of the screen, edge to edge.
   const along = height > width ? [clock.time[1], clock.time[3]] : [clock.time[0], clock.time[2]];
-  check(along[0] >= 0 && along[0] <= 20 && along[1] <= long + 1 && along[1] >= long - 20,
+  check(along[0] >= 8 && along[0] <= 16 && along[1] <= long - 8 && along[1] >= long - 16,
     `${label}: the time fills the screen from edge to edge`, `${along[0]} to ${along[1]} of ${long}`);
   // The digits themselves, without the empty top of their line: turned, the top of the line is its right side.
   const ink = [...clock.hm];
