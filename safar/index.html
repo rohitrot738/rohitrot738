@@ -1061,7 +1061,7 @@ function saveActive() {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
       mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops,
-      lastFixTime
+      lastFixTime, watcher: nativeWatcher ? nativeWatcher.id : null
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -1079,8 +1079,8 @@ document.addEventListener?.('visibilitychange', () => {
 });
 
 // A new journey, or ({resumeFrom: time}) one that was running when the page was closed, taken up again from the
-// last fix it had.
-function start({resumeFrom = 0} = {}) {
+// last fix it had; previousWatcher is the native location watcher that page had.
+function start({resumeFrom = 0, previousWatcher = null} = {}) {
   if (tracking || watchId != null || nativeWatcher != null) return;
   tracking = true;
   const mode = $('mode').value;
@@ -1190,6 +1190,15 @@ function start({resumeFrom = 0} = {}) {
         return;
       }
       nativeWatcher = {id, plugin: backgroundGeo};
+      // When the page is made again during a journey, the location service in the app goes on running the watcher
+      // of the page before (no page is left to stop it). Left running, it would keep the GPS and the tracking
+      // notification on after Stop. It is removed once this page's own watcher runs, and the location service is
+      // known to be there.
+      if (previousWatcher != null && String(previousWatcher) !== String(id)) {
+        Promise.resolve().then(() => backgroundGeo.removeWatcher({id: String(previousWatcher)}))
+          .catch(e => console.warn('Pichle page ka GPS watcher band nahi hua', e));
+      }
+      saveActive();
       if (pendingFallback) {
         const reason = pendingFallback;
         pendingFallback = null;
@@ -1366,7 +1375,7 @@ try {
       // The page was opened again during a journey (Android may close and reopen it while the screen is off). The
       // journey goes on from the last fix it had: the native side keeps the fixes of the time between, and they
       // are taken from there.
-      start({resumeFrom: Number(saved.lastFixTime) || last?.t || 0});
+      start({resumeFrom: Number(saved.lastFixTime) || last?.t || 0, previousWatcher: saved.watcher ?? null});
       $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
     }
   }

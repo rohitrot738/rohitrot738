@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <application
         android:allowBackup="true"
@@ -32,6 +33,19 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths"></meta-data>
+        </provider>
+        <!-- AppCompat starts EmojiCompat with the app, and it fetches its emoji font from Google Play services' font
+             provider. A connection to that provider ties the app's life to Play services: when their process dies (an
+             update, a crash), Android ends this app too, mid-journey, as it did on the emulator with the screen off.
+             The app's own screens show no emoji, so EmojiCompat is not started. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                tools:node="remove" />
         </provider>
         <!-- Android's download manager says here when the update's APK is in (AppUpdate). -->
         <receiver

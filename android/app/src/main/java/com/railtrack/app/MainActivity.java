@@ -14,6 +14,7 @@ import android.location.Location;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.ViewGroup;
 import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebView;
 import android.widget.Toast;
@@ -101,7 +102,14 @@ public class MainActivity extends BridgeActivity {
         getBridge().addWebViewListener(new WebViewListener() {
             @Override
             public boolean onRenderProcessGone(WebView webView, RenderProcessGoneDetail detail) {
-                Log.w(TrackingSession.TAG, "The page's process ended; making the screen again");
+                Log.w(TrackingSession.TAG, "The page's process ended (" + (detail.didCrash() ? "crashed" : "ended by Android")
+                    + "); making the screen again");
+                // A WebView whose page process ended must not be used again: it is taken off the screen and destroyed
+                // at once, so that nothing (a location reaching the page, say) touches it before the screen is made
+                // again. Calls to a destroyed WebView are ignored.
+                ViewGroup parent = (ViewGroup) webView.getParent();
+                if (parent != null) parent.removeView(webView);
+                webView.destroy();
                 recreate();
                 return true;
             }

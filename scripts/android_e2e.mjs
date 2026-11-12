@@ -186,6 +186,21 @@ function lifeEvents() {
     .filter(line => line.includes(PACKAGE) && /Kill|Start proc|died|crash|Relaunch|relaunch|config/i.test(line));
   return [...events.slice(-40), ...crashes.slice(-40), ...system.slice(-20)].join('\n') || '(none)';
 }
+// The app's connections to other apps' content providers, as Android lists them ("- <provider>-><client> sS/N uU/N
+// <age>"). A stable one (s1 and up) ties the app's life to the provider's process: when that dies, Android ends the
+// app as well ("depends on provider ... in dying proc"). It ended the app mid-journey on the emulator once, through
+// Google Play services' font provider, whose process died.
+function providerLinks() {
+  return quiet(() => shell(`dumpsys activity processes ${PACKAGE}`)).split('\n').map(line => line.trim())
+    .filter(line => /^- \S+->\d+:/.test(line));
+}
+function checkProviderLinks(when) {
+  const links = providerLinks();
+  log(`provider connections (${when}):`, links.join(' | ') || '(none)');
+  const tied = links.filter(line => /com\.google\.android\.gms/.test(line.split('->')[0]) && / s[1-9]\d*\//.test(line));
+  check(!tied.length, `${when}: the app's life is not tied to a Google Play services provider`, tied.join(' | '));
+}
+
 // Whether the app is the activity in front, running (resumed).
 const inFront = () => new RegExp(`(topResumedActivity|mResumedActivity)=[^\\n]*${PACKAGE.replace(/\./g, '\\.')}`)
   .test(quiet(() => shell('dumpsys activity activities')));
@@ -307,6 +322,7 @@ async function main() {
   check(notifications.includes(PACKAGE), 'the tracking notification is shown');
   shot('journey');
 
+  checkProviderLinks('during the journey');
   await page.run(`window.e2eMark = 'before the screen went off';`);
   const pidBefore = shell(`pidof ${PACKAGE}`);
   quiet(() => adb('logcat', '-b', 'all', '-c'));
@@ -355,19 +371,20 @@ async function main() {
   check(order.later.length > 0 && order.later.length < order.count && order.later.every(t => t > order.cut),
     'the native side gives only the fixes after the time asked for', `${order.later.length} of ${order.count}`);
 
-  // ---- The page's own process (the WebView's renderer) ends during the journey, as Android may end it with the
-  // screen off. The app must go on: the screen is made again, its page takes the journey up again, and the fixes
-  // of the time between reach it from the native list.
+  // ---- The page's own process (the WebView's renderer) ends during the journey with the screen off, as Android
+  // may end it then. The app must go on: the screen is made again, its page takes the journey up again, the fixes
+  // of the time between reach it from the native list, and the old page's location watcher does not linger.
   await page.run(`window.e2eMark = 'before the page process ended';`);
   const pidBeforeCrash = shell(`pidof ${PACKAGE}`);
   quiet(() => adb('logcat', '-b', 'all', '-c'));
   const crashFrom = deviceTime();
+  shell('input keyevent KEYCODE_SLEEP');
+  for (let i = 0; i < 2; i++) { setFix(25.5573 + i * 0.0003, 84.662596); await sleep(2000); }
   const crashAnswer = page.send('Page.crash').then(() => 'answered', e => e.message);
   await sleep(1500);
-  log('Page.crash:', await Promise.race([crashAnswer, sleep(10).then(() => 'no answer yet')]));
+  log('Page.crash with the screen off:', await Promise.race([crashAnswer, sleep(10).then(() => 'no answer yet')]));
   page.close();
-  shell('input keyevent KEYCODE_SLEEP');
-  for (let i = 0; i < 15; i++) { setFix(25.5573 + i * 0.0003, 84.662596); await sleep(2000); }
+  for (let i = 2; i < 17; i++) { setFix(25.5573 + i * 0.0003, 84.662596); await sleep(2000); }
   const crashTo = deviceTime();
   shell('input keyevent KEYCODE_WAKEUP');
   quiet(() => shell('wm dismiss-keyguard'));
@@ -390,6 +407,7 @@ async function main() {
   check(recovered.lastFixTime >= crashTo - 15000, 'the new page has the fixes of the time between', `${recovered.lastFixTime} against ${crashTo}`);
   shot('journey-after-page-process-ended');
 
+  checkProviderLinks('after the page was made again');
   await page.run(`document.getElementById('stop').click();`);
   await sleep(2500);
   const stopped = await page.run(`return {watcher: nativeWatcher, tracking};`);

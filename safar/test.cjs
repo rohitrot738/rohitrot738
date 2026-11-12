@@ -613,15 +613,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // is closed and opened again during the journey (Android may do that while the screen is off): the journey is
   // taken up from the last fix the page had, the native list is kept (not dropped as for a new journey), and a
   // station passed while the page was closed is in the log too, at the time the train was there.
-  const kept = [], keepAsked = [];
-  let watcher = null;
+  const kept = [], keepAsked = [], running = [];
+  let watcher = null, watchers = 0;
   const nativeList = name => name === 'SafarBuffer'
     ? {
       drain: async ({after}) => ({fixes: kept.filter(f => f.time > after)}),
       begin: async ({keep} = {}) => { keepAsked.push(keep); if (!keep) kept.length = 0; },
       end: async () => {}, status: async () => ({})
     }
-    : {addWatcher: async (_options, callback) => { watcher = callback; return 'w'; }, removeWatcher: async () => {}};
+    : {
+      addWatcher: async (_options, callback) => { watcher = callback; running.push('w' + ++watchers); return 'w' + watchers; },
+      removeWatcher: async ({id}) => { if (running.includes(id)) running.splice(running.indexOf(id), 1); }
+    };
   const along = i => ({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
   const twoStations = stationFetcher([['ONE', 'Station One', 28, 77.0005], ['TWO', 'Station Two', 28.05, 77.0005]]);
   const firstPage = setup(twoStations, null, {isNativePlatform: () => true, registerPlugin: nativeList});
@@ -642,7 +645,12 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.deepEqual(keepAsked, [false, true]);
   assert.deepEqual(JSON.parse(secondPage.store.get('trainlog')).map(entry => [entry.id, entry.type, entry.t]),
     [['ONE', 'pass', 180000], ['TWO', 'pass', 380000]]);
+  // The location service still ran the first page's watcher; the second page removed it once its own was running,
+  // so after Stop none is left to keep the GPS and the notification on.
+  assert.deepEqual(running, ['w2']);
   await secondPage.elements.stop.onclick();
+  await flush();
+  assert.deepEqual(running, []);
 
   // A standing train with the screen off: the phone sends no fixes while it sits still. The silence is filled in
   // as a stop from the last fix, so the halt has its real start, not the time fixes came back.
