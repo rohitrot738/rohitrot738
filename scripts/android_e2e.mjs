@@ -227,6 +227,8 @@ async function main() {
   shell(`dumpsys deviceidle whitelist +${PACKAGE}`);
   quiet(() => shell('settings put secure location_mode 3'));
   quiet(() => shell('locksettings set-disabled true'));
+  // Android's one-time "Viewing full screen" hint would cover the clock in the screenshots.
+  quiet(() => shell('settings put secure immersive_mode_confirmations confirmed'));
   shell('input keyevent KEYCODE_WAKEUP');
   quiet(() => shell('wm dismiss-keyguard'));
   // A screen 360 wide in the page's measure, like the phone the trouble was seen on.
