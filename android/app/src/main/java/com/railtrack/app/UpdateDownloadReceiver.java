@@ -21,7 +21,7 @@ public class UpdateDownloadReceiver extends BroadcastReceiver {
                 // A failed download stays remembered; the app clears it and offers the update again when opened.
                 if (AppUpdate.downloadState(app) != AppUpdate.DONE || AppUpdate.finish(app) == null) return;
                 if (!MainActivity.refreshVisible()) {
-                    AppUpdate.notifyUser(app, "Suffer Sathi update taiyar hai", "Install karne ke liye dabayein.");
+                    AppUpdate.notifyUser(app, "Suffer Sathi update ready", "Tap to install.");
                 }
             } finally {
                 result.finish();

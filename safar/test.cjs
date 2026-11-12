@@ -65,7 +65,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(requests, 1);
   assert.equal(JSON.parse(app.store.get('safar-stations-v2')).osm.length, 1);
   assert.match(app.elements.now.textContent, /Test Station/);
-  assert.match(app.elements['data-status'].textContent, /taiyar/);
+  assert.match(app.elements['data-status'].textContent, /ready/);
   assert.equal(app.elements['data-status'].hidden, true);
   assert.doesNotMatch(html, /network-status|App updates dekhein|suffer-sathi-updates/);
   // The log's colours: amber for a halt, green for a pass. (A style rewrite once dropped these rules.)
@@ -172,7 +172,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   slowCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
   assert.equal(slow.watches[0].cleared, true);
   assert.equal(slowRemoved, false);
-  assert.match(slow.elements.status.textContent, /Location mil rahi hai/);
+  assert.match(slow.elements.status.textContent, /Location found/);
   assert.equal(JSON.parse(fs.readFileSync(require('path').join(__dirname, '..', 'capacitor.config.json'), 'utf8')).android.useLegacyBridge, true);
 
   const geo = setup(async () => { throw new Error('offline'); });
@@ -188,7 +188,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   noData.elements.start.onclick();
   noData.watches[0].success(fix(28, 100000));
   await flush();
-  assert.match(noData.elements['data-status'].textContent, /Internet check/);
+  assert.match(noData.elements['data-status'].textContent, /Check the internet/);
   assert.equal(noData.elements['data-status'].hidden, false);
   assert.equal(noData.store.has('trainlog'), false);
 
@@ -196,7 +196,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   inaccurate.elements.start.onclick();
   inaccurate.watches[0].success(fix(28, 100000, 10, 1000));
   await flush();
-  assert.match(inaccurate.elements.status.textContent, /Accuracy kam/);
+  assert.match(inaccurate.elements.status.textContent, /Accuracy is low/);
   assert.match(inaccurate.elements.now.textContent, /Test Station/);
   assert.equal(inaccurate.store.has('trainlog'), false);
 
@@ -217,7 +217,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   legacyOffline.watches[0].success(fix(28, 100000));
   await flush();
   assert.match(legacyOffline.elements.now.textContent, /Cached Station/);
-  assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list available/);
+  assert.match(legacyOffline.elements['data-status'].textContent, /Saved station list in use/);
 
   const database = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'stations.json'), 'utf8'));
   assert.equal(database.length, 8703);
@@ -238,7 +238,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
   // ADSR has no link of its own but lies on the line between the two, so the route takes it in.
-  assert.match(routed.elements['route-status'].textContent, /Route bana: 3 stations/);
+  assert.match(routed.elements['route-status'].textContent, /Route ready: 3 stations/);
   assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'ADSR (ADSR)', 'DEHRI ON SONE (DOS)']);
   // Its tick taken off, it is not logged though the train passes right over it.
   const adsrBox = routed.elements['route-list'].children[1].children[0].children[0];
@@ -246,16 +246,16 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   adsrBox.onchange();
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
-  assert.match(routed.elements.next.textContent, /Sambhavit agla station: DEHRI ON SONE \(DOS\)/);
+  assert.match(routed.elements.next.textContent, /Likely next station: DEHRI ON SONE \(DOS\)/);
   assert.equal(routed.elements.speed.textContent, '36');
   routed.watches[0].success({coords: {latitude: 24.909345, longitude: 84.192214, accuracy: 4, speed: 10}, timestamp: 160000});
   routed.watches[0].success({coords: {latitude: 24.914895, longitude: 84.185434, accuracy: 4, speed: 10}, timestamp: 220000});
   assert.doesNotMatch(routed.store.get('trainlog') || '', /ADSR/);
   routed.watches[0].success({coords: {latitude: 25.5, longitude: 85, accuracy: 4, speed: 10}, timestamp: 280000});
   // Off the chosen route the tracker keeps going: the next station comes from the direction of travel.
-  assert.match(routed.elements.next.textContent, /Agla station \(disha se anumaan\): .+ km/);
+  assert.match(routed.elements.next.textContent, /Next station \(estimated from direction\): .+ km/);
   await routed.elements['find-route'].onclick();
-  assert.match(routed.elements['route-status'].textContent, /Stop dabayein/);
+  assert.match(routed.elements['route-status'].textContent, /^Press Stop before changing the route/);
 
   const osmRoute = setup(async url => url === 'osm-station-routes.json'
     ? {
@@ -271,7 +271,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   osmRoute.elements.origin.value = 'OSM:77';
   osmRoute.elements.destination.value = 'OSM:78';
   await osmRoute.elements['find-route'].onclick();
-  assert.match(osmRoute.elements['route-status'].textContent, /Route bana: 2 stations/);
+  assert.match(osmRoute.elements['route-status'].textContent, /Route ready: 2 stations/);
   assert.deepEqual(osmRoute.elements['route-list'].children.map(rowName),
     ['OSM Alpha', 'OSM Beta']);
 
@@ -315,7 +315,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   badRoute.elements.origin.value = 'A';
   badRoute.elements.destination.value = 'C';
   await badRoute.elements['find-route'].onclick();
-  assert.match(badRoute.elements['route-status'].textContent, /rasta nahi mila/);
+  assert.match(badRoute.elements['route-status'].textContent, /no path found between these stations/);
 
   // The bundled data: the stations from the bug report route to each other, with no link of their own in the
   // OSM graph (the OSM-only station joins its nearest linked neighbour), and step station by station.
@@ -328,10 +328,10 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements[input].oninput();
     bundled.elements[list].children.find(option => option.textContent === label).onclick();
   };
-  pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
-  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
+  pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Route bana: \d+ stations, lagbhag 1\d\d km/);
+  assert.match(bundled.elements['route-status'].textContent, /Route ready: \d+ stations, about 1\d\d km/);
   const names = bundled.elements['route-list'].children.map(rowName);
   assert.equal(names[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(names[names.length - 1], 'ALLAHABAD JN (ALD)');
@@ -351,7 +351,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   };
   for (const [code, label] of [['MB', 'MORADABAD (MB)'], ['HW', 'HARIDWAR JN (HW)'], ['ara', 'ARA (ARA)']])
     assert.equal(firstOption(code), label);
-  assert.match(firstOption('DDU'), /^MUGHAL SARAI JN \(MGS\) — ab Deen Dayal Upadhyaya Jn \(DDU\)$/);
+  assert.match(firstOption('DDU'), /^MUGHAL SARAI JN \(MGS\) — now Deen Dayal Upadhyaya Jn \(DDU\)$/);
   assert.match(firstOption('PRYJ'), /^ALLAHABAD JN \(ALD\)/);
   assert.match(firstOption('prayagraj jn'), /^ALLAHABAD JN \(ALD\)/);
   bundled.elements.origin.dataset = {};
@@ -359,7 +359,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   bundled.elements.destination.dataset = {};
   bundled.elements.destination.value = 'PRYJ';
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Route bana/);
+  assert.match(bundled.elements['route-status'].textContent, /Route ready/);
   assert.doesNotMatch(html, /RailTrack|railtrack/);
 
   // A stop between stations is logged with its times once the train moves on; standing before the journey is not.
@@ -372,13 +372,18 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(outer.store.has('trainlog'), false);
   outer.watches[0].success(fix(28.06, 200000, 0));
   outer.watches[0].success(fix(28.06, 260000, 0));
-  assert.match(outer.elements['live-stop'].textContent, /^Abhi ruki hai: Raste mein \(Halt se 6\.\d\d km\) — .+ se \(1 min\)$/);
+  assert.match(outer.elements['live-stop'].textContent, /^Stopped now: On the way \(6\.\d\d km from Halt\) — since .+ \(1 min\)$/);
   assert.equal(outer.elements['live-stop'].hidden, false);
   outer.watches[0].success(fix(28.061, 270000, 10));
   const outerLog = JSON.parse(outer.store.get('trainlog'));
   assert.equal(outerLog.length, 1);
-  assert.match(outerLog[0].name, /^Raste mein \(Halt se 6\.\d\d km\)$/);
+  assert.match(outerLog[0].name, /^On the way \(6\.\d\d km from Halt\)$/);
   assert.deepEqual([outerLog[0].type, outerLog[0].arr, outerLog[0].dep], ['halt', 200000, 270000]);
+  // Stops on the way that earlier versions wrote down in Hinglish ("Raste mein (NAME se 1.20 km)") show in English.
+  const older = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), [['trainlog', JSON.stringify([
+    {name: 'Raste mein (BUXAR se 1.20 km)', id: '', source: 'GPS', type: 'halt', arr: 1000, dep: 61000},
+    {name: 'Raste mein', id: '', source: 'GPS', type: 'halt', arr: 70000, dep: 130000}])]]);
+  assert.deepEqual(older.elements.log.children.map(card => card.children[0].textContent), ['On the way', 'On the way (1.20 km from BUXAR)']);
   outer.watches[0].success(fix(28.07, 300000, 0));
   outer.watches[0].success(fix(28.07, 310000, 10));
   assert.equal(JSON.parse(outer.store.get('trainlog')).length, 1);
@@ -400,8 +405,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements['via-' + i].oninput();
     bundled.elements[`via-${i}-options`].children.find(option => option.textContent === label).onclick();
   };
-  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
-  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)');
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
+  pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
   assert.ok(!routeNames().includes('MIRZAPUR (MZP)'));
@@ -409,7 +414,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(bundled.elements['via-row-1'].hidden, false);
   pickVia(1, 'MZP', 'MIRZAPUR (MZP)');
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\): \d+ stations/);
+  assert.match(bundled.elements['route-status'].textContent, /^Route ready \(via MIRZAPUR\): \d+ stations/);
   const viaRoute = routeNames();
   assert.equal(viaRoute[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(viaRoute[viaRoute.length - 1], 'ALLAHABAD JN (ALD)');
@@ -419,7 +424,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   bundled.elements['via-1'].dataset = {};
   bundled.elements['via-1'].value = 'zzzz';
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Via station 1 nahi mila/);
+  assert.match(bundled.elements['route-status'].textContent, /Via station 1 not found/);
   bundled.elements['via-1'].value = '';
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
@@ -431,7 +436,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements[id].value = code;
   }
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\)/);
+  assert.match(bundled.elements['route-status'].textContent, /^Route ready \(via MIRZAPUR\)/);
   assert.deepEqual(['origin', 'via-1', 'destination'].map(id => bundled.elements[id].value),
     ['MUGHAL SARAI JN (MGS)', 'MIRZAPUR (MZP)', 'ALLAHABAD JN (ALD)']);
   assert.deepEqual(JSON.parse(bundled.store.get('safar-route')).origin, {value: 'MUGHAL SARAI JN (MGS)', id: 'MGS'});
@@ -444,12 +449,12 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(bundled.elements.destination.value, 'ALLAHABAD JN (ALD)');
   // A new start station begins another journey: the via boxes are emptied and put away, and the next route has
   // no via in it.
-  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
   assert.equal(bundled.elements['via-1'].value, '');
   assert.equal(bundled.elements['via-row-1'].hidden, true);
   assert.equal(bundled.elements['add-via'].hidden, false);
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route bana: \d+ stations/);
+  assert.match(bundled.elements['route-status'].textContent, /^Route ready: \d+ stations/);
   assert.ok(routeNames().includes('VARANASI JN (BSB)') && !routeNames().includes('MIRZAPUR (MZP)'));
   // The first via box comes back empty when asked for again.
   bundled.elements['add-via'].onclick();
@@ -512,7 +517,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(chosen.elements['route-choice'].textContent, /^3 \/ 4 station/);
   chosen.elements['add-station'].value = 'FAR';
   chosen.elements['add-station-btn'].onclick();
-  assert.match(chosen.elements['add-station-status'].textContent, /door hai; nahi joda/);
+  assert.match(chosen.elements['add-station-status'].textContent, /from this route; not added/);
   chosen.elements['add-station'].value = 'X';
   chosen.elements['add-station-btn'].onclick();
   assert.deepEqual(rows().map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
@@ -524,14 +529,14 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // The route and its ticks are kept: a fresh start of the app on the same phone shows them again.
   chosen.elements.stop.onclick();
   chosen.elements['route-save'].onclick();
-  assert.match(chosen.elements['route-status'].textContent, /^Save ho gaya: Alpha se Delta, 4 \/ 5 station/);
+  assert.match(chosen.elements['route-status'].textContent, /^Saved: Alpha to Delta, 4 \/ 5 stations/);
   assert.equal(chosen.elements['route-details'].open, false);
   const reopened = setup(async url => url === 'edges.json'
     ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url), chosen.store);
   await flush();
   assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
   assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
-  assert.match(reopened.elements['route-status'].textContent, /^Save kiya hua route: Alpha se Delta\. 4 \/ 5 station/);
+  assert.match(reopened.elements['route-status'].textContent, /^Saved route: Alpha to Delta\. 4 \/ 5 stations/);
   assert.equal(reopened.elements.origin.value, 'Alpha (A)'); // typed as "A": the box shows the station found
   reopened.elements['route-clear'].onclick();
   assert.equal(reopened.store.has('safar-route'), false);
@@ -557,7 +562,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const limitLog = JSON.parse(limits.store.get('trainlog'));
   const stationEntry = limitLog.find(entry => entry.id === 'LIM');
   assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
-  assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
+  assert.ok(limitLog.some(entry => /^On the way \(0\.28 km from Limit Station\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
 
   // Standing still, the train moves off at 2.7 km/h, as asked: the halt runs from the first reading below 5 km/h to
   // the first at 2.7 km/h or more, and the train speeding up from there (3.6 and 4.3 km/h) is not a new stop.
@@ -615,16 +620,16 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(asleep.store.has('trainlog'), false);
   // The page says what Android still needs for tracking with the screen off, and when it is all in place.
   const backgroundCard = asleep.elements['background-status'];
-  assert.match(backgroundCard.children[0].textContent, /"Allow all the time" karein · Battery "Unrestricted \/ No restrictions" karein · app version 100080$/);
+  assert.match(backgroundCard.children[0].textContent, /location permission to "Allow all the time" · Set battery use to "Unrestricted \/ No restrictions" · app version 100080$/);
   assert.equal(backgroundCard.hidden, false);
   // With something missing there is a button that opens the phone's settings for the app.
-  assert.equal(backgroundCard.children[1].textContent, 'Phone ki settings kholein');
+  assert.equal(backgroundCard.children[1].textContent, 'Open phone settings');
   backgroundCard.children[1].onclick();
   assert.equal(settingsOpened, 1);
   backgroundState = {backgroundLocation: true, batteryUnrestricted: true, notifications: true, version: 100080};
   await asleep.elements.intervals.find(timer => timer.ms === 5000).fn();
   await flush();
-  assert.match(backgroundCard.children[0].textContent, /settings theek hain ✓ · app version 100080$/);
+  assert.match(backgroundCard.children[0].textContent, /settings are fine ✓ · app version 100080$/);
   assert.equal(backgroundCard.children.length, 1);
   const sleptLog = JSON.parse(asleep.store.get('trainlog'));
   assert.deepEqual(sleptLog.map(entry => [entry.id, entry.type, entry.t]), [['SLP', 'pass', 180000]]);
@@ -632,7 +637,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 180000}, null);
   liveFix({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 290000}, null);
   assert.equal(JSON.parse(asleep.store.get('trainlog')).length, 1);
-  assert.match(asleep.elements.status.textContent, /Location mil rahi hai/);
+  assert.match(asleep.elements.status.textContent, /Location found/);
   await asleep.elements.stop.onclick();
   assert.equal(sessionsEnded, 1);
   assert.equal(asleep.elements['background-status'].hidden, true);
@@ -706,7 +711,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   standing.watches[0].success(fix(28, 110000, 0));
   assert.equal(standing.elements['live-stop'].hidden, true);  // 6 seconds: not a halt yet
   standing.watches[0].success(fix(28, 119000, 0));
-  assert.match(standing.elements['live-stop'].textContent, /^Abhi ruki hai: Standing Station \(STD\) — .+ se \(0\.3 min\)$/);
+  assert.match(standing.elements['live-stop'].textContent, /^Stopped now: Standing Station \(STD\) — since .+ \(0\.3 min\)$/);
   standing.watches[0].success(fix(28.0005, 130000, 10));
   assert.equal(standing.elements['live-stop'].hidden, true);
 
@@ -732,7 +737,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const closeEntry = JSON.parse(rings.store.get('trainlog'))[0];
   assert.equal(closeEntry.type, 'pass');
   assert.ok(closeEntry.near >= 45 && closeEntry.near <= 55);
-  assert.match(rings.elements.log.children[0].children[1].textContent, /^Paar kiya: .+ · \d+ m paas se$/);
+  assert.match(rings.elements.log.children[0].children[1].textContent, /^Passed: .+ · within \d+ m$/);
   drive(rings, 28.0035, 28.03, clock);
   assert.deepEqual(logIds(rings), ['CLS']);                  // Wide (589 m off the line) was beaten by Close
 
@@ -919,7 +924,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: {time: 1, dial: 1, date: 1.05}});
   knob['size-done'].onclick();
   assert.equal(knob['clock-sizes'].hidden, true);
-  // Kept for the next start; "Pehle jaisa" puts the sizes of the way in use back.
+  // Kept for the next start; "Reset" puts the sizes of the way in use back.
   const resized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), sized.store);
   const again = resized.elements;
   again['clock-full'].onclick();
@@ -1048,10 +1053,10 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // names one station and a route does not get the same junction twice.
   assert.equal(labels('EKNR')[0], 'Kevadiya (EKNR)');
   assert.equal(labels('NKMG')[0], 'New Karimganj Junction (NKMG)');
-  assert.deepEqual(labels('PRYJ').filter(label => /PRYJ/.test(label)), ['ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)']);
-  assert.deepEqual(labels('DDU').filter(label => /\(DDU\)/.test(label)), ['MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)']);
+  assert.deepEqual(labels('PRYJ').filter(label => /PRYJ/.test(label)), ['ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)']);
+  assert.deepEqual(labels('DDU').filter(label => /\(DDU\)/.test(label)), ['MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)']);
   assert.deepEqual(labels('Baruna').filter(label => /\(BUE\)/.test(label)), ['BARUNA (BUE)']);
-  assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)'));
   assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));
 
   // No route chosen: the next station is the nearest one ahead in the direction of travel (Buxar towards DDU).
@@ -1060,9 +1065,101 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   free.elements.start.onclick();
   const at = (lat, lon, t) => ({coords: {latitude: lat, longitude: lon, accuracy: 4, speed: 30}, timestamp: t});
   free.watches[0].success(at(25.5600, 83.9600, 100000));
-  assert.match(free.elements.next.textContent, /train chalne par dikhega/);
+  assert.match(free.elements.next.textContent, /shown once the train moves/);
   free.watches[0].success(at(25.5560, 83.9300, 200000));
-  assert.match(free.elements.next.textContent, /Agla station \(disha se anumaan\): .+\), \d+\.\d\d km/);
+  assert.match(free.elements.next.textContent, /Next station \(estimated from direction\): .+\), \d+\.\d\d km/);
   assert.doesNotMatch(free.elements.next.textContent, /BUXAR/);
+  // ---- Everything the app shows is in English (its name, Suffer Sathi, aside): the page's text, placeholders and
+  // labels, every message its script writes, and the native side's dialogs, toasts and notifications.
+  const HINGLISH = new RegExp('\\b(' + ['karein', 'karo', 'kare', 'karke', 'karne', 'karna', 'kar', 'kiya', 'kiye', 'nahi',
+    'nahin', 'hai', 'hain', 'mein', 'aur', 'abhi', 'pehle', 'baad', 'agla', 'agle', 'nazdiki', 'nazdeeki', 'safar', 'samay',
+    'ghadi', 'tarikh', 'gola', 'shuru', 'antim', 'apna', 'raste', 'rasta', 'ruka', 'ruki', 'rukne', 'anumaan', 'disha',
+    'dobara', 'pichla', 'pichle', 'naya', 'taiyar', 'koshish', 'chalu', 'chahiye', 'sakte', 'saka', 'sakti', 'jaisa',
+    'lagbhag', 'khaali', 'khali', 'dhoondh', 'kholein', 'theek', 'bada', 'chhota', 'padhe', 'hua', 'hui', 'rahe', 'raha',
+    'rahi', 'wali', 'wala', 'kuch', 'koi', 'sab', 'sabse', 'bina', 'zaroori', 'jis', 'jiska', 'uska', 'kiska', 'hata',
+    'hatayein', 'hatane', 'badalne', 'badlein', 'likhein', 'likhkar', 'neeche', 'aayi', 'chunkar', 'chunein', 'chuna',
+    'chunna', 'dekhein', 'mila', 'mili', 'jodein', 'joda', 'jodne', 'dabayein', 'banayein', 'banega', 'bana', 'gaya',
+    'gayi', 'ho', 'ka', 'ki', 'ke', 'ko', 'se', 'tak', 'ya', 'yahi', 'phir', 'sahi', 'intezar', 'aasman', 'khule',
+    'jayein', 'laga', 'hokar', 'jaana', 'chhod', 'paas', 'paar', 'dono', 'alag', 'ek', 'beech', 'doosra', 'liye',
+    'sambhavit', 'nirdharit', 'purani', 'chhoot', 'chhooti', 'maangega', 'pushti', 'sawaal', 'aayega', 'poora', 'ab',
+    'dein', 'dikhega', 'hoga', 'hogi', 'wahi', 'yeh', 'tha', 'thi', 'aaya', 'padh', 'paye', 'dabaiye', 'hue',
+    'gola', 'rang', 'badal', 'kam', 'zaroorat', 'baaki', 'adhoora', 'aane', 'naam', 'bahut', 'jab', 'tab', 'kya', 'bhi',
+    'sirf', 'apni', 'apne', 'upar', 'andar', 'zyada', 'thoda', 'pura', 'poori', 'dabakar', 'chalne', 'rukna', 'intezaar'].join('|') + ')\\b', 'i');
+  // The texts in a script (JavaScript or Java): its strings and the text of its templates, with the strings inside
+  // a template's ${...} too (read the same way), and not its comments or regular expressions.
+  function texts(code) {
+    const found = [];
+    // Reads from i to the end, or (inner) to the } that closes a template's ${, and gives where it stopped.
+    function scan(i, inner) {
+      let before = 'operator', depth = 0;
+      while (i < code.length) {
+        const c = code[i], next = code[i + 1];
+        if (c === '/' && next === '/') { const end = code.indexOf('\n', i); i = end < 0 ? code.length : end; continue; }
+        if (c === '/' && next === '*') { const end = code.indexOf('*/', i + 2); i = end < 0 ? code.length : end + 2; continue; }
+        if (c === "'" || c === '"') {
+          let text = '';
+          for (i++; i < code.length && code[i] !== c; i++) text += code[i] === '\\' ? code[++i] : code[i];
+          found.push(text);
+          i++;
+          before = 'value';
+          continue;
+        }
+        if (c === '`') {
+          let text = '';
+          for (i++; i < code.length && code[i] !== '`'; i++) {
+            if (code[i] === '\\') { text += code[++i]; continue; }
+            if (code[i] === '$' && code[i + 1] === '{') { i = scan(i + 2, true); text += ' '; continue; }
+            text += code[i];
+          }
+          found.push(text);
+          i++;
+          before = 'value';
+          continue;
+        }
+        if (c === '/' && before !== 'value') {           // a regular expression: no value stands before it
+          let inClass = false;
+          for (i++; i < code.length && (code[i] !== '/' || inClass); i++) {
+            if (code[i] === '\\') i++;
+            else if (code[i] === '[') inClass = true;
+            else if (code[i] === ']') inClass = false;
+          }
+          for (i++; /[a-z]/i.test(code[i] || ''); i++);
+          before = 'value';
+          continue;
+        }
+        if (inner && c === '{') { depth++; before = 'operator'; i++; continue; }
+        if (inner && c === '}') { if (!depth) return i; depth--; before = 'value'; i++; continue; }
+        if (/\s/.test(c)) { i++; continue; }
+        if (/[\w$]/.test(c)) {
+          let j = i;
+          while (j < code.length && /[\w$]/.test(code[j])) j++;
+          before = /^(return|typeof|case|in|of)$/.test(code.slice(i, j)) ? 'keyword' : 'value';
+          i = j;
+          continue;
+        }
+        before = c === ')' || c === ']' || c === '}' ? 'value' : 'operator';
+        i++;
+      }
+      return i;
+    }
+    scan(0, false);
+    return found;
+  }
+  const shown = [];
+  const page = html.replace(/<script>[\s\S]*?<\/script>|<style>[\s\S]*?<\/style>/g, '');
+  for (const match of page.matchAll(/>([^<]+)</g)) shown.push(match[1]);
+  for (const match of page.matchAll(/\b(?:placeholder|aria-label|title|alt)="([^"]*)"/g)) shown.push(match[1]);
+  // Keys and file names (no spaces, with - . / or _) are not shown.
+  const words = text => /\s/.test(text.trim()) || !/[-./_]/.test(text);
+  for (const text of texts(script)) if (words(text)) shown.push(text);
+  const nativeDir = require('path').join(__dirname, '..', 'android', 'app', 'src', 'main');
+  const javaDir = require('path').join(nativeDir, 'java', 'com', 'railtrack', 'app');
+  for (const file of fs.readdirSync(javaDir).filter(name => name.endsWith('.java')))
+    for (const text of texts(fs.readFileSync(require('path').join(javaDir, file), 'utf8'))) if (words(text)) shown.push(text);
+  for (const match of fs.readFileSync(require('path').join(nativeDir, 'res', 'values', 'strings.xml'), 'utf8').matchAll(/<string name="[^"]*">([^<]*)</g))
+    shown.push(match[1]);
+  assert.ok(shown.some(text => text.includes('Suffer Sathi')) && shown.length > 100, 'the texts are found');
+  const inHinglish = shown.filter(text => HINGLISH.test(text));
+  assert.deepEqual(inHinglish, [], 'text in Hinglish on the screen:\n' + inHinglish.join('\n'));
   console.log('Safar tracker checks passed');
 })().catch(err => { console.error(err); process.exitCode = 1; });

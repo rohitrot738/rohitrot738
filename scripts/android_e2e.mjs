@@ -330,7 +330,7 @@ function clearOfEachOther(clock) {
 
 // The sizes of the full-screen clock, worked as a finger would: the gear opens the bar, a part is picked and slid
 // larger, Auto makes room for a larger dial, the sizes stay after leaving the clock, Custom keeps each part's own
-// size, and "Pehle jaisa" brings the first layout back.
+// size, and "Reset" brings the first layout back.
 async function clockSizesCheck(page) {
   await page.run(`localStorage.removeItem('safar-clock-sizes'); clockSizes.mode = 'auto';
     for (const mode of ['auto', 'custom']) for (const part of CLOCK_PARTS) clockSizes[mode][part] = 1;
@@ -360,7 +360,7 @@ async function clockSizesCheck(page) {
   await settledShot('clock-sizes-auto-larger-dial');
   const dialOf = clock => clock.dial[2] - clock.dial[0];
   check(dialOf(larger) > dialOf(plain) + 40, 'sizes: sliding makes the dial larger', `${dialOf(plain)} -> ${dialOf(larger)} px, ${larger.value}`);
-  check(!larger.open, 'sizes: "Ho gaya" right after sliding closes the bar');
+  check(!larger.open, 'sizes: "Done" right after sliding closes the bar');
   check(larger.dateFont < plain.dateFont, 'sizes: in Auto the date gives the larger dial room', `${plain.dateFont} -> ${larger.dateFont}`);
   check(!clearOfEachOther(larger).length, 'sizes: in Auto nothing covers anything with the larger dial', clearOfEachOther(larger).join('; '));
 
@@ -387,7 +387,7 @@ async function clockSizesCheck(page) {
     `${own.font} / ${own.dateFont} against ${plain.font} / ${plain.dateFont}`);
 
   // Like a picture: the dial's bottom left handle drawn out, away from the dial's top right corner, makes it larger;
-  // two fingers pinched to half their distance halve it; "Ho gaya" straight after the pinch still closes the bar.
+  // two fingers pinched to half their distance halve it; "Done" straight after the pinch still closes the bar.
   const [hx, hy, turned, zoom] = await page.run(`const r = document.getElementById('size-handle-3').getBoundingClientRect();
     return [r.left + r.width / 2, r.top + r.height / 2, document.body.className.includes('turned'), visualViewport.scale];`);
   await drag(page, [hx, hy], turned ? [hx - 60, hy - 60] : [hx - 60, hy + 60]);
@@ -402,7 +402,7 @@ async function clockSizesCheck(page) {
   check(Math.abs(parseInt(pinched.value) / 100 - halfOf) <= 0.02, 'sizes: two fingers pinched to half their distance halve the dial', `${drawnOut.value} -> ${pinched.value}`);
   check((await page.run(`return visualViewport.scale;`)) === zoom, 'sizes: the page itself does not zoom under two fingers');
   await tap(page, '#size-done');
-  check(!(await page.run(SIZES)).open, 'sizes: "Ho gaya" right after a pinch closes the bar');
+  check(!(await page.run(SIZES)).open, 'sizes: "Done" right after a pinch closes the bar');
   await tap(page, '#clock-edit');
 
   await tap(page, '#size-reset');
@@ -411,7 +411,7 @@ async function clockSizesCheck(page) {
   await tap(page, '#size-done');
   const reset = await page.run(SIZES);
   check(dialOf(reset) === dialOf(plain) && reset.font === plain.font && reset.dateFont === plain.dateFont && !reset.open,
-    '"Pehle jaisa" brings back the first layout', `${dialOf(reset)} px, ${reset.font}, ${reset.dateFont}`);
+    '"Reset" brings back the first layout', `${dialOf(reset)} px, ${reset.font}, ${reset.dateFont}`);
   await tap(page, '#clock-full');
   await sleep(2000);
   check((await page.run(`return document.body.className;`)) === '', 'sizes: EXIT leaves the full-screen clock');

@@ -95,66 +95,66 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><button id="clock-edit" type="button" aria-label="Ghadi ke size badlein"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
-<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Samay</button><button id="size-dial" type="button">Speed gola</button><button id="size-date" type="button">Din-tarikh</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
-<div class="size-row"><button id="size-down" type="button" aria-label="Chhota karein">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Bada karein">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Pehle jaisa</button><button id="size-done" type="button">Ho gaya</button></div></div>
+<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full-screen clock"></button><button id="clock-edit" type="button" aria-label="Change the clock sizes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Choose the colour of the time"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
+<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Time</button><button id="size-dial" type="button">Speed dial</button><button id="size-date" type="button">Date</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
+<div class="size-row"><button id="size-down" type="button" aria-label="Smaller">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Larger">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Reset</button><button id="size-done" type="button">Done</button></div></div>
 <div id="size-box" hidden></div><div class="size-handle" id="size-handle-0" hidden></div><div class="size-handle" id="size-handle-1" hidden></div><div class="size-handle" id="size-handle-2" hidden></div><div class="size-handle" id="size-handle-3" hidden></div></div>
 <div class="card">
-  <b>Apna route chunein</b><br>
-  <label for="origin">Shuru station</label><br>
-  <input id="origin" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+  <b>Choose your route</b><br>
+  <label for="origin">Start station</label><br>
+  <input id="origin" autocomplete="off" placeholder="Type a name or code, then pick it from the list">
   <div class="suggest" id="origin-options"></div>
   <div id="via-row-1" hidden>
     <label for="via-1">Via station 1</label><br>
-    <input id="via-1" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <input id="via-1" autocomplete="off" placeholder="A station to go through (may be left empty)">
     <div class="suggest" id="via-1-options"></div>
   </div>
   <div id="via-row-2" hidden>
     <label for="via-2">Via station 2</label><br>
-    <input id="via-2" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <input id="via-2" autocomplete="off" placeholder="A station to go through (may be left empty)">
     <div class="suggest" id="via-2-options"></div>
   </div>
   <div id="via-row-3" hidden>
     <label for="via-3">Via station 3</label><br>
-    <input id="via-3" autocomplete="off" placeholder="Jis station se hokar jaana hai (khaali chhod sakte hain)">
+    <input id="via-3" autocomplete="off" placeholder="A station to go through (may be left empty)">
     <div class="suggest" id="via-3-options"></div>
   </div>
-  <button id="add-via" class="alt" type="button">+ Via station jodein</button><br>
-  <label for="destination">Antim station</label><br>
-  <input id="destination" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+  <button id="add-via" class="alt" type="button">+ Add a via station</button><br>
+  <label for="destination">End station</label><br>
+  <input id="destination" autocomplete="off" placeholder="Type a name or code, then pick it from the list">
   <div class="suggest" id="destination-options"></div>
-  <button id="find-route" class="alt">Route banayein</button>
-  <div id="route-status" class="small">Route chunna zaroori nahi; bina route ke agla station chalne ki disha se dikhega.</div>
-  <details id="route-details" hidden><summary>Route ke station: kiska log chahiye, chunein</summary>
+  <button id="find-route" class="alt">Find route</button>
+  <div id="route-status" class="small">A route is optional; without one, the next station is worked out from the direction of travel.</div>
+  <details id="route-details" hidden><summary>Stations on the route: choose which to log</summary>
     <div id="route-choice" class="small"></div>
-    <button id="route-all" class="alt" type="button">Sab chunein</button><button id="route-none" class="alt" type="button">Sab hatayein</button>
+    <button id="route-all" class="alt" type="button">Select all</button><button id="route-none" class="alt" type="button">Clear all</button>
     <ol id="route-list"></ol>
-    <label for="add-station">Is route mein station jodein</label><br>
-    <input id="add-station" autocomplete="off" placeholder="Naam ya code likhein, phir list se chunein">
+    <label for="add-station">Add a station to this route</label><br>
+    <input id="add-station" autocomplete="off" placeholder="Type a name or code, then pick it from the list">
     <div class="suggest" id="add-station-options"></div>
-    <button id="add-station-btn" class="alt" type="button">Station jodein</button>
+    <button id="add-station-btn" class="alt" type="button">Add station</button>
     <div id="add-station-status" class="small"></div>
-    <button id="route-save" type="button">Save karein</button><button id="route-clear" class="alt" type="button">Route hatayein</button>
+    <button id="route-save" type="button">Save</button><button id="route-clear" class="alt" type="button">Remove route</button>
   </details>
 </div>
 <div>
   <select id="mode">
-    <option value="auto">Auto (GPS, zaroorat par kam accuracy)</option>
+    <option value="auto">Auto (GPS, lower accuracy when needed)</option>
     <option value="gps">GPS (high accuracy)</option>
-    <option value="network">Kam accuracy / network location</option>
+    <option value="network">Low accuracy / network location</option>
   </select>
   <button id="start">Start</button>
   <button id="stop" class="alt">Stop</button>
 </div>
-<div class="card" id="status">Status: ruka hua</div>
+<div class="card" id="status">Status: stopped</div>
 <div class="card small" id="background-status" hidden></div>
 <div class="card" id="data-status" hidden></div>
 <div class="speedo" id="speedo" aria-label="Speed"><b id="speed">—</b><span id="speed-unit">km/h</span></div>
-<div class="card" id="now">Nazdiki station: —</div>
-<div class="card" id="next">Agla station: Start dabayein</div>
+<div class="card" id="now">Nearest station: —</div>
+<div class="card" id="next">Next station: press Start</div>
 <button id="csv" class="alt">CSV download</button>
-<button id="clear" class="alt">Log clear</button>
-<h3>Safar ka log</h3>
+<button id="clear" class="alt">Clear log</button>
+<h3>Journey log</h3>
 <div class="card stop" id="live-stop" hidden></div>
 <div id="log"></div>
 <details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
@@ -198,11 +198,11 @@ function dist(a, b, c, d) {
 }
 
 function parseStations(rows, source = 'DataMeet + project fallback') {
-  if (!Array.isArray(rows) || (!rows.length && source !== 'OpenStreetMap')) throw new Error('Station list khali hai');
+  if (!Array.isArray(rows) || (!rows.length && source !== 'OpenStreetMap')) throw new Error('The station list is empty');
   const parsed = rows.filter(r => Array.isArray(r) && typeof r[0] === 'string' &&
     typeof r[1] === 'string' && Number.isFinite(r[2]) && Number.isFinite(r[3]))
     .map(([id, name, lat, lon, code]) => (typeof code === 'string' && code ? {id, name, lat, lon, source, code} : {id, name, lat, lon, source}));
-  if (!parsed.length && source !== 'OpenStreetMap') throw new Error('Station list sahi nahi hai');
+  if (!parsed.length && source !== 'OpenStreetMap') throw new Error('The station list is not valid');
   return parsed;
 }
 
@@ -254,7 +254,7 @@ function stationSuggestions(inputId, listId, changed) {
   input.oninput = () => {
     if (input.dataset) delete input.dataset.stationId;
     changed?.();
-    if (route && tracking) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
+    if (route && tracking) $('route-status').textContent = `Chosen route: ${route[0].name} to ${route[route.length - 1].name}. To change it, press Stop, then Find route.`;
     const text = input.value.trim().toUpperCase();
     const list = $(listId);
     list.replaceChildren();
@@ -263,7 +263,7 @@ function stationSuggestions(inputId, listId, changed) {
       const option = document.createElement('button'), renamed = RENAMED[s.id];
       option.type = 'button';
       option.className = 'alt';
-      option.textContent = stationLabel(s) + (renamed ? ` — ab ${renamed[1]} (${renamed[0]})` : '');
+      option.textContent = stationLabel(s) + (renamed ? ` — now ${renamed[1]} (${renamed[0]})` : '');
       option.onclick = () => {
         input.value = stationLabel(s);
         if (input.dataset) input.dataset.stationId = s.id;
@@ -298,7 +298,7 @@ async function fetchEdges(url, read) {
     const rows = read(await r.json());
     return Array.isArray(rows) ? rows : [];
   } catch (e) {
-    console.warn('Route data load nahi hua: ' + url, e);
+    console.warn('Route data did not load: ' + url, e);
     return [];
   } finally {
     clearTimeout(timeout);
@@ -323,7 +323,7 @@ async function getGraph() {
   };
   for (const edge of timetable) if (Array.isArray(edge)) add(edge[0], edge[1], edge[2] * 1000);
   for (const edge of osm) if (Array.isArray(edge)) add(edge[0], edge[1], edge[2]);
-  if (!graph.size) throw new Error('Route data nahi mila');
+  if (!graph.size) throw new Error('No route data');
   // Catalog stations that no link shorter than a long hop reaches: halts, cabins and block huts the timetable links
   // pass over. A route takes them in where they lie on its line (stationsOnLine).
   unlinked = stations.filter(s => !s.id.startsWith('OSM:')
@@ -476,12 +476,12 @@ function fillRoute(graph, ids, byId) {
 
 async function selectRoute() {
   if (tracking) {
-    $('route-status').textContent = 'Route badalne se pehle Stop dabayein; adhoora visit save nahi hoga.';
+    $('route-status').textContent = 'Press Stop before changing the route; a visit in progress would not be saved.';
     return;
   }
   const from = findStation($('origin')), to = findStation($('destination'));
   if (!from || !to || from.id === to.id) {
-    $('route-status').textContent = stations.length ? 'Shuru aur antim station likhkar neeche aayi list se tap karke chunein; dono alag hone chahiye.' : 'Station list abhi taiyar nahi hai.';
+    $('route-status').textContent = stations.length ? 'Type the start and end stations and tap each in the list below; they must be different.' : 'The station list is not ready yet.';
     return;
   }
   // Via stations the route must pass through, in order; an empty box is skipped.
@@ -490,7 +490,7 @@ async function selectRoute() {
     if (!$('via-' + i).value.trim()) continue;
     const via = findStation($('via-' + i));
     if (!via) {
-      $('route-status').textContent = `Via station ${i} nahi mila. Likhkar neeche aayi list se tap karke chunein, ya box khaali kar dein.`;
+      $('route-status').textContent = `Via station ${i} not found. Type it and tap it in the list below, or empty the box.`;
       return;
     }
     boxes.push(['via-' + i, via]);
@@ -498,7 +498,7 @@ async function selectRoute() {
   boxes.push(['destination', to]);
   const stops = boxes.map(box => box[1]);
   if (stops.some((stop, i) => i && stop.id === stops[i - 1].id)) {
-    $('route-status').textContent = 'Ek ke baad ek aane wale station alag hone chahiye (shuru, via, antim).';
+    $('route-status').textContent = 'Stations that follow one another must be different (start, via, end).';
     return;
   }
   // Each box shows the station that was found, by name and code, also when only its code was typed, and the
@@ -510,7 +510,7 @@ async function selectRoute() {
   }
   $('find-route').disabled = true;
   $('start').disabled = true;
-  $('route-status').textContent = 'Rasta dhoondh rahe hain...';
+  $('route-status').textContent = 'Finding the route...';
   try {
     const graph = await getGraph();
     const byId = new Map(stations.map(s => [s.id, s]));
@@ -527,7 +527,7 @@ async function selectRoute() {
     const ids = [from.id];
     for (let i = 1; i < stops.length; i++) {
       const leg = shortestRoute(graph, stops[i - 1].id, stops[i].id, extra);
-      if (!leg) throw new Error('In stations ke beech route nahi mila');
+      if (!leg) throw new Error('No route between these stations');
       ids.push(...leg.slice(1));
     }
     route = fillRoute(graph, ids, byId).map(id => byId.get(id));
@@ -540,14 +540,14 @@ async function selectRoute() {
     $('route-details').hidden = false;
     $('route-details').open = true;
     const viaNames = stops.slice(1, -1).map(stop => stop.name).join(', ');
-    $('route-status').textContent = `Route bana${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, lagbhag ${Math.round(metres / 1000)} km (sabse chhota rasta, anumaan). Neeche list mein jis station ka log nahi chahiye uska tick hata dein.`;
-    $('next').textContent = 'Agla station: Start dabayein aur location ka intezar karein.';
+    $('route-status').textContent = `Route ready${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, about ${Math.round(metres / 1000)} km (shortest path, estimated). In the list below, untick any station you do not want logged.`;
+    $('next').textContent = 'Next station: press Start and wait for the location.';
   } catch (e) {
-    console.warn('Route nahi bana', e);
-    const reason = e.message === 'In stations ke beech route nahi mila'
-      ? 'in stations ke beech rasta nahi mila. Doosra nazdeeki station chunkar dekhein.'
+    console.warn('Could not make the route', e);
+    const reason = e.message === 'No route between these stations'
+      ? 'no path found between these stations. Try another station nearby.'
       : `${e.message}.`;
-    $('route-status').textContent = `Route nahi bana: ${reason}${route ? ' Pehle chuna route abhi bhi laga hua hai.' : ''}`;
+    $('route-status').textContent = `Could not make the route: ${reason}${route ? ' The route chosen before is still in use.' : ''}`;
   } finally {
     $('find-route').disabled = false;
     $('start').disabled = false;
@@ -582,7 +582,7 @@ function renderRouteList() {
 
 function showRouteChoice() {
   const chosen = route.filter(s => !skipIds.has(s.id)).length;
-  $('route-choice').textContent = `${chosen} / ${route.length} station ka log banega. Jiska log nahi chahiye uska tick hata dein.`;
+  $('route-choice').textContent = `${chosen} / ${route.length} stations will be logged. Untick any you do not want logged.`;
   saveRoute();
 }
 
@@ -596,7 +596,7 @@ function saveRoute() {
       route: route.map(s => s.id), skip: [...skipIds], origin: box('origin'), destination: box('destination'),
       via: [1, 2, 3].slice(0, viaCount).map(i => box('via-' + i))
     }));
-  } catch (e) { console.warn('Route save nahi hua', e); }
+  } catch (e) { console.warn('Route not saved', e); }
 }
 
 function restoreRoute() {
@@ -625,8 +625,8 @@ function restoreRoute() {
     renderRouteList();
     $('route-details').hidden = false;
     const chosen = route.filter(s => !skipIds.has(s.id)).length;
-    $('route-status').textContent = `Save kiya hua route: ${route[0].name} se ${route[route.length - 1].name}. ${chosen} / ${route.length} station ka log banega.`;
-  } catch (e) { console.warn('Save kiya hua route nahi khula', e); }
+    $('route-status').textContent = `Saved route: ${route[0].name} to ${route[route.length - 1].name}. ${chosen} / ${route.length} stations will be logged.`;
+  } catch (e) { console.warn('The saved route did not open', e); }
 }
 
 function confirmRouteSaved() {
@@ -634,16 +634,16 @@ function confirmRouteSaved() {
   saveRoute();
   $('route-details').open = false;
   const chosen = route.filter(s => !skipIds.has(s.id)).length;
-  $('route-status').textContent = `Save ho gaya: ${route[0].name} se ${route[route.length - 1].name}, ${chosen} / ${route.length} station ka log banega. App band karne par bhi yahi rahega.`;
+  $('route-status').textContent = `Saved: ${route[0].name} to ${route[route.length - 1].name}, ${chosen} / ${route.length} stations will be logged. It stays when the app is closed.`;
 }
 
 function clearRoute() {
-  if (tracking) { $('route-status').textContent = 'Route hatane se pehle Stop dabayein.'; return; }
+  if (tracking) { $('route-status').textContent = 'Press Stop before removing the route.'; return; }
   route = null; routeIndex = null; skipIds = new Set(); state = {};
   $('route-list').replaceChildren();
   $('route-details').hidden = true;
   saveRoute();
-  $('route-status').textContent = 'Route hata diya. Bina route ke agla station chalne ki disha se dikhega.';
+  $('route-status').textContent = 'Route removed. Without a route, the next station is worked out from the direction of travel.';
 }
 
 function setAllRouteStations(logged) {
@@ -658,23 +658,23 @@ function setAllRouteStations(logged) {
 function addRouteStation() {
   const say = text => { $('add-station-status').textContent = text; };
   if (!route) return;
-  if (tracking) { say('Station jodne se pehle Stop dabayein.'); return; }
+  if (tracking) { say('Press Stop before adding a station.'); return; }
   const s = findStation($('add-station'));
-  if (!s) { say('Station likhkar neeche aayi list se tap karke chunein.'); return; }
+  if (!s) { say('Type a station and tap it in the list below.'); return; }
   if (route.some(other => other.id === s.id)) {
     skipIds.delete(s.id);
-    say(`${stationLabel(s)} route mein pehle se hai; uska log banega.`);
+    say(`${stationLabel(s)} is already on the route; it will be logged.`);
   } else {
     const best = nearestSegment(s.lat, s.lon);
     if (!best || best.gap > 25000) {
-      say(`${stationLabel(s)} is route se ${best ? Math.round(best.gap / 1000) + ' km' : 'bahut'} door hai; nahi joda.`);
+      say(`${stationLabel(s)} is ${best ? Math.round(best.gap / 1000) + ' km' : 'too far'} from this route; not added.`);
       return;
     }
     // Before the first station or after the last one when it lies beyond that end, otherwise between the two.
     const at = best.fraction === 0 && best.i === 0 ? 0 : best.fraction === 1 && best.i === route.length - 2 ? route.length : best.i + 1;
     route.splice(at, 0, s);
     routeIndex = null;
-    say(`${stationLabel(s)} joda gaya.`);
+    say(`${stationLabel(s)} added.`);
   }
   $('add-station').value = '';
   renderRouteList();
@@ -723,7 +723,7 @@ function updateHeading(lat, lon) {
 
 // Without a route (or off it): the nearest station ahead in the direction of travel.
 function showAheadStation(lat, lon) {
-  if (heading == null) { $('next').textContent = 'Agla station: train chalne par dikhega.'; return; }
+  if (heading == null) { $('next').textContent = 'Next station: shown once the train moves.'; return; }
   let best = null;
   for (const s of stations) {
     const d = dist(lat, lon, s.lat, s.lon);
@@ -734,22 +734,22 @@ function showAheadStation(lat, lon) {
     if (!best || score < best.score) best = {s, d, score};
   }
   $('next').textContent = best
-    ? `Agla station (disha se anumaan): ${stationLabel(best.s)}, ${(best.d / 1000).toFixed(2)} km`
-    : 'Agla station: is disha mein 80 km tak koi station nahi mila.';
+    ? `Next station (estimated from direction): ${stationLabel(best.s)}, ${(best.d / 1000).toFixed(2)} km`
+    : 'Next station: none within 80 km in this direction.';
 }
 
 function showRoutePosition(p, index) {
   // The next station whose log is wanted: the ones with their tick taken off are passed over here too.
   while (index < route.length - 1 && skipIds.has(route[index].id)) index++;
   const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
-  const label = d <= NEAR ? 'Route par station ke paas' : 'Sambhavit agla station';
-  $('next').textContent = `${label}: ${stationLabel(s)}, ${(d / 1000).toFixed(2)} km — anumaan`;
+  const label = d <= NEAR ? 'Near a station on the route' : 'Likely next station';
+  $('next').textContent = `${label}: ${stationLabel(s)}, ${(d / 1000).toFixed(2)} km — estimated`;
 }
 
 async function loadStations() {
   if (stationListsLoaded || loading || Date.now() < retryAfter) return;
   loading = true;
-  if (!stations.length) dataStatus('Station list download ho rahi hai...', false);
+  if (!stations.length) dataStatus('Downloading the station list...', false);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30000);
   try {
@@ -768,26 +768,26 @@ async function loadStations() {
     restoreRoute();
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
-      console.warn('Station list offline save nahi hui', e);
-      dataStatus('Station list taiyar hai, par offline save nahi hui; internet chahiye hoga.', false);
+      console.warn('Station list not saved for offline use', e);
+      dataStatus('The station list is ready but was not saved for offline use; the internet will be needed.', false);
     }
     if (!$('data-status').textContent.includes('offline save'))
-      dataStatus(`Station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
+      dataStatus(`Station list ready: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
     const queued = pending;
     pending = [];
     for (const p of queued) processPosition(p);
     if (!queued.length && latestPosition && watchId != null) showNearest(latestPosition);
   } catch (e) {
-    console.warn('Station list load nahi hui', e);
+    console.warn('Station list did not load', e);
     retryAfter = Date.now() + 30000;
     if (stations.length) {
-      dataStatus('Saved station list available hai; OSM station list nahi mili. Internet check karein.', true);
+      dataStatus('Saved station list in use; the OSM station list could not be fetched. Check the internet.', true);
       const queued = pending;
       pending = [];
       for (const p of queued) processPosition(p);
       if (!queued.length && latestPosition && watchId != null) showNearest(latestPosition);
     } else {
-      dataStatus('Station list nahi mili. Internet check karein aur page refresh karein.', true);
+      dataStatus('No station list. Check the internet and refresh the page.', true);
     }
   } finally {
     clearTimeout(timer);
@@ -801,7 +801,7 @@ function showNearest(p) {
     const d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
   }
-  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
+  if (nearest) $('now').textContent = `Nearest station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, estimated)`;
 }
 
 function addLog(e) { log.push(e); localStorage.setItem(KEY, JSON.stringify(log)); render(); }
@@ -812,7 +812,7 @@ function stationKey(s) { return s.id || s.name + s.lat; }
 function logWayStop(stop, name, d) {
   if (!stop.moved || loggedStops.includes(stop.start)) return;
   loggedStops.push(stop.start);
-  const place = name ? `Raste mein (${name} se ${(d / 1000).toFixed(2)} km)` : 'Raste mein';
+  const place = name ? `On the way (${(d / 1000).toFixed(2)} km from ${name})` : 'On the way';
   addLog({name: place, id: '', source: 'GPS', type: 'halt', arr: stop.start, dep: stop.end});
 }
 
@@ -895,11 +895,11 @@ function onPos(p) {
   showSpeed(p, latestPosition);
   latestPosition = p;
   const {latitude: lat, longitude: lon, accuracy} = p.coords;
-  $('status').textContent = `Location mil rahi hai (±${Math.round(accuracy)} m)`;
+  $('status').textContent = `Location found (±${Math.round(accuracy)} m)`;
   if (accuracy > ACCURACY_LIMIT) {
     showNearest(p);
-    $('next').textContent = 'GPS accuracy kam hai; agla station nirdharit nahi kar sakte.';
-    $('status').textContent += '. Accuracy kam hai; GPS on karke khule aasman ke neeche try karein.';
+    $('next').textContent = 'GPS accuracy is low; the next station cannot be worked out.';
+    $('status').textContent += '. Accuracy is low; turn GPS on and try under the open sky.';
     loadStations();
     return;
   }
@@ -907,7 +907,7 @@ function onPos(p) {
     pending.push(p);
     if (pending.length > 200) {
       pending.shift();
-      dataStatus('Station data abhi nahi mila; kuch purani locations chhoot sakti hain.', true);
+      dataStatus('Station data not loaded yet; some earlier locations may be missed.', true);
     }
   } else {
     processPosition(p);
@@ -937,7 +937,7 @@ let liveStop = null; // {where, start}
 function showLiveStop(now) {
   const card = $('live-stop');
   if (!liveStop) { card.hidden = true; return; }
-  card.textContent = `Abhi ruki hai: ${liveStop.where} — ${fmt(liveStop.start)} se (${Math.round(Math.max(0, now - liveStop.start) / 6000) / 10} min)`;
+  card.textContent = `Stopped now: ${liveStop.where} — since ${fmt(liveStop.start)} (${Math.round(Math.max(0, now - liveStop.start) / 6000) / 10} min)`;
   card.hidden = false;
 }
 
@@ -1011,12 +1011,12 @@ function processPosition(p) {
   }
   if (openStop && openStop.near == null && nearest) { openStop.near = nearest.s.name; openStop.d = nearest.d; }
   decideClosed();
-  if (nearest) $('now').textContent = `Nazdiki station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, anumaan)`;
-  else $('now').textContent = 'Nazdiki station: data nahi mila';
+  if (nearest) $('now').textContent = `Nearest station: ${nearest.s.name} (${(nearest.d/1000).toFixed(2)} km, estimated)`;
+  else $('now').textContent = 'Nearest station: no data';
   liveStop = null;
   if (openStop && nearest && t - openStop.start >= MIN_HALT * 1000) {
     if (nearest.d <= NEAR) liveStop = {where: stationLabel(nearest.s), start: openStop.start};
-    else if (openStop.moved) liveStop = {where: `Raste mein (${nearest.s.name} se ${(nearest.d / 1000).toFixed(2)} km)`, start: openStop.start};
+    else if (openStop.moved) liveStop = {where: `On the way (${(nearest.d / 1000).toFixed(2)} km from ${nearest.s.name})`, start: openStop.start};
   }
   showLiveStop(t);
   if (index != null) showRoutePosition(p, index);
@@ -1045,14 +1045,14 @@ async function showBackgroundStatus() {
   try {
     const status = await fixBuffer.status();
     const missing = [];
-    if (status.locationOn === false) missing.push('Location (GPS) chalu karein');
-    if (status.backgroundLocation === false) missing.push('Location permission "Allow all the time" karein');
-    if (status.batteryUnrestricted === false) missing.push('Battery "Unrestricted / No restrictions" karein');
-    if (status.notifications === false) missing.push('Notification chalu karein');
+    if (status.locationOn === false) missing.push('Turn on Location (GPS)');
+    if (status.backgroundLocation === false) missing.push('Set the location permission to "Allow all the time"');
+    if (status.batteryUnrestricted === false) missing.push('Set battery use to "Unrestricted / No restrictions"');
+    if (status.notifications === false) missing.push('Turn on notifications');
     const text = document.createElement('div');
     text.textContent = (missing.length
-      ? 'Screen band par log ke liye phone ki settings mein: ' + missing.join(' · ')
-      : 'Screen band par tracking: settings theek hain ✓')
+      ? 'To log with the screen off, in the phone settings: ' + missing.join(' · ')
+      : 'Tracking with the screen off: settings are fine ✓')
       + (status.version ? ` · app version ${status.version}` : '');
     card.replaceChildren();
     card.append(text);
@@ -1060,7 +1060,7 @@ async function showBackgroundStatus() {
     if (missing.length && fixBuffer.openSettings) {
       const open = document.createElement('button');
       open.type = 'button';
-      open.textContent = 'Phone ki settings kholein';
+      open.textContent = 'Open phone settings';
       open.onclick = () => { try { fixBuffer.openSettings()?.catch?.(() => {}); } catch (e) { /* not native */ } };
       card.append(open);
     }
@@ -1087,7 +1087,7 @@ async function drainFixes() {
       try {
         const result = await fixBuffer.drain({after: lastFixTime});
         fixes = Array.isArray(result?.fixes) ? result.fixes : [];
-      } catch (e) { console.warn('Chhooti hui locations nahi mili', e); }
+      } catch (e) { console.warn('Missed locations could not be read', e); }
       const live = liveFixes.splice(0);
       replaying = true;
       for (let i = 0; i < fixes.length + live.length; i++) {
@@ -1117,7 +1117,7 @@ function saveActive() {
       mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops,
       lastFixTime, watcher: nativeWatcher ? nativeWatcher.id : null, leaving
     }));
-  } catch (e) { console.warn('Tracking state save nahi hua', e); }
+  } catch (e) { console.warn('Tracking state not saved', e); }
 }
 
 function acquireWakeLock(currentSession) {
@@ -1125,7 +1125,7 @@ function acquireWakeLock(currentSession) {
   navigator.wakeLock.request('screen').then(lock => {
     if (currentSession !== session || !tracking) return lock.release();
     wakeLock = lock;
-  }).catch(e => console.warn('Screen wake lock nahi mila', e));
+  }).catch(e => console.warn('No screen wake lock', e));
 }
 
 document.addEventListener?.('visibilitychange', () => {
@@ -1138,23 +1138,23 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
   if (tracking || watchId != null || nativeWatcher != null) return;
   tracking = true;
   const mode = $('mode').value;
-  $('status').textContent = 'Location dhoondh rahe hain...';
+  $('status').textContent = 'Finding the location...';
   const currentSession = ++session;
   saveActive();
   const startWeb = highAccuracy => {
-    if (!navigator.geolocation) { $('status').textContent = 'Location support nahi hai'; return; }
+    if (!navigator.geolocation) { $('status').textContent = 'Location is not supported here'; return; }
     watchId = navigator.geolocation.watchPosition(onPos, err => {
       if (currentSession !== session) return;
       if (err.code === 1) {
         stop();
-        $('status').textContent = 'Location permission nahi mili. Browser aur phone ki location permission allow karein, phir Start dabayein.';
+        $('status').textContent = 'No location permission. Allow location for the browser and the phone, then press Start.';
       } else if (mode === 'auto' && highAccuracy) {
         navigator.geolocation.clearWatch(watchId);
         watchId = null;
-        $('status').textContent = 'GPS nahi mila; kam accuracy wali location ki koshish ho rahi hai.';
+        $('status').textContent = 'No GPS; trying a lower-accuracy location.';
         startWeb(false);
       } else {
-        $('status').textContent = 'Location nahi mili ya timeout hua. Phone ka GPS on karein, khule aasman ke neeche jayein; app dobara koshish karega.';
+        $('status').textContent = 'No location yet, or it timed out. Turn the phone\'s GPS on and go under the open sky; the app will try again.';
       }
     }, {enableHighAccuracy: highAccuracy, maximumAge: 5000, timeout: 60000});
   };
@@ -1183,13 +1183,13 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
       if (currentSession !== session || webStarted || pendingFallback) return;
       if (nativeStarting) {
         pendingFallback = reason;
-        $('status').textContent = `Native GPS nahi mila; browser location try ho rahi hai (${reason}).`;
+        $('status').textContent = `No native GPS; trying the browser's location (${reason}).`;
         return;
       }
       webStarted = true;
-      $('status').textContent = `Native GPS nahi mila; browser location try ho rahi hai (${reason}).`;
+      $('status').textContent = `No native GPS; trying the browser's location (${reason}).`;
       if (nativeWatcher && !keepNative) {
-        backgroundGeo.removeWatcher({id: nativeWatcher.id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
+        backgroundGeo.removeWatcher({id: nativeWatcher.id}).catch(e => console.warn('The native GPS watcher did not stop', e));
         nativeWatcher = null;
       }
       startWeb(mode !== 'network');
@@ -1197,7 +1197,7 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
     // The watcher's id comes back directly from the app's own plugin object and as a promise from Capacitor's.
     new Promise(resolve => resolve(backgroundGeo.addWatcher({
       backgroundTitle: 'Suffer Sathi',
-      backgroundMessage: 'Station pass aur halt record ho rahe hain',
+      backgroundMessage: 'Recording station passes and halts',
       requestPermissions: true,
       stale: false,
       distanceFilter: 0
@@ -1205,7 +1205,7 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
       if (currentSession !== session) return;
       if (error) {
         if (error.code === 'NOT_AUTHORIZED') {
-          $('status').textContent = 'Location permission nahi mili. Phone settings mein Suffer Sathi ke liye location allow karein.';
+          $('status').textContent = 'No location permission. Allow location for Suffer Sathi in the phone settings.';
         }
         // The native watcher stays: it starts delivering once location is switched on or allowed, and it alone
         // works with the screen off. Browser location only fills in until then.
@@ -1213,7 +1213,7 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
         return;
       }
       if (!Number.isFinite(location?.latitude) || !Number.isFinite(location?.longitude)) {
-        fallback('location fix nahi mila');
+        fallback('no location fix');
         return;
       }
       gotFix = true;
@@ -1240,7 +1240,7 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
       if (id == null) throw new Error('native GPS start fail');
       nativeStarting = false;
       if (currentSession !== session) {
-        backgroundGeo.removeWatcher({id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
+        backgroundGeo.removeWatcher({id}).catch(e => console.warn('The native GPS watcher did not stop', e));
         return;
       }
       nativeWatcher = {id, plugin: backgroundGeo};
@@ -1250,7 +1250,7 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
       // known to be there.
       if (previousWatcher != null && String(previousWatcher) !== String(id)) {
         Promise.resolve().then(() => backgroundGeo.removeWatcher({id: String(previousWatcher)}))
-          .catch(e => console.warn('Pichle page ka GPS watcher band nahi hua', e));
+          .catch(e => console.warn('The previous page\'s GPS watcher did not stop', e));
       }
       saveActive();
       if (pendingFallback) {
@@ -1259,7 +1259,7 @@ function start({resumeFrom = 0, previousWatcher = null} = {}) {
         fallback(reason);
       }
       nativeFallbackTimer = setTimeout(() => {
-        if (!gotFix && currentSession === session) fallback('20 second mein GPS fix nahi mila', true);
+        if (!gotFix && currentSession === session) fallback('No GPS fix in 20 seconds', true);
       }, 20000);
     }).catch(error => {
       nativeStarting = false;
@@ -1282,12 +1282,12 @@ function stop() {
   }
   if (nativeWatcher) {
     nativeWatcher.plugin.removeWatcher({id: nativeWatcher.id})
-      .catch(e => console.warn('Native GPS watcher band nahi hua', e));
+      .catch(e => console.warn('The native GPS watcher did not stop', e));
     nativeWatcher = null;
   }
   session++;
   if (wakeLock) {
-    wakeLock.release().catch(e => console.warn('Screen wake lock release nahi hua', e));
+    wakeLock.release().catch(e => console.warn('Screen wake lock not released', e));
     wakeLock = null;
   }
   $('speed').textContent = '—';
@@ -1306,21 +1306,28 @@ function stop() {
   liveStop = null; showLiveStop(0);
   try { fixBuffer?.end?.()?.catch?.(() => {}); } catch (e) { /* not native */ }
   $('background-status').hidden = true;
-  $('status').textContent = 'Tracking band hai.';
+  $('status').textContent = 'Tracking is off.';
+}
+
+// Stops on the way that earlier versions wrote down in Hinglish, "Raste mein (NAME se 1.23 km)", are shown and
+// exported in English; every other name as it is.
+function englishName(name) {
+  const old = /^Raste mein(?: \((.+) se ([\d.]+) km\))?$/.exec(name || '');
+  return !old ? name : old[1] ? `On the way (${old[2]} km from ${old[1]})` : 'On the way';
 }
 
 function render() {
   $('log').replaceChildren();
-  if (!log.length) $('log').textContent = 'Abhi koi station log nahi hua.';
+  if (!log.length) $('log').textContent = 'No station logged yet.';
   for (const e of log.slice().reverse()) {
     const card = document.createElement('div'), title = document.createElement('b'), details = document.createElement('div');
     card.className = 'card ' + (e.type === 'halt' ? 'stop' : 'pass');
-    title.textContent = stationLabel(e);
+    title.textContent = stationLabel({...e, name: englishName(e.name)});
     details.textContent = e.type === 'halt'
-      ? `Ruka: ${fmt(e.arr)} se ${fmt(e.dep)} tak (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
-      : `Paar kiya: ${fmt(e.t)}`;
+      ? `Stopped: ${fmt(e.arr)} to ${fmt(e.dep)} (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
+      : `Passed: ${fmt(e.t)}`;
     // How close the train came to the station's listed position.
-    if (Number.isFinite(e.near)) details.textContent += ` · ${e.near} m paas se`;
+    if (Number.isFinite(e.near)) details.textContent += ` · within ${e.near} m`;
     card.append(title, details);
     $('log').append(card);
   }
@@ -1361,12 +1368,12 @@ $('add-via').onclick = () => {
   $('via-row-' + viaCount).hidden = false;
   if (viaCount === 3) $('add-via').hidden = true;
 };
-$('clear').onclick = () => { if (confirm('Log delete karein?')) { log = []; localStorage.removeItem(KEY); render(); } };
+$('clear').onclick = () => { if (confirm('Delete the log?')) { log = []; localStorage.removeItem(KEY); render(); } };
 $('csv').onclick = () => {
   const quote = value => `"${String(value || '').replace(/"/g, '""')}"`;
   const rows = ['station,station_id,source,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
-    ? [quote(e.name), quote(e.id), quote(e.source), 'halt', new Date(e.arr).toISOString(), new Date(e.dep).toISOString()].join(',')
-    : [quote(e.name), quote(e.id), quote(e.source), 'pass', new Date(e.t).toISOString(), ''].join(',')));
+    ? [quote(englishName(e.name)), quote(e.id), quote(e.source), 'halt', new Date(e.arr).toISOString(), new Date(e.dep).toISOString()].join(',')
+    : [quote(englishName(e.name)), quote(e.id), quote(e.source), 'pass', new Date(e.t).toISOString(), ''].join(',')));
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type: 'text/csv'}));
   a.download = 'train-log.csv'; a.click();
@@ -1381,18 +1388,18 @@ try {
     stations = combineStations(catalog, osmCatalog);
     // Not marked as loaded: this is the list an earlier version saved. The list this version ships is still read
     // below, or an update would never bring its new stations.
-    dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
+    dataStatus(`Saved station list ready: DataMeet/project ${catalog.length} + OSM ${osmCatalog.length} stations`, false);
   } else {
     const legacy = localStorage.getItem('safar-stations-v1');
     if (legacy) {
       const rows = JSON.parse(legacy);
       const catalog = parseStations(rows, 'DataMeet + project fallback');
       stations = catalog;
-      dataStatus(`Saved station list taiyar: DataMeet/project ${catalog.length}; OSM update baaki hai`, false);
+      dataStatus(`Saved station list ready: DataMeet/project ${catalog.length}; OSM update pending`, false);
     }
   }
 } catch (e) {
-  console.warn('Saved station list nahi padh paye', e);
+  console.warn('Could not read the saved station list', e);
 }
 loadStations();
 try {
@@ -1431,11 +1438,11 @@ try {
       // journey goes on from the last fix it had: the native side keeps the fixes of the time between, and they
       // are taken from there.
       start({resumeFrom: Number(saved.lastFixTime) || last?.t || 0, previousWatcher: saved.watcher ?? null});
-      $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
+      $('status').textContent = 'The last tracking session was resumed. ' + $('status').textContent;
     }
   }
 } catch (e) {
-  console.warn('Pichla tracking session resume nahi hua', e);
+  console.warn('The last tracking session could not be resumed', e);
 }
 restoreRoute();
 
@@ -1568,7 +1575,7 @@ try {
       if (Number.isFinite(value) && value > 0) clockSizes[mode][part] = value;
     }
   }
-} catch (e) { console.warn('Ghadi ke size nahi padhe', e); }
+} catch (e) { console.warn('Could not read the clock sizes', e); }
 // The sizes bar: whether it is open, the part being sized, and the limits and sizes of the last layout (before there
 // is one, as in a browser without a screen size, the widest limits either way allows).
 let clockEditing = false, sizePart = 'time', sizeLimits = null, sizesShown = null, sizeSliding = false;
@@ -1666,7 +1673,7 @@ function placeSizeBox(laid, long, short) {
 window.addEventListener?.('resize', fitClock);
 
 function saveClockSizes() {
-  try { localStorage.setItem(CLOCK_SIZES_KEY, JSON.stringify(clockSizes)); } catch (e) { console.warn('Ghadi ke size save nahi hue', e); }
+  try { localStorage.setItem(CLOCK_SIZES_KEY, JSON.stringify(clockSizes)); } catch (e) { console.warn('Clock sizes not saved', e); }
   fitClock();
 }
 // Sets the size of the part being sized, held to its limits.
@@ -1688,7 +1695,7 @@ $('size-auto').onclick = () => setSizeMode('auto');
 $('size-custom').onclick = () => setSizeMode('custom');
 $('size-down').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] - 0.05);
 $('size-up').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] + 0.05);
-// "Pehle jaisa": the way in use goes back to the sizes the clock lays out by itself.
+// "Reset": the way in use goes back to the sizes the clock lays out by itself.
 $('size-reset').onclick = () => {
   for (const part of CLOCK_PARTS) sizesInUse()[part] = 1;
   saveClockSizes();
@@ -1709,7 +1716,7 @@ $('size-track').onpointerdown = event => {
 $('size-track').onpointermove = event => { if (sizeSliding) slideClockSize(event); };
 $('size-track').onpointerup = $('size-track').onpointercancel = () => { sizeSliding = false; };
 // The slider's touches are the page's own. Otherwise a quick slide ends in a "fling", and the browser drops a tap
-// made while that lasts (it takes it for stopping a scroll): "Ho gaya" right after sliding did nothing, a few
+// made while that lasts (it takes it for stopping a scroll): "Done" right after sliding did nothing, a few
 // times in ten.
 $('size-track').addEventListener?.('touchstart', event => event.preventDefault(), {passive: false});
 
@@ -1771,12 +1778,12 @@ function setClockMode(on) {
   $('clock-full').innerHTML = on ? 'EXIT' : FULLSCREEN_ICON;
   // In the app, the phone's own bars (status bar on top, buttons below) are hidden while the clock is up.
   const native = nativePlugin('SafarBuffer');
-  try { native?.fullScreen?.({on})?.catch?.(e => console.warn('Full screen nahi hua', e)); }
-  catch (e) { console.warn('Full screen nahi hua', e); }
+  try { native?.fullScreen?.({on})?.catch?.(e => console.warn('Full screen failed', e)); }
+  catch (e) { console.warn('Full screen failed', e); }
   if (on) {
     navigator.wakeLock?.request('screen').then(lock => {
       if (clockMode) clockLock = lock; else lock.release();
-    }).catch(e => console.warn('Screen wake lock nahi mila', e));
+    }).catch(e => console.warn('No screen wake lock', e));
     // In a browser this hides its bars where the phone allows it (the app does it natively, above; there the page's
     // own request is turned down at once). The clock covers the page either way.
     if (!native) { try { document.documentElement?.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* not supported */ } }
@@ -1798,7 +1805,7 @@ function setClockColor(color, remember = true) {
   $('clock-time').style.color = color;
   $('clock-color-now').style.background = color;
   Array.from($('clock-color-menu').children).forEach(choice => { choice.className = choice.dataset.color === color ? 'on' : ''; });
-  if (remember) { try { localStorage.setItem(CLOCK_COLOR_KEY, color); } catch (e) { console.warn('Rang save nahi hua', e); } }
+  if (remember) { try { localStorage.setItem(CLOCK_COLOR_KEY, color); } catch (e) { console.warn('Colour not saved', e); } }
 }
 for (const color of CLOCK_COLORS) {
   const choice = document.createElement('button');

@@ -130,7 +130,7 @@ final class AppUpdate {
         try {
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(release.apkUrl))
                 .setTitle("Suffer Sathi update")
-                .setDescription("Naya version download ho raha hai")
+                .setDescription("Downloading the new version")
                 .setMimeType(APK_MIME)
                 .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE)
                 .setAllowedOverMetered(true)

@@ -38,7 +38,7 @@ if ! adb shell dumpsys activity activities | grep -E '(mResumedActivity|topResum
   adb shell dumpsys activity activities | grep -i 'resumed' || true
   exit 1
 fi
-if adb logcat -d -s AndroidRuntime:E SathiUpdate:E | grep -E 'FATAL EXCEPTION|Could not schedule|schedule nahi ho saka'; then
+if adb logcat -d -s AndroidRuntime:E SathiUpdate:E | grep -E 'FATAL EXCEPTION|Could not schedule'; then
   echo "App or update scheduler failed"
   exit 1
 fi
