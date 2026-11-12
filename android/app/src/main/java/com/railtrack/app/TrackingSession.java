@@ -29,7 +29,7 @@ import com.getcapacitor.JSObject;
  * location: "Allow all the time", and no battery restriction.
  */
 final class TrackingSession {
-    private static final String TAG = "SathiTracking";
+    static final String TAG = "SathiTracking";
     private static final int BACKGROUND_REQUEST = 7341;
     private static final int NOTIFICATION_REQUEST = 7342;
     private static boolean active, gpsStarted, askedBackground, askedBattery, askedLocationOn, askedNotifications;
@@ -52,14 +52,14 @@ final class TrackingSession {
 
     private TrackingSession() {}
 
-    static synchronized void begin(Activity activity) {
+    static synchronized void begin(Activity activity, boolean keepFixes) {
         Context app = activity.getApplicationContext();
         active = true;
         askedBackground = false;
         askedBattery = false;
         askedLocationOn = false;
         askedNotifications = false;
-        FixBuffer.clear();
+        if (!keepFixes) FixBuffer.clear();
         if (wakeLock == null) {
             PowerManager power = (PowerManager) app.getSystemService(Context.POWER_SERVICE);
             if (power != null) {

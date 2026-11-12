@@ -108,10 +108,48 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await flush();
   nativeCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 145000}, null);
   nativeCallback({latitude: 28.01, longitude: 77, accuracy: 10, speed: 10, time: 160000}, null);
+  await flush(); // a fix the native list does not have is used after the list is read
   assert.equal(JSON.parse(native.store.get('trainlog'))[0].name, 'Native Station');
   native.elements.stop.onclick();
   await flush();
   assert.equal(removedNativeWatcher, true);
+
+  // The app as it really is. Capacitor's registerPlugin is not on the page (the page is not built with Capacitor's
+  // script); the native plugins are plain objects on Capacitor.Plugins, and a watcher's id comes back directly, not
+  // as a promise. The page must reach them all the same: for a long time it asked only for registerPlugin and so
+  // never used the native side at all.
+  let appCallback, appRemoved = false, appBegun = 0;
+  const appBars = [];
+  const inApp = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), null, {
+    isNativePlatform: () => true,
+    Plugins: {
+      BackgroundGeolocation: {
+        addWatcher: (_options, callback) => { appCallback = callback; return '17'; },
+        removeWatcher: async ({id}) => { assert.equal(id, '17'); appRemoved = true; }
+      },
+      SafarBuffer: {
+        drain: async () => ({fixes: []}), begin: async () => { appBegun++; }, end: async () => {},
+        status: async () => ({}), fullScreen: async ({on}) => { appBars.push(on); }
+      }
+    }
+  });
+  inApp.elements.start.onclick();
+  await flush();
+  assert.equal(appBegun, 1);
+  assert.equal(inApp.watches.length, 0); // the browser's location, which stops with the screen, is not what runs
+  appCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
+  await flush();
+  appCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 145000}, null);
+  appCallback({latitude: 28.01, longitude: 77, accuracy: 10, speed: 10, time: 160000}, null);
+  await flush();
+  assert.equal(JSON.parse(inApp.store.get('trainlog'))[0].name, 'Native Station');
+  inApp.elements.stop.onclick();
+  await flush();
+  assert.equal(appRemoved, true);
+  // The full-screen clock hides the phone's own bars through the native side, and brings them back.
+  inApp.elements['clock-full'].onclick();
+  inApp.elements['clock-full'].onclick();
+  assert.deepEqual(appBars, [true, false]);
 
   // A slow first native fix adds browser location beside the native watcher, which alone works with the screen
   // off; it is not replaced, and its first fix takes over again.
@@ -199,8 +237,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.origin.value = 'SEB';
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
-  assert.match(routed.elements['route-status'].textContent, /Route bana: 2 stations/);
-  assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'DEHRI ON SONE (DOS)']);
+  // ADSR has no link of its own but lies on the line between the two, so the route takes it in.
+  assert.match(routed.elements['route-status'].textContent, /Route bana: 3 stations/);
+  assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'ADSR (ADSR)', 'DEHRI ON SONE (DOS)']);
+  // Its tick taken off, it is not logged though the train passes right over it.
+  const adsrBox = routed.elements['route-list'].children[1].children[0].children[0];
+  adsrBox.checked = false;
+  adsrBox.onchange();
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
   assert.match(routed.elements.next.textContent, /Sambhavit agla station: DEHRI ON SONE \(DOS\)/);
@@ -381,12 +424,82 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
 
+  // Only a code typed, not picked from the list: after the route is built the boxes show the stations that were
+  // found, by name and code.
+  for (const [id, code] of [['origin', 'ddu'], ['via-1', 'mzp'], ['destination', 'ald']]) {
+    bundled.elements[id].dataset = {};
+    bundled.elements[id].value = code;
+  }
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /^Route bana \(via MIRZAPUR\)/);
+  assert.deepEqual(['origin', 'via-1', 'destination'].map(id => bundled.elements[id].value),
+    ['MUGHAL SARAI JN (MGS)', 'MIRZAPUR (MZP)', 'ALLAHABAD JN (ALD)']);
+  assert.deepEqual(JSON.parse(bundled.store.get('safar-route')).origin, {value: 'MUGHAL SARAI JN (MGS)', id: 'MGS'});
+  // Suggestions left open under a box are put away once the route is built.
+  bundled.elements.destination.value = 'ald';
+  bundled.elements.destination.oninput();
+  assert.ok(bundled.elements['destination-options'].children.length > 0);
+  await bundled.elements['find-route'].onclick();
+  assert.equal(bundled.elements['destination-options'].children.length, 0);
+  assert.equal(bundled.elements.destination.value, 'ALLAHABAD JN (ALD)');
+  // A new start station begins another journey: the via boxes are emptied and put away, and the next route has
+  // no via in it.
+  pick('origin', 'origin-options', 'DDU', 'MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)');
+  assert.equal(bundled.elements['via-1'].value, '');
+  assert.equal(bundled.elements['via-row-1'].hidden, true);
+  assert.equal(bundled.elements['add-via'].hidden, false);
+  await bundled.elements['find-route'].onclick();
+  assert.match(bundled.elements['route-status'].textContent, /^Route bana: \d+ stations/);
+  assert.ok(routeNames().includes('VARANASI JN (BSB)') && !routeNames().includes('MIRZAPUR (MZP)'));
+  // The first via box comes back empty when asked for again.
+  bundled.elements['add-via'].onclick();
+  assert.equal(bundled.elements['via-row-1'].hidden, false);
+  assert.equal(bundled.elements['via-1'].value, '');
+
+  // A link that passes stations by: the route puts them back. North is known to the timetable between Alpha and
+  // Beta, which an OSM link joins directly; Halt has no link at all but lies on the line; Twin is the same place
+  // under a second code; Aside is too far off the line, and Loop is linked but lies a long way round.
+  const passedStations = stationFetcher([['A', 'Alpha', 28, 77], ['N', 'North', 28.05, 77.002], ['B', 'Beta', 28.1, 77],
+    ['H', 'Halt', 28.13, 77.0005], ['T', 'Twin', 28.1301, 77.0005], ['S', 'Aside', 28.15, 77.02], ['L', 'Loop', 28.15, 77.08],
+    ['C', 'Gamma', 28.2, 77]]);
+  const passed = setup(async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A', 'N', 5.57], ['N', 'B', 5.57], ['B', 'C', 11.12], ['B', 'L', 9.6], ['L', 'C', 9.6]]}
+    : url === 'osm-station-routes.json'
+      ? {ok: true, json: async () => ({schema_version: 1, edges: [['A', 'B', 11100]]})}
+      : passedStations(url));
+  await flush();
+  passed.elements.origin.value = 'A';
+  passed.elements.destination.value = 'C';
+  await passed.elements['find-route'].onclick();
+  assert.deepEqual(passed.elements['route-list'].children.map(rowName),
+    ['Alpha (A)', 'North (N)', 'Beta (B)', 'Halt (H)', 'Gamma (C)']);
+
+  // The same on the real data: Patna to Mughal Sarai goes by Neora, Ara and the cabins before Mughal Sarai, which
+  // the shortest links pass by.
+  const readJson = name => JSON.parse(fs.readFileSync(require('path').join(__dirname, name), 'utf8'));
+  const realFiles = {'stations.json': database, 'osm-stations.json': readJson('osm-stations.json'),
+    'edges.json': readJson('edges.json'), 'osm-station-routes.json': readJson('osm-station-routes.json')};
+  const patna = setup(async url => ({ok: url in realFiles, json: async () => realFiles[url]}));
+  await flush();
+  patna.elements.origin.value = 'PNBE';
+  patna.elements.destination.value = 'MGS';
+  await patna.elements['find-route'].onclick();
+  const patnaCodes = patna.elements['route-list'].children.map(rowName).map(name => name.match(/\(([^)]+)\)$/)?.[1]);
+  const place = code => patnaCodes.indexOf(code);
+  for (const [before, code, after] of [['DNR', 'NEO', 'SDE'], ['JMIR', 'ARA', 'JGWL'], ['KCA', 'EOCM', 'MGS']]) {
+    assert.ok(place(before) >= 0 && place(before) < place(code) && place(code) < place(after),
+      `${code} is missing between ${before} and ${after}`);
+  }
+  assert.equal(new Set(patnaCodes).size, patnaCodes.length);
+
   // Choosing which stations are logged: an unticked route station is skipped, a ticked one is logged, and a
   // station the route missed can be added at its place.
+  // Extra stands by the line but belongs to a side line of its own (its link to Side), so the route does not take
+  // it in by itself.
   const chosenStations = stationFetcher([['A', 'Alpha', 28, 77], ['B', 'Beta', 28.1, 77], ['C', 'Gamma', 28.2, 77],
-    ['D', 'Delta', 28.3, 77], ['X', 'Extra', 28.15, 77.001], ['FAR', 'Far Away', 20, 70]]);
+    ['D', 'Delta', 28.3, 77], ['X', 'Extra', 28.15, 77.001], ['Y', 'Side', 28.15, 77.06], ['FAR', 'Far Away', 20, 70]]);
   const chosen = setup(async url => url === 'edges.json'
-    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url));
+    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11], ['X', 'Y', 6]]} : chosenStations(url));
   await flush();
   chosen.elements.origin.value = 'A';
   chosen.elements.destination.value = 'D';
@@ -419,7 +532,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
   assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
   assert.match(reopened.elements['route-status'].textContent, /^Save kiya hua route: Alpha se Delta\. 4 \/ 5 station/);
-  assert.equal(reopened.elements.origin.value, 'A');
+  assert.equal(reopened.elements.origin.value, 'Alpha (A)'); // typed as "A": the box shows the station found
   reopened.elements['route-clear'].onclick();
   assert.equal(reopened.store.has('safar-route'), false);
   assert.equal(reopened.elements['route-details'].hidden, true);
@@ -428,8 +541,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
 
-  // The limits: a station counts within 250 m, the train is stopped below 0.75 m/s (2.7 km/h), and a stop of
-  // 15 seconds or more is a halt.
+  // The limits: a station counts within 250 m, the train is stopping below 5 km/h (1.39 m/s), and a stop of
+  // 15 seconds or more is a halt. A train that only crawled, never below 2.7 km/h, moves off again at 5 km/h.
   const limits = setup(stationFetcher([['LIM', 'Limit Station', 28, 77]]));
   limits.elements.start.onclick();
   limits.watches[0].success(fix(27.99, 100000));
@@ -437,13 +550,43 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   limits.watches[0].success(fix(27.9975, 110000));          // 278 m away: outside the station
   limits.watches[0].success(fix(27.9975, 130000, 0));       // standing there is a stop on the way, not at the station
   limits.watches[0].success(fix(27.998, 160000));           // 222 m away: inside
-  limits.watches[0].success(fix(28, 170000, 0.7));          // below 0.75 m/s: stopped
-  limits.watches[0].success(fix(28, 190000, 0.8));          // above it: moving again, 20 s later
+  limits.watches[0].success(fix(28, 170000, 1.3));          // 4.7 km/h, below 5 km/h: stopped
+  limits.watches[0].success(fix(28, 180000, 1.0));          // 3.6 km/h: still stopping (it was moving below 2.7 km/h)
+  limits.watches[0].success(fix(28, 190000, 1.4));          // 5.04 km/h: moving again, 20 s after it stopped
   limits.watches[0].success(fix(28.01, 260000));
   const limitLog = JSON.parse(limits.store.get('trainlog'));
   const stationEntry = limitLog.find(entry => entry.id === 'LIM');
   assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
   assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
+
+  // Standing still, the train moves off at 2.7 km/h, as asked: the halt runs from the first reading below 5 km/h to
+  // the first at 2.7 km/h or more, and the train speeding up from there (3.6 and 4.3 km/h) is not a new stop.
+  const metre = 1 / 111320;
+  const still = setup(stationFetcher([['STL', 'Still Station', 28, 77]]));
+  still.elements.start.onclick();
+  still.watches[0].success(fix(27.995, 100000));
+  await flush();
+  still.watches[0].success(fix(28, 110000, 1.3));            // 4.7 km/h: stopping
+  still.watches[0].success(fix(28, 115000, 0.2));            // standing
+  still.watches[0].success(fix(28, 140000, 0.2));            // 25 s later, same spot
+  still.watches[0].success(fix(28, 150000, 0.8));            // 2.9 km/h: moved off
+  still.watches[0].success(fix(28 + 5 * metre, 155000, 1.0));
+  still.watches[0].success(fix(28 + 29 * metre, 175000, 1.2));
+  still.watches[0].success(fix(28.01, 200000));
+  const stillLog = JSON.parse(still.store.get('trainlog'));
+  assert.deepEqual(stillLog.map(entry => [entry.id || entry.name, entry.type, entry.arr, entry.dep]),
+    [['STL', 'halt', 110000, 150000]]);
+  // Crawling at 3.6 km/h for 40 s, never standing: one halt, over when the train is at 5 km/h again (7.2 km/h here),
+  // not a halt for every 15 seconds.
+  const crawl = setup(stationFetcher([['CRL', 'Crawl Station', 28, 77]]));
+  crawl.elements.start.onclick();
+  crawl.watches[0].success(fix(27.995, 100000));
+  await flush();
+  for (let i = 0; i <= 8; i++) crawl.watches[0].success(fix(28 - (55 - 5 * i) * metre, 110000 + 5000 * i, 1.0));
+  crawl.watches[0].success(fix(28 - 10 * metre, 155000, 2.0));
+  crawl.watches[0].success(fix(28.01, 200000));
+  assert.deepEqual(JSON.parse(crawl.store.get('trainlog')).map(entry => [entry.id || entry.name, entry.type, entry.arr, entry.dep]),
+    [['CRL', 'halt', 110000, 155000]]);
 
   // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
   // page runs again it reads them and the log has the station, at the time the train was really there.
@@ -493,6 +636,51 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await asleep.elements.stop.onclick();
   assert.equal(sessionsEnded, 1);
   assert.equal(asleep.elements['background-status'].hidden, true);
+
+  // The native list as the app really keeps it: every fix the plugin gives is in it, and it outlives the page.
+  // While the page is held up (screen off) it gets no fixes; when it runs again, a live fix may reach it before the
+  // next drain. It still takes the fixes it missed first, so a station passed meanwhile is in the log. Then the page
+  // is closed and opened again during the journey (Android may do that while the screen is off): the journey is
+  // taken up from the last fix the page had, the native list is kept (not dropped as for a new journey), and a
+  // station passed while the page was closed is in the log too, at the time the train was there.
+  const kept = [], keepAsked = [], running = [];
+  let watcher = null, watchers = 0;
+  const nativeList = name => name === 'SafarBuffer'
+    ? {
+      drain: async ({after}) => ({fixes: kept.filter(f => f.time > after)}),
+      begin: async ({keep} = {}) => { keepAsked.push(keep); if (!keep) kept.length = 0; },
+      end: async () => {}, status: async () => ({})
+    }
+    : {
+      addWatcher: async (_options, callback) => { watcher = callback; running.push('w' + ++watchers); return 'w' + watchers; },
+      removeWatcher: async ({id}) => { if (running.includes(id)) running.splice(running.indexOf(id), 1); }
+    };
+  const along = i => ({time: 100000 + i * 2000, latitude: Math.round((27.98 + i * 0.0005) * 1e4) / 1e4, longitude: 77, accuracy: 10, speed: 27});
+  const twoStations = stationFetcher([['ONE', 'Station One', 28, 77.0005], ['TWO', 'Station Two', 28.05, 77.0005]]);
+  const firstPage = setup(twoStations, null, {isNativePlatform: () => true, registerPlugin: nativeList});
+  firstPage.elements.start.onclick();
+  await flush();
+  for (let i = 0; i <= 10; i++) { kept.push(along(i)); watcher(along(i), null); }
+  await flush();
+  for (let i = 11; i <= 60; i++) kept.push(along(i));      // the page is held up: Station One passes at 180000
+  kept.push(along(61));
+  watcher(along(61), null);                                // the first fix the page hears again
+  await flush();
+  assert.deepEqual(JSON.parse(firstPage.store.get('trainlog')).map(entry => [entry.id, entry.type, entry.t]), [['ONE', 'pass', 180000]]);
+  watcher = null;                                          // the page is closed; Station Two passes at 380000
+  for (let i = 62; i <= 200; i++) kept.push(along(i));
+  const secondPage = setup(twoStations, firstPage.store, {isNativePlatform: () => true, registerPlugin: nativeList});
+  await flush();
+  await flush();
+  assert.deepEqual(keepAsked, [false, true]);
+  assert.deepEqual(JSON.parse(secondPage.store.get('trainlog')).map(entry => [entry.id, entry.type, entry.t]),
+    [['ONE', 'pass', 180000], ['TWO', 'pass', 380000]]);
+  // The location service still ran the first page's watcher; the second page removed it once its own was running,
+  // so after Stop none is left to keep the GPS and the notification on.
+  assert.deepEqual(running, ['w2']);
+  await secondPage.elements.stop.onclick();
+  await flush();
+  assert.deepEqual(running, []);
 
   // A standing train with the screen off: the phone sends no fixes while it sits still. The silence is filled in
   // as a stop from the last fix, so the halt has its real start, not the time fixes came back.
@@ -625,12 +813,14 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     return bundled.elements['origin-options'].children.map(option => option.textContent);
   };
   assert.deepEqual(labels('Baruna').filter(label => /^baruna( \(|$)/i.test(label)).sort(), ['BARUNA (BUE)', 'Baruna']);
-  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction (DDU)'));
+  assert.ok(labels('Deen Dayal Upadhyaya').includes('Deen Dayal Upadhyaya Junction'));
   // An OpenStreetMap station shows the code OSM has for it and is found by it, unless the catalog already has a
-  // station of that code: then only the catalog's entry carries it.
+  // station of that code or one renamed to it: then only the catalog's entry carries it, so that a typed code
+  // names one station and a route does not get the same junction twice.
   assert.equal(labels('EKNR')[0], 'Kevadiya (EKNR)');
   assert.equal(labels('NKMG')[0], 'New Karimganj Junction (NKMG)');
-  assert.equal(labels('PRYJ').filter(label => /Prayagraj Junction \(PRYJ\)/.test(label)).length, 1);
+  assert.deepEqual(labels('PRYJ').filter(label => /PRYJ/.test(label)), ['ALLAHABAD JN (ALD) — ab Prayagraj Jn (PRYJ)']);
+  assert.deepEqual(labels('DDU').filter(label => /\(DDU\)/.test(label)), ['MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)']);
   assert.deepEqual(labels('Baruna').filter(label => /\(BUE\)/.test(label)), ['BARUNA (BUE)']);
   assert.ok(labels('Deen Dayal Upadhyaya').includes('MUGHAL SARAI JN (MGS) — ab Deen Dayal Upadhyaya Jn (DDU)'));
   assert.ok(labels('Baruna').every(label => !/OSM:/.test(label)));

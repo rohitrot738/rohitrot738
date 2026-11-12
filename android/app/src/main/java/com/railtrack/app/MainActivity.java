@@ -12,14 +12,20 @@ import android.content.pm.PackageManager;
 import android.os.Build;
 import android.location.Location;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import android.view.ViewGroup;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 import java.io.File;
 import java.lang.ref.WeakReference;
@@ -55,6 +61,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SafarBufferPlugin.class);
         super.onCreate(savedInstanceState);
         LocalBroadcastManager.getInstance(this).registerReceiver(fixReceiver, new IntentFilter(FIX_BROADCAST));
+        keepPageAlive();
         JobScheduler scheduler = (JobScheduler) getSystemService(JOB_SCHEDULER_SERVICE);
         JobInfo job = new JobInfo.Builder(73418, new ComponentName(this, UpdateCheckService.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
@@ -80,6 +87,58 @@ public class MainActivity extends BridgeActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         // One answer in: ask the next thing background tracking needs, if any.
         TrackingSession.prompt(this);
+    }
+
+    /**
+     * The page runs in a process of its own (the WebView's renderer). With the screen off Android would be free to end
+     * it, as it ends background apps; it is kept as important as the app itself, whose location service is in the
+     * foreground. Should it end all the same, Android ends the whole app as well, journey tracking included, unless
+     * that is handled: the screen is made again instead, and its new page takes the journey up again, reading the
+     * fixes of the time between from the native list.
+     */
+    private void keepPageAlive() {
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getBridge().getWebView().setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        }
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageLoaded(WebView webView) {
+                releaseWebViewFonts();
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView webView, RenderProcessGoneDetail detail) {
+                Log.w(TrackingSession.TAG, "The page's process ended (" + (detail.didCrash() ? "crashed" : "ended by Android")
+                    + "); making the screen again");
+                // A WebView whose page process ended must not be used again: it is taken off the screen and destroyed
+                // at once, so that nothing (a location reaching the page, say) touches it before the screen is made
+                // again. Calls to a destroyed WebView are ignored.
+                ViewGroup parent = (ViewGroup) webView.getParent();
+                if (parent != null) parent.removeView(webView);
+                webView.destroy();
+                recreate();
+                return true;
+            }
+        });
+    }
+
+    /**
+     * When its page starts, the WebView fetches a few fonts from Play services' font provider (Google Sans and an emoji
+     * font, whatever the page shows) and keeps a stable connection to the provider until what it left over is
+     * collected, at times for minutes (seen on the emulator). While that lasts, the app's life is tied to Play services'
+     * process: when that process dies (an update, a crash), Android ends this app too, journey tracking included. So a
+     * collection is asked for, off the main thread, a few times in the first minute after a page loads; the leftovers'
+     * finalizers let go of the provider.
+     */
+    private void releaseWebViewFonts() {
+        Handler main = new Handler(Looper.getMainLooper());
+        for (long delay : new long[] {3000L, 8000L, 15000L, 30000L, 60000L}) {
+            main.postDelayed(() -> new Thread(() -> {
+                Runtime.getRuntime().gc();
+                System.runFinalization();
+            }, "release-webview-fonts").start(), delay);
+        }
     }
 
     @Override
@@ -108,7 +167,9 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onDestroy() {
         LocalBroadcastManager.getInstance(this).unregisterReceiver(fixReceiver);
-        TrackingSession.end(this);
+        // Recreated for a configuration change, the screen comes straight back and its page takes the journey up
+        // again, keeping the fixes; the GPS listener goes on keeping them meanwhile.
+        if (!isChangingConfigurations()) TrackingSession.end(this);
         updates.shutdownNow();
         if (updateDialog != null) updateDialog.dismiss();
         super.onDestroy();

@@ -28,6 +28,7 @@ box-shadow:0 4px 14px rgba(0,0,0,.5)}
 #clock-time{font-size:52px;font-weight:900;line-height:1.1;font-variant-numeric:tabular-nums}
 #clock-date{font-size:19px;color:#cbd5e1;margin-top:2px}
 #clock-sec::before{content:":"}
+#clock-foot{display:inline-block;width:0;height:0}
 #clock-full{position:absolute;top:6px;right:6px;margin:0;padding:6px;line-height:0;background:transparent;color:#cbd5e1}
 #clock-full svg{width:26px;height:26px}
 #clock-color-row{position:absolute;top:6px;left:6px}
@@ -39,18 +40,20 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 #clock-color-menu button.on{border-color:#fff;box-shadow:0 0 0 2px #334155,0 0 0 4px #fff}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
    (body.turned). The speed dial (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the top
-   corner, the date and EXIT beside it, and the time fills the width below, the small seconds level with the foot
-   of the digits. fitClock() sets sizes and places from the real screen, since vh/vw are not dependable inside the
-   app. Everything underneath keeps running. */
+   corner, EXIT in the other top corner with the date under it, and the time fills the width below, the small
+   seconds level with the foot of the digits. fitClock() sets sizes and places from the real screen and the real
+   font, since neither vh/vw nor a font's size can be relied on inside the app. A dark sheet lies under the clock
+   (body::before) so the page never shows at its edges. Everything underneath keeps running. */
 body.clockmode{overflow:hidden}
+body.clockmode::before{content:"";position:fixed;top:-100px;right:-100px;bottom:-100px;left:-100px;z-index:7;background:#0f172a}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:8;margin:0;border-radius:0;background:#0f172a;
 box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:14px 16px}
 body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg)}
-body.clockmode #clock-time{position:absolute;display:flex;align-items:baseline;line-height:1;margin:0;transform-origin:left top}
+body.clockmode #clock-time{position:absolute;display:flex;align-items:baseline;line-height:1;margin:0;white-space:nowrap;transform-origin:left top}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
-body.clockmode #clock-date{margin:0}
-body.clockmode #clock-full{position:static;margin-top:14px;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
+body.clockmode #clock-date{order:2;margin:10px 0 0;white-space:nowrap}
+body.clockmode #clock-full{order:1;position:static;margin:0;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
 body.clockmode #clock-color-row{display:none}
 body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;top:14px;bottom:auto}
 body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
@@ -60,7 +63,7 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span></div><div id="clock-date"></div><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div></div>
+<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -129,7 +132,8 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 const ZONE = 1000, RINGS = [100, 250, 500, 750, 1000], NEAR = 250;
 const ACCURACY_LIMIT = 500; // m; a fix less accurate than this is not used
 const ring = d => RINGS.find(r => d <= r) ?? ZONE;
-const STOP_SPEED = 0.75;  // m/s (2.7 km/h) se kam = ruka hua
+const STOP_SPEED = 5 / 3.6; // m/s: 5 km/h se kam = rukna shuru (15 sec tak rahe to halt)
+const MOVE_SPEED = 0.75;    // m/s (2.7 km/h): khadi gaadi (2.7 se neeche aa chuki) itne par chal padi maani jaati hai
 const MIN_HALT = 15;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
@@ -138,11 +142,12 @@ let nativeFallbackTimer = null, tracking = false;
 const ACTIVE_KEY = 'safar-active';
 const ROUTE_KEY = 'safar-route'; // the chosen route and its ticks, kept until the user removes them
 let wakeLock = null;
-let route = null, routeIndex = null, edgeGraph = null;
+let route = null, routeIndex = null, edgeGraph = null, unlinked = [];
 let heading = null, headingFrom = null, lastActive = null;
 let skipIds = new Set(); // route stations the user unticked: never logged
 let viaCount = 0; // via boxes shown so far (up to 3)
-let openStop = null;  // the stop in progress: {start, moved, near, d}
+let openStop = null;  // the stop in progress: {start, moved, near, d, still}
+let leaving = false;  // moved off from a standstill at 2.7 km/h and not yet at 5 km/h
 let closed = [];      // visits that only reached a wide ring and left the zone, waiting to be compared
 let recent = [];      // decided visits {key, enter, exit, ring}, for comparing later ones against
 let loggedStops = []; // start times of the stops already written to the log
@@ -171,10 +176,11 @@ function parseStations(rows, source = 'DataMeet + project fallback') {
 function stationCode(s) { return s.code || (s.id && !s.id.startsWith('OSM:') ? s.id : ''); }
 function stationLabel(s) { const code = stationCode(s); return code ? `${s.name} (${code})` : s.name; }
 
-// Both lists together. An OSM station keeps its code only when the catalog has no station of that code, so a code
-// names one station.
+// Both lists together. An OSM station keeps its code only when the catalog has no station of that code, nor one
+// renamed to it (DDU is the catalog's MGS), so a code names one station.
 function combineStations(catalog, osmCatalog) {
   const codes = new Set(catalog.map(s => s.id));
+  for (const id of Object.keys(RENAMED)) if (codes.has(id)) codes.add(RENAMED[id][0]);
   return [...catalog, ...osmCatalog.map(s => (s.code && codes.has(s.code) ? {...s, code: undefined} : s))];
 }
 
@@ -205,12 +211,14 @@ function searchStations(text, limit = 40) {
   return found.slice(0, limit).map(item => item[1]);
 }
 
-function stationSuggestions(inputId, listId) {
+// "changed" is called whenever what is in the box is changed by hand.
+function stationSuggestions(inputId, listId, changed) {
   const input = $(inputId);
   // Keeps the box and its list above the keyboard.
   input.onfocus = () => input.scrollIntoView?.({block: 'start', behavior: 'smooth'});
   input.oninput = () => {
     if (input.dataset) delete input.dataset.stationId;
+    changed?.();
     if (route && tracking) $('route-status').textContent = `Chuna route: ${route[0].name} se ${route[route.length - 1].name}. Badalne ke liye Stop karke Route banayein dabayein.`;
     const text = input.value.trim().toUpperCase();
     const list = $(listId);
@@ -281,6 +289,10 @@ async function getGraph() {
   for (const edge of timetable) if (Array.isArray(edge)) add(edge[0], edge[1], edge[2] * 1000);
   for (const edge of osm) if (Array.isArray(edge)) add(edge[0], edge[1], edge[2]);
   if (!graph.size) throw new Error('Route data nahi mila');
+  // Catalog stations that no link shorter than a long hop reaches: halts, cabins and block huts the timetable links
+  // pass over. A route takes them in where they lie on its line (stationsOnLine).
+  unlinked = stations.filter(s => !s.id.startsWith('OSM:')
+    && ![...(graph.get(s.id)?.values() || [])].some(metres => metres <= LONG_HOP));
   edgeGraph = graph;
   return graph;
 }
@@ -345,6 +357,88 @@ function shortestRoute(graph, from, to, extra = new Map()) {
   return null;
 }
 
+// How much longer a path through other stations may be than the hop it replaces, in all and for each of its
+// stations (measured from the hop's two ends); and how far off the straight line of a hop a station may lie
+// (the extra metres of going by it) and how near another one it may be, before it counts as the same place.
+const FILL_RATIO = 1.1, FILL_SLACK = 300, ON_LINE = 300;
+
+// A link can pass stations by: an OSM link joins two stations it knows and passes the ones it does not, and a fast
+// train's hop passes the halts. Where other stations make a path between the two ends of a hop that is hardly
+// longer, and each of them lies between those ends, these are the stations the hop left out, in order.
+function stationsBetween(graph, a, b, byId, used) {
+  const direct = graph.get(a)?.get(b), A = byId.get(a), B = byId.get(b);
+  if (!direct || direct > LONG_HOP || !A || !B) return [];
+  const chord = dist(A.lat, A.lon, B.lat, B.lon);
+  const limit = direct * FILL_RATIO + FILL_SLACK, reach = chord * FILL_RATIO + FILL_SLACK;
+  const open = new Map([[a, 0]]), done = new Set(), previous = new Map();
+  while (open.size) {
+    let id = null, cost = Infinity;
+    for (const [key, value] of open) if (value < cost) { id = key; cost = value; }
+    open.delete(id);
+    done.add(id);
+    if (id === b) {
+      const ids = [];
+      for (let key = previous.get(b); key !== a; key = previous.get(key)) ids.unshift(key);
+      return ids;
+    }
+    for (const [next, metres] of graph.get(id) || []) {
+      if (done.has(next) || (id === a && next === b)) continue;
+      if (next !== b) {
+        const s = byId.get(next);
+        if (used.has(next) || !s || dist(A.lat, A.lon, s.lat, s.lon) + dist(s.lat, s.lon, B.lat, B.lon) > reach) continue;
+      }
+      const candidate = cost + metres;
+      if (candidate <= limit && candidate < (open.get(next) ?? Infinity)) {
+        open.set(next, candidate);
+        previous.set(next, id);
+      }
+    }
+  }
+  return [];
+}
+
+// The stations no link reaches (unlinked) that lie on the straight line of a hop, in order from its first end.
+function stationsOnLine(a, b, byId, used) {
+  const A = byId.get(a), B = byId.get(b);
+  if (!A || !B) return [];
+  const chord = dist(A.lat, A.lon, B.lat, B.lon), found = [];
+  if (chord > LONG_HOP) return [];
+  for (const s of unlinked) {
+    if (used.has(s.id) || Math.abs(s.lat - A.lat) > 0.5 || Math.abs(s.lon - A.lon) > 0.5) continue;
+    const fromA = dist(A.lat, A.lon, s.lat, s.lon), toB = dist(s.lat, s.lon, B.lat, B.lon);
+    if (fromA >= ON_LINE && toB >= ON_LINE && fromA + toB - chord <= ON_LINE) found.push([fromA, s]);
+  }
+  found.sort((x, y) => x[0] - y[0]);
+  const ids = [];
+  let last = null;
+  for (const [, s] of found) {
+    if (last && dist(last.lat, last.lon, s.lat, s.lon) < ON_LINE) continue; // one place listed under two codes
+    ids.push(s.id);
+    last = s;
+  }
+  return ids;
+}
+
+// The shortest way goes link by link, and a link may pass stations by. This puts them back, so that every station
+// of the line is on the route: first the ones other links know, then the ones no link reaches.
+function fillRoute(graph, ids, byId) {
+  const used = new Set(ids);
+  for (let i = 0, added = 0; i < ids.length - 1 && added < 2000;) {
+    const between = stationsBetween(graph, ids[i], ids[i + 1], byId, used);
+    if (!between.length) { i++; continue; }
+    ids.splice(i + 1, 0, ...between); // the first new hop is looked at again
+    between.forEach(id => used.add(id));
+    added += between.length;
+  }
+  for (let i = 0; i < ids.length - 1; i++) {
+    const onLine = stationsOnLine(ids[i], ids[i + 1], byId, used);
+    ids.splice(i + 1, 0, ...onLine);
+    onLine.forEach(id => used.add(id));
+    i += onLine.length;
+  }
+  return ids;
+}
+
 async function selectRoute() {
   if (tracking) {
     $('route-status').textContent = 'Route badalne se pehle Stop dabayein; adhoora visit save nahi hoga.';
@@ -356,7 +450,7 @@ async function selectRoute() {
     return;
   }
   // Via stations the route must pass through, in order; an empty box is skipped.
-  const stops = [from];
+  const boxes = [['origin', from]];
   for (let i = 1; i <= viaCount; i++) {
     if (!$('via-' + i).value.trim()) continue;
     const via = findStation($('via-' + i));
@@ -364,12 +458,20 @@ async function selectRoute() {
       $('route-status').textContent = `Via station ${i} nahi mila. Likhkar neeche aayi list se tap karke chunein, ya box khaali kar dein.`;
       return;
     }
-    stops.push(via);
+    boxes.push(['via-' + i, via]);
   }
-  stops.push(to);
+  boxes.push(['destination', to]);
+  const stops = boxes.map(box => box[1]);
   if (stops.some((stop, i) => i && stop.id === stops[i - 1].id)) {
     $('route-status').textContent = 'Ek ke baad ek aane wale station alag hone chahiye (shuru, via, antim).';
     return;
+  }
+  // Each box shows the station that was found, by name and code, also when only its code was typed, and the
+  // list of suggestions under it is put away.
+  for (const [id, station] of boxes) {
+    $(id).value = stationLabel(station);
+    if ($(id).dataset) $(id).dataset.stationId = station.id;
+    $(id + '-options').replaceChildren();
   }
   $('find-route').disabled = true;
   $('start').disabled = true;
@@ -393,7 +495,7 @@ async function selectRoute() {
       if (!leg) throw new Error('In stations ke beech route nahi mila');
       ids.push(...leg.slice(1));
     }
-    route = ids.map(id => byId.get(id));
+    route = fillRoute(graph, ids, byId).map(id => byId.get(id));
     routeIndex = null;
     state = {};
     skipIds = new Set();
@@ -602,6 +704,8 @@ function showAheadStation(lat, lon) {
 }
 
 function showRoutePosition(p, index) {
+  // The next station whose log is wanted: the ones with their tick taken off are passed over here too.
+  while (index < route.length - 1 && skipIds.has(route[index].id)) index++;
   const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
   const label = d <= NEAR ? 'Route par station ke paas' : 'Sambhavit agla station';
   $('next').textContent = `${label}: ${stationLabel(s)}, ${(d / 1000).toFixed(2)} km — anumaan`;
@@ -779,12 +883,13 @@ function onPos(p) {
 // A phone that sits still with its screen off stops sending fixes, so a standing train shows up as a silence: the
 // next fix comes minutes later, from almost the same spot. That silence is filled in as a stop, from just after the
 // last fix until just before this one, so the stop is noted with its real start and not from when fixes resumed.
+// It is filled in as standing still, so only when the train moved slower than 2.7 km/h on average meanwhile.
 const GAP_MS = 10000;
 let fillingGap = false;
 function fillGap(p) {
   if (fillingGap || !last) return;
   const t = p.timestamp, seconds = (t - last.t) / 1000;
-  if (t - last.t <= GAP_MS || dist(last.lat, last.lon, p.coords.latitude, p.coords.longitude) / seconds >= STOP_SPEED) return;
+  if (t - last.t <= GAP_MS || dist(last.lat, last.lon, p.coords.latitude, p.coords.longitude) / seconds >= MOVE_SPEED) return;
   const still = time => ({coords: {latitude: last.lat, longitude: last.lon, accuracy: p.coords.accuracy, speed: 0}, timestamp: time});
   const first = still(last.t + 1), second = still(t - 1);
   fillingGap = true;
@@ -826,9 +931,25 @@ function processPosition(p) {
   if (!Number.isFinite(speed)) speed = null;
   last = {lat, lon, t};
 
-  const stopped = speed != null && speed < STOP_SPEED;
-  if (speed != null && !stopped) endStop(t);
-  if (stopped && !openStop) openStop = {start: t, moved: heading != null, near: null, d: 0};
+  // Stopping: below 5 km/h; a stop of 15 seconds or more is a halt. Moving off: at 2.7 km/h once the train has stood
+  // still (below 2.7 km/h) during the stop. A train that only crawled below 5 km/h, never standing, moves off at
+  // 5 km/h: at 2.7 km/h each 15 seconds of crawling would be a halt of its own. After moving off from a standstill
+  // the train is not taken as stopping again until it is below 2.7 km/h, or has been above 5 km/h first.
+  if (speed != null) {
+    if (openStop) {
+      if (speed < MOVE_SPEED) openStop.still = true;
+      if (speed >= (openStop.still ? MOVE_SPEED : STOP_SPEED)) {
+        endStop(t);
+        leaving = speed < STOP_SPEED;
+      }
+    } else if (speed < (leaving ? MOVE_SPEED : STOP_SPEED)) {
+      openStop = {start: t, moved: heading != null, near: null, d: 0, still: speed < MOVE_SPEED};
+      leaving = false;
+    } else if (speed >= STOP_SPEED) {
+      leaving = false;
+    }
+  }
+  const stopped = openStop != null;
 
   let nearest = null;
   for (const s of active) {
@@ -868,10 +989,20 @@ function processPosition(p) {
   saveActive();
 }
 
+// The app's native side, by plugin name, or null in a browser. The page is not built with Capacitor's own script, so
+// its registerPlugin is not there (the page asked for it for a long time and so never reached the native side at
+// all); the app itself puts every native plugin on Capacitor.Plugins, and that is what is used.
+function nativePlugin(name) {
+  const capacitor = window.Capacitor;
+  if (!capacitor?.isNativePlatform?.()) return null;
+  return capacitor.registerPlugin?.(name) || capacitor.Plugins?.[name] || null;
+}
+
 // With the screen off or the app minimised Android may stop running this page, and the fixes of that time never
 // reach it. The app keeps them on the native side; here the page reads the ones it missed, in order and each with
 // its own time, so the log comes out as if it had been running all along.
-let fixBuffer = null, lastFixTime = 0, draining = false, replaying = false;
+let fixBuffer = null, lastFixTime = 0, draining = false, drainAgain = false, replaying = false;
+let liveFixes = []; // fixes from the plugin waiting for the next drain
 // Tells the user what still stands in the way of tracking with the screen off, by what Android reports.
 async function showBackgroundStatus() {
   const card = $('background-status');
@@ -902,30 +1033,44 @@ async function showBackgroundStatus() {
   } catch (e) { card.hidden = true; }
 }
 
+function usePosition(fix, time) {
+  onPos({coords: {latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, speed: fix.speed},
+    timestamp: time});
+}
+
+// Takes the fixes the page has not had yet from the native list, in time order, and then any live fix the list
+// did not have. One drain runs at a time; one asked for meanwhile runs right after it.
 async function drainFixes() {
-  showBackgroundStatus();
-  if (!tracking || !fixBuffer?.drain || draining) return;
+  if (!tracking || !fixBuffer?.drain) return;
+  if (draining) { drainAgain = true; return; }
   draining = true;
   const mySession = session;
   try {
-    const result = await fixBuffer.drain({after: lastFixTime});
-    const fixes = Array.isArray(result?.fixes) ? result.fixes : [];
-    replaying = true;
-    for (let i = 0; i < fixes.length; i++) {
-      if (mySession !== session || !tracking) break;
-      const fix = fixes[i];
-      if (!Number.isFinite(fix.time) || fix.time <= lastFixTime) continue;
-      lastFixTime = fix.time;
-      onPos({coords: {latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy, speed: fix.speed}, timestamp: fix.time});
-      // A long gap is replayed in pieces so the screen stays responsive.
-      if (i % 200 === 199) await new Promise(resolve => setTimeout(resolve, 0));
-    }
-  } catch (e) {
-    console.warn('Chhooti hui locations nahi mili', e);
+    do {
+      drainAgain = false;
+      let fixes = [];
+      try {
+        const result = await fixBuffer.drain({after: lastFixTime});
+        fixes = Array.isArray(result?.fixes) ? result.fixes : [];
+      } catch (e) { console.warn('Chhooti hui locations nahi mili', e); }
+      const live = liveFixes.splice(0);
+      replaying = true;
+      for (let i = 0; i < fixes.length + live.length; i++) {
+        if (mySession !== session || !tracking) return;
+        const fix = i < fixes.length ? fixes[i] : live[i - fixes.length];
+        if (!Number.isFinite(fix.time) || fix.time <= lastFixTime) continue;
+        lastFixTime = fix.time;
+        usePosition(fix, fix.time);
+        // A long gap is replayed in pieces so the screen stays responsive.
+        if (i % 200 === 199) await new Promise(resolve => setTimeout(resolve, 0));
+      }
+      replaying = false;
+    } while (drainAgain && mySession === session && tracking);
   } finally {
     replaying = false;
     draining = false;
-    saveActive();
+    drainAgain = false;
+    if (mySession === session) saveActive();
   }
 }
 
@@ -934,7 +1079,8 @@ function saveActive() {
   try {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
-      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops
+      mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops,
+      lastFixTime, watcher: nativeWatcher ? nativeWatcher.id : null, leaving
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -951,7 +1097,9 @@ document.addEventListener?.('visibilitychange', () => {
   if (document.visibilityState === 'visible' && tracking && !wakeLock) acquireWakeLock(session);
 });
 
-function start() {
+// A new journey, or ({resumeFrom: time}) one that was running when the page was closed, taken up again from the
+// last fix it had; previousWatcher is the native location watcher that page had.
+function start({resumeFrom = 0, previousWatcher = null} = {}) {
   if (tracking || watchId != null || nativeWatcher != null) return;
   tracking = true;
   const mode = $('mode').value;
@@ -975,14 +1123,19 @@ function start() {
       }
     }, {enableHighAccuracy: highAccuracy, maximumAge: 5000, timeout: 60000});
   };
-  const capacitor = window.Capacitor;
-  const backgroundGeo = capacitor?.isNativePlatform?.() && capacitor.registerPlugin?.('BackgroundGeolocation');
-  // The app keeps every fix on the native side too (SafarBuffer); a new journey starts with none.
-  fixBuffer = backgroundGeo ? capacitor.registerPlugin?.('SafarBuffer') : null;
-  lastFixTime = 0;
-  // The native side drops the last journey's fixes, keeps the phone awake, listens to the GPS receiver itself and
-  // asks for "Allow all the time" and for no battery restriction.
-  try { (fixBuffer?.begin ?? fixBuffer?.clear)?.call(fixBuffer)?.catch?.(() => {}); } catch (e) { fixBuffer = null; }
+  const backgroundGeo = nativePlugin('BackgroundGeolocation');
+  // The app keeps every fix on the native side too (SafarBuffer); a new journey starts with none, one taken up
+  // again keeps them.
+  fixBuffer = backgroundGeo ? nativePlugin('SafarBuffer') : null;
+  lastFixTime = Number.isFinite(resumeFrom) ? resumeFrom : 0;
+  liveFixes = [];
+  // The native side drops the last journey's fixes (not when one is taken up again), keeps the phone awake,
+  // listens to the GPS receiver itself and asks for "Allow all the time" and for no battery restriction.
+  try {
+    if (fixBuffer?.begin) fixBuffer.begin({keep: lastFixTime > 0})?.catch?.(() => {});
+    else if (!lastFixTime) fixBuffer?.clear?.()?.catch?.(() => {});
+  } catch (e) { fixBuffer = null; }
+  if (lastFixTime) drainFixes(); // the fixes of the time the page was closed
   showBackgroundStatus();
   if (!backgroundGeo) {
     startWeb(mode !== 'network');
@@ -1006,7 +1159,8 @@ function start() {
       }
       startWeb(mode !== 'network');
     };
-    backgroundGeo.addWatcher({
+    // The watcher's id comes back directly from the app's own plugin object and as a promise from Capacitor's.
+    new Promise(resolve => resolve(backgroundGeo.addWatcher({
       backgroundTitle: 'Suffer Sathi',
       backgroundMessage: 'Station pass aur halt record ho rahe hain',
       requestPermissions: true,
@@ -1028,31 +1182,42 @@ function start() {
         return;
       }
       gotFix = true;
-      // Already written from the native buffer (drainFixes): the page was not running when this fix came.
-      if (Number.isFinite(location.time)) {
-        if (location.time <= lastFixTime) return;
-        lastFixTime = location.time;
-      }
       if (webStarted && nativeWatcher) {
         if (watchId != null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
         webStarted = false;
       }
-      onPos({
-        coords: {
-          latitude: location.latitude,
-          longitude: location.longitude,
-          accuracy: location.accuracy,
-          speed: location.speed
-        },
-        timestamp: location.time || Date.now()
-      });
-    }).then(id => {
+      const fix = {time: location.time, latitude: location.latitude, longitude: location.longitude,
+        accuracy: location.accuracy, speed: location.speed};
+      // Every fix the plugin gives is in the native list too (MainActivity puts it there). Taken from that list,
+      // fixes come in time order, the ones the page missed while it was not running first; this one is used
+      // directly only if the list does not have it.
+      if (fixBuffer?.drain && Number.isFinite(fix.time)) {
+        liveFixes.push(fix);
+        drainFixes();
+        return;
+      }
+      if (Number.isFinite(fix.time)) {
+        if (fix.time <= lastFixTime) return; // already written from the native list
+        lastFixTime = fix.time;
+      }
+      usePosition(fix, Date.now());
+    }))).then(id => {
+      if (id == null) throw new Error('native GPS start fail');
       nativeStarting = false;
       if (currentSession !== session) {
         backgroundGeo.removeWatcher({id}).catch(e => console.warn('Native GPS watcher band nahi hua', e));
         return;
       }
       nativeWatcher = {id, plugin: backgroundGeo};
+      // When the page is made again during a journey, the location service in the app goes on running the watcher
+      // of the page before (no page is left to stop it). Left running, it would keep the GPS and the tracking
+      // notification on after Stop. It is removed once this page's own watcher runs, and the location service is
+      // known to be there.
+      if (previousWatcher != null && String(previousWatcher) !== String(id)) {
+        Promise.resolve().then(() => backgroundGeo.removeWatcher({id: String(previousWatcher)}))
+          .catch(e => console.warn('Pichle page ka GPS watcher band nahi hua', e));
+      }
+      saveActive();
       if (pendingFallback) {
         const reason = pendingFallback;
         pendingFallback = null;
@@ -1101,7 +1266,7 @@ function stop() {
     decideClosed(true);
   }
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
-  heading = null; headingFrom = null; lastActive = null; openStop = null;
+  heading = null; headingFrom = null; lastActive = null; openStop = null; leaving = false;
   closed = []; recent = []; loggedStops = [];
   liveStop = null; showLiveStop(0);
   try { fixBuffer?.end?.()?.catch?.(() => {}); } catch (e) { /* not native */ }
@@ -1126,14 +1291,27 @@ function render() {
   }
 }
 
-$('start').onclick = start;
+$('start').onclick = () => start();
 // What the page missed is read first, so stopping does not lose it.
 $('stop').onclick = () => (tracking && fixBuffer?.drain ? drainFixes().then(stop, stop) : stop());
 // Back on screen, and every 5 seconds while it is running: read whatever was missed.
-document.addEventListener?.('visibilitychange', () => { if (!document.hidden) drainFixes(); });
-setInterval(drainFixes, 5000);
+document.addEventListener?.('visibilitychange', () => { if (!document.hidden) { showBackgroundStatus(); drainFixes(); } });
+setInterval(() => { showBackgroundStatus(); drainFixes(); }, 5000);
 $('find-route').onclick = selectRoute;
-stationSuggestions('origin', 'origin-options');
+// The via stations belong to the journey that was being planned. A new start station begins another one, so the
+// via boxes are emptied and put away again.
+function resetVia() {
+  for (let i = 1; i <= 3; i++) {
+    const input = $('via-' + i);
+    input.value = '';
+    if (input.dataset) delete input.dataset.stationId;
+    $(`via-${i}-options`).replaceChildren();
+    $('via-row-' + i).hidden = true;
+  }
+  viaCount = 0;
+  $('add-via').hidden = false;
+}
+stationSuggestions('origin', 'origin-options', resetVia);
 stationSuggestions('destination', 'destination-options');
 for (let i = 1; i <= 3; i++) stationSuggestions('via-' + i, `via-${i}-options`);
 stationSuggestions('add-station', 'add-station-options');
@@ -1207,12 +1385,17 @@ try {
       if (Array.isArray(saved.closed)) closed = saved.closed;
       if (Array.isArray(saved.recent)) recent = saved.recent;
       if (Array.isArray(saved.loggedStops)) loggedStops = saved.loggedStops;
+      leaving = saved.leaving === true;
       if (saved.openStop && Number.isFinite(saved.openStop.start)) {
         openStop = {moved: true, near: null, d: 0, ...saved.openStop};
         heading = 0;
       }
       if (saved.mode) $('mode').value = saved.mode;
-      start();
+      if (saved.last && Number.isFinite(saved.last.t) && Number.isFinite(saved.last.lat) && Number.isFinite(saved.last.lon)) last = saved.last;
+      // The page was opened again during a journey (Android may close and reopen it while the screen is off). The
+      // journey goes on from the last fix it had: the native side keeps the fixes of the time between, and they
+      // are taken from there.
+      start({resumeFrom: Number(saved.lastFixTime) || last?.t || 0, previousWatcher: saved.watcher ?? null});
       $('status').textContent = 'Pichla tracking session dobara shuru kiya gaya. ' + $('status').textContent;
     }
   }
@@ -1239,8 +1422,30 @@ setInterval(showClock, 1000);
 let clockMode = false, clockLock = null;
 // The four-corners sign video apps use for full screen.
 const FULLSCREEN_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>';
-// Lays the full-screen clock out for the real screen: turned when the phone is upright, hours and minutes as large
-// as fit between the left edge and the speed dial, seconds right after them.
+// What the clock's time really measures here, for every 100 px of font size: its width (hours, minutes and the
+// small seconds with their gap), the height of a digit, and how far under the top of the line the digits stand.
+// They are measured and not assumed, because the font differs from phone to phone and Android applies the phone's
+// own font-size setting to text inside the app: with that set to "small" the digits came out a fifth smaller than
+// planned.
+function clockMetrics(time) {
+  time.style.fontSize = '100px';
+  const width = time.offsetWidth || 305;
+  const line = time.offsetHeight || 100;        // the line is as tall as the font is really drawn
+  const foot = $('clock-foot').offsetTop || line * 0.845;
+  let digit = line * 0.711;
+  try {
+    // The share of the font's size that a digit stands tall, from the font itself.
+    const style = getComputedStyle($('clock-hm')), pen = document.createElement('canvas').getContext('2d');
+    pen.font = `${style.fontWeight} 100px ${style.fontFamily}`;
+    const ink = pen.measureText('0123456789').actualBoundingBoxAscent;
+    if (ink > 40 && ink < 100) digit = line * ink / 100;
+  } catch (e) { /* the usual share stands in */ }
+  return {width, digit, foot};
+}
+
+// Lays the full-screen clock out for the real screen: turned when the phone is upright, the speed dial in the top
+// corner, and the time filling the room under it from edge to edge, stretched a little either way if its own shape
+// would leave some of that room empty.
 function fitClock() {
   const card = $('clock-card'), time = $('clock-time'), date = $('clock-date');
   const w = window.innerWidth, h = window.innerHeight, known = Number.isFinite(w) && Number.isFinite(h);
@@ -1254,21 +1459,21 @@ function fitClock() {
   const long = Math.max(w, h), short = Math.min(w, h);
   card.style.width = turned ? long + 'px' : '';
   card.style.height = turned ? short + 'px' : '';
-  time.style.fontSize = '100px';
-  const hmWidth = $('clock-hm').offsetWidth || 260;   // at 100 px
-  const secWidth = $('clock-sec').offsetWidth || 45;  // at 100 px, with its gap
-  // The dial takes the top corner (14 + 182 px and a gap); the time has the full width under it. A digit is 0.71
-  // of the font size tall and starts 0.135 below the top of its line; the digits are stretched upright, a little
-  // at most, to fill the height left.
-  const DIGIT = 0.71, BLANK = 0.135, EDGE = 12, DIAL = 14 + 182 + 8;
-  const tall = short - DIAL - EDGE;                   // digit height that fits under the dial
-  const size = Math.max(40, Math.min((long - 2 * EDGE) / (hmWidth + secWidth) * 100, tall / DIGIT));
-  const stretch = Math.max(1, Math.min(1.3, tall / (DIGIT * size)));
+  time.style.transform = time.style.left = time.style.top = '';
+  const EDGE = 12, DIAL = 14 + 182 + 8, STRETCH = 1.3;   // the dial takes the top corner, and a gap under it
+  const {width, digit, foot} = clockMetrics(time);
+  const roomWide = long - 2 * EDGE, roomTall = short - DIAL - EDGE;
+  const size = Math.max(40, Math.min(roomWide / width, roomTall / digit) * 100);
+  const wide = Math.max(1, Math.min(STRETCH, roomWide / (width * size / 100)));
+  const tall = Math.max(1, Math.min(STRETCH, roomTall / (digit * size / 100)));
   time.style.fontSize = size + 'px';
-  time.style.transform = `scaleY(${stretch.toFixed(3)})`;
-  time.style.left = Math.max(EDGE, (long - (hmWidth + secWidth) * size / 100) / 2) + 'px';
-  time.style.top = (short - EDGE - (BLANK + DIGIT) * stretch * size) + 'px';   // the digits' foot near the bottom edge
-  date.style.fontSize = Math.min(short * 0.1, (long - DIAL - 32) / 12.5) + 'px';   // the date stops before the dial
+  time.style.transform = `scale(${wide.toFixed(3)}, ${tall.toFixed(3)})`;
+  time.style.left = Math.max(0, (long - width * size / 100 * wide) / 2) + 'px';
+  time.style.top = (short - EDGE - foot * size / 100 * tall) + 'px';   // the digits stand near the bottom edge
+  // The date runs from the left edge towards the dial, as large as fits there.
+  date.style.fontSize = '100px';
+  const dateWide = date.offsetWidth || 1150, dateTall = date.offsetHeight || 117;
+  date.style.fontSize = Math.max(12, Math.min((long - DIAL - 2 * 16 - 8) / dateWide, short * 0.17 / dateTall) * 100) + 'px';
 }
 window.addEventListener?.('resize', fitClock);
 
@@ -1277,14 +1482,16 @@ function setClockMode(on) {
   fitClock();
   $('clock-full').innerHTML = on ? 'EXIT' : FULLSCREEN_ICON;
   // In the app, the phone's own bars (status bar on top, buttons below) are hidden while the clock is up.
-  try { window.Capacitor?.isNativePlatform?.() && window.Capacitor.registerPlugin?.('SafarBuffer')?.fullScreen?.({on})?.catch?.(() => {}); }
+  const native = nativePlugin('SafarBuffer');
+  try { native?.fullScreen?.({on})?.catch?.(e => console.warn('Full screen nahi hua', e)); }
   catch (e) { console.warn('Full screen nahi hua', e); }
   if (on) {
     navigator.wakeLock?.request('screen').then(lock => {
       if (clockMode) clockLock = lock; else lock.release();
     }).catch(e => console.warn('Screen wake lock nahi mila', e));
-    // Hides the status bar where the phone's browser allows it; the clock covers the page either way.
-    try { document.documentElement?.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* not supported */ }
+    // In a browser this hides its bars where the phone allows it (the app does it natively, above; there the page's
+    // own request is turned down at once). The clock covers the page either way.
+    if (!native) { try { document.documentElement?.requestFullscreen?.()?.catch?.(() => {}); } catch (e) { /* not supported */ } }
   } else {
     if (clockLock) { clockLock.release().catch(() => {}); clockLock = null; }
     try { if (document.fullscreenElement) document.exitFullscreen?.()?.catch?.(() => {}); } catch (e) { /* not supported */ }
