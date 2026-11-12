@@ -23,6 +23,10 @@ final class FixBuffer {
 
     static synchronized void add(Location location) {
         if (location == null) return;
+        // The same fix comes from both of the app's listeners (the location plugin's and the app's own on the GPS
+        // receiver), and the two can arrive a little out of order. Only a fix newer than the newest kept is added,
+        // so the list stays in time order and after() gives each fix once.
+        if (!fixes.isEmpty() && location.getTime() <= fixes.peekLast()[0]) return;
         if (fixes.size() >= LIMIT) fixes.removeFirst();
         fixes.addLast(new double[] {
             location.getTime(),

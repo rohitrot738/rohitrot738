@@ -105,11 +105,12 @@ class DevTools {
   }
 
   send(method, params = {}) {
+    if (this.socket.destroyed) return Promise.reject(new Error('DevTools socket closed'));
     const id = ++this.next;
     return new Promise((resolve, reject) => {
       this.waiting.set(id, {resolve, reject});
       this.frame(1, Buffer.from(JSON.stringify({id, method, params})));
-      setTimeout(() => { if (this.waiting.delete(id)) reject(new Error(`No answer to ${method} in 60 s`)); }, 60000);
+      setTimeout(() => { if (this.waiting.delete(id)) reject(new Error(`No answer to ${method} in 30 s`)); }, 30000);
     });
   }
 
@@ -175,6 +176,9 @@ const deviceTime = () => Math.round(parseFloat(shell('echo $EPOCHREALTIME')) * 1
 function launch() {
   adb('shell', 'am', 'start', '-W', '-n', `${PACKAGE}/.MainActivity`);
 }
+// Whether the app is the activity in front, running (resumed).
+const inFront = () => new RegExp(`(topResumedActivity|mResumedActivity)=[^\\n]*${PACKAGE.replace(/\./g, '\\.')}`)
+  .test(quiet(() => shell('dumpsys activity activities')));
 function setFix(lat, lon) { quiet(() => adb('emu', 'geo', 'fix', String(lon), String(lat))); }
 
 // Where things are in the full-screen clock, in the page's own measure. "blank" is how much of the digits' line
@@ -293,6 +297,7 @@ async function main() {
   check(notifications.includes(PACKAGE), 'the tracking notification is shown');
   shot('journey');
 
+  await page.run(`window.e2eMark = 'before the screen went off';`);
   const offStart = deviceTime();
   shell('input keyevent KEYCODE_SLEEP');
   for (let i = 0; i < 20; i++) { setFix(25.5513 + i * 0.0003, 84.662596); await sleep(2000); }
@@ -302,7 +307,14 @@ async function main() {
   shell('input keyevent KEYCODE_WAKEUP');
   quiet(() => shell('wm dismiss-keyguard'));
   quiet(() => shell('input keyevent 82'));
-  await sleep(9000);
+  await sleep(4000);
+  // The test's own connection to the page may not survive the screen going off; the app's state is what is
+  // checked, so the app is brought to the front if it is not, and the page is opened afresh.
+  if (!inFront()) { log('the app was not in front after the screen came on; bringing it back'); launch(); }
+  page.close();
+  page = await openPage();
+  await sleep(5000);
+  log('the same page as before the screen went off:', await page.run(`return window.e2eMark === 'before the screen went off';`));
   const woke = await page.run(`
     const fixes = (await fixBuffer.drain({after: 0})).fixes.map(f => f.time);
     return {fixes, lastFixTime, last: last && last.t, visible: document.visibilityState, status: document.getElementById('status').textContent,
@@ -314,6 +326,19 @@ async function main() {
   check(during.length >= 8, 'fixes kept arriving natively while the screen was off', `${during.length} in ${Math.round((offEnd - offStart) / 1000)} s`);
   check(woke.lastFixTime >= offEnd - 15000, 'the page caught up with the fixes it missed', `${woke.lastFixTime} against ${offEnd}`);
   shot('journey-after-screen-off');
+
+  // The native side gives the page only the fixes it has not had: those after the time it asks for, in time
+  // order, each once. (A time in milliseconds was once read as 0 there, so every 5 seconds the whole journey's
+  // fixes were sent again.)
+  const order = await page.run(`
+    const all = (await fixBuffer.drain({after: 0})).fixes.map(f => f.time);
+    const cut = all[Math.max(0, all.length - 5)];
+    const later = (await fixBuffer.drain({after: cut})).fixes.map(f => f.time);
+    return {count: all.length, ordered: all.every((t, i) => !i || t > all[i - 1]), cut, later};`);
+  log('native fixes:', JSON.stringify(order));
+  check(order.count > 5 && order.ordered, 'the native fixes are kept in time order, each once', `${order.count} fixes`);
+  check(order.later.length > 0 && order.later.length < order.count && order.later.every(t => t > order.cut),
+    'the native side gives only the fixes after the time asked for', `${order.later.length} of ${order.count}`);
 
   await page.run(`document.getElementById('stop').click();`);
   await sleep(2500);

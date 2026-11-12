@@ -18,9 +18,11 @@ public class SafarBufferPlugin extends Plugin {
     /** The fixes later than "after" (a time in milliseconds), oldest first. */
     @PluginMethod
     public void drain(PluginCall call) {
-        Double after = call.getDouble("after", 0.0);
+        // The page sends a time in milliseconds, which arrives as a long. PluginCall.getDouble reads only doubles,
+        // floats and ints and gave 0 for it, so every drain sent the whole journey's fixes; optDouble reads any number.
+        double after = call.getData().optDouble("after", 0);
         JSObject result = new JSObject();
-        result.put("fixes", FixBuffer.after(after == null ? 0.0 : after));
+        result.put("fixes", FixBuffer.after(after));
         call.resolve(result);
     }
 
