@@ -355,6 +355,41 @@ async function main() {
   check(order.later.length > 0 && order.later.length < order.count && order.later.every(t => t > order.cut),
     'the native side gives only the fixes after the time asked for', `${order.later.length} of ${order.count}`);
 
+  // ---- The page's own process (the WebView's renderer) ends during the journey, as Android may end it with the
+  // screen off. The app must go on: the screen is made again, its page takes the journey up again, and the fixes
+  // of the time between reach it from the native list.
+  await page.run(`window.e2eMark = 'before the page process ended';`);
+  const pidBeforeCrash = shell(`pidof ${PACKAGE}`);
+  quiet(() => adb('logcat', '-b', 'all', '-c'));
+  const crashFrom = deviceTime();
+  const crashAnswer = page.send('Page.crash').then(() => 'answered', e => e.message);
+  await sleep(1500);
+  log('Page.crash:', await Promise.race([crashAnswer, sleep(10).then(() => 'no answer yet')]));
+  page.close();
+  shell('input keyevent KEYCODE_SLEEP');
+  for (let i = 0; i < 15; i++) { setFix(25.5573 + i * 0.0003, 84.662596); await sleep(2000); }
+  const crashTo = deviceTime();
+  shell('input keyevent KEYCODE_WAKEUP');
+  quiet(() => shell('wm dismiss-keyguard'));
+  quiet(() => shell('input keyevent 82'));
+  await sleep(4000);
+  if (!inFront()) { log('the app was not in front after the screen came on; bringing it back'); launch(); }
+  page = await openPage();
+  await sleep(6000);
+  const pidAfterCrash = shell(`pidof ${PACKAGE}`);
+  const recovered = await page.run(`
+    return {mark: window.e2eMark || null, tracking, watcher: nativeWatcher && nativeWatcher.id, lastFixTime,
+      status: document.getElementById('status').textContent, native: await fixBuffer?.status?.(),
+      times: fixBuffer ? (await fixBuffer.drain({after: 0})).fixes.map(f => f.time) : []};`);
+  log("after the page's process ended:", JSON.stringify({...recovered, times: recovered.times.length}), '| process', pidBeforeCrash, '->', pidAfterCrash);
+  log('what Android did meanwhile:\n' + lifeEvents());
+  const meanwhile = recovered.times.filter(time => time > crashFrom + 4000 && time < crashTo - 1000);
+  check(pidAfterCrash === pidBeforeCrash, "the app goes on when the page's process ends", `${pidBeforeCrash} -> ${pidAfterCrash}`);
+  check(recovered.mark == null && recovered.tracking && recovered.watcher != null, 'the page is made again and takes the journey up again', recovered.status);
+  check(meanwhile.length >= 5, 'fixes were kept natively while the page was gone', `${meanwhile.length} in ${Math.round((crashTo - crashFrom) / 1000)} s`);
+  check(recovered.lastFixTime >= crashTo - 15000, 'the new page has the fixes of the time between', `${recovered.lastFixTime} against ${crashTo}`);
+  shot('journey-after-page-process-ended');
+
   await page.run(`document.getElementById('stop').click();`);
   await sleep(2500);
   const stopped = await page.run(`return {watcher: nativeWatcher, tracking};`);

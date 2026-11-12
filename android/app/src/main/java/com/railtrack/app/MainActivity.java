@@ -14,12 +14,15 @@ import android.location.Location;
 import android.os.Bundle;
 import android.os.SystemClock;
 import android.util.Log;
+import android.webkit.RenderProcessGoneDetail;
+import android.webkit.WebView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.WebViewListener;
 
 import java.io.File;
 import java.lang.ref.WeakReference;
@@ -55,6 +58,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SafarBufferPlugin.class);
         super.onCreate(savedInstanceState);
         LocalBroadcastManager.getInstance(this).registerReceiver(fixReceiver, new IntentFilter(FIX_BROADCAST));
+        keepPageAlive();
         JobScheduler scheduler = (JobScheduler) getSystemService(JOB_SCHEDULER_SERVICE);
         JobInfo job = new JobInfo.Builder(73418, new ComponentName(this, UpdateCheckService.class))
             .setRequiredNetworkType(JobInfo.NETWORK_TYPE_ANY)
@@ -80,6 +84,28 @@ public class MainActivity extends BridgeActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         // One answer in: ask the next thing background tracking needs, if any.
         TrackingSession.prompt(this);
+    }
+
+    /**
+     * The page runs in a process of its own (the WebView's renderer). With the screen off Android would be free to end
+     * it, as it ends background apps; it is kept as important as the app itself, whose location service is in the
+     * foreground. Should it end all the same, Android ends the whole app as well, journey tracking included, unless
+     * that is handled: the screen is made again instead, and its new page takes the journey up again, reading the
+     * fixes of the time between from the native list.
+     */
+    private void keepPageAlive() {
+        if (getBridge() == null || getBridge().getWebView() == null) return;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            getBridge().getWebView().setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false);
+        }
+        getBridge().addWebViewListener(new WebViewListener() {
+            @Override
+            public boolean onRenderProcessGone(WebView webView, RenderProcessGoneDetail detail) {
+                Log.w(TrackingSession.TAG, "The page's process ended; making the screen again");
+                recreate();
+                return true;
+            }
+        });
     }
 
     @Override
