@@ -541,8 +541,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
 
-  // The limits: a station counts within 250 m, the train is stopped below 5 km/h (1.39 m/s) and moving again from
-  // 5 km/h, and a stop of 15 seconds or more is a halt.
+  // The limits: a station counts within 250 m, the train is stopping below 5 km/h (1.39 m/s), and a stop of
+  // 15 seconds or more is a halt. A train that only crawled, never below 2.7 km/h, moves off again at 5 km/h.
   const limits = setup(stationFetcher([['LIM', 'Limit Station', 28, 77]]));
   limits.elements.start.onclick();
   limits.watches[0].success(fix(27.99, 100000));
@@ -551,13 +551,42 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   limits.watches[0].success(fix(27.9975, 130000, 0));       // standing there is a stop on the way, not at the station
   limits.watches[0].success(fix(27.998, 160000));           // 222 m away: inside
   limits.watches[0].success(fix(28, 170000, 1.3));          // 4.7 km/h, below 5 km/h: stopped
-  limits.watches[0].success(fix(28, 180000, 1.0));          // 3.6 km/h, still stopped (it was moving below 2.7 km/h)
+  limits.watches[0].success(fix(28, 180000, 1.0));          // 3.6 km/h: still stopping (it was moving below 2.7 km/h)
   limits.watches[0].success(fix(28, 190000, 1.4));          // 5.04 km/h: moving again, 20 s after it stopped
   limits.watches[0].success(fix(28.01, 260000));
   const limitLog = JSON.parse(limits.store.get('trainlog'));
   const stationEntry = limitLog.find(entry => entry.id === 'LIM');
   assert.deepEqual([stationEntry.type, stationEntry.arr, stationEntry.dep], ['halt', 170000, 190000]);
   assert.ok(limitLog.some(entry => /^Raste mein \(Limit Station se 0\.28 km\)$/.test(entry.name) && entry.arr === 110001));   // same spot since the fix at 110000: the silence counts
+
+  // Standing still, the train moves off at 2.7 km/h, as asked: the halt runs from the first reading below 5 km/h to
+  // the first at 2.7 km/h or more, and the train speeding up from there (3.6 and 4.3 km/h) is not a new stop.
+  const metre = 1 / 111320;
+  const still = setup(stationFetcher([['STL', 'Still Station', 28, 77]]));
+  still.elements.start.onclick();
+  still.watches[0].success(fix(27.995, 100000));
+  await flush();
+  still.watches[0].success(fix(28, 110000, 1.3));            // 4.7 km/h: stopping
+  still.watches[0].success(fix(28, 115000, 0.2));            // standing
+  still.watches[0].success(fix(28, 140000, 0.2));            // 25 s later, same spot
+  still.watches[0].success(fix(28, 150000, 0.8));            // 2.9 km/h: moved off
+  still.watches[0].success(fix(28 + 5 * metre, 155000, 1.0));
+  still.watches[0].success(fix(28 + 29 * metre, 175000, 1.2));
+  still.watches[0].success(fix(28.01, 200000));
+  const stillLog = JSON.parse(still.store.get('trainlog'));
+  assert.deepEqual(stillLog.map(entry => [entry.id || entry.name, entry.type, entry.arr, entry.dep]),
+    [['STL', 'halt', 110000, 150000]]);
+  // Crawling at 3.6 km/h for 40 s, never standing: one halt, over when the train is at 5 km/h again (7.2 km/h here),
+  // not a halt for every 15 seconds.
+  const crawl = setup(stationFetcher([['CRL', 'Crawl Station', 28, 77]]));
+  crawl.elements.start.onclick();
+  crawl.watches[0].success(fix(27.995, 100000));
+  await flush();
+  for (let i = 0; i <= 8; i++) crawl.watches[0].success(fix(28 - (55 - 5 * i) * metre, 110000 + 5000 * i, 1.0));
+  crawl.watches[0].success(fix(28 - 10 * metre, 155000, 2.0));
+  crawl.watches[0].success(fix(28.01, 200000));
+  assert.deepEqual(JSON.parse(crawl.store.get('trainlog')).map(entry => [entry.id || entry.name, entry.type, entry.arr, entry.dep]),
+    [['CRL', 'halt', 110000, 155000]]);
 
   // Screen off: the page hears nothing while the train passes a station, but the app kept the fixes. When the
   // page runs again it reads them and the log has the station, at the time the train was really there.

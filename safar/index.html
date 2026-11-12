@@ -132,7 +132,8 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 const ZONE = 1000, RINGS = [100, 250, 500, 750, 1000], NEAR = 250;
 const ACCURACY_LIMIT = 500; // m; a fix less accurate than this is not used
 const ring = d => RINGS.find(r => d <= r) ?? ZONE;
-const STOP_SPEED = 5 / 3.6; // m/s: 5 km/h se kam = ruki hui, 5 km/h ya zyada = chal padi
+const STOP_SPEED = 5 / 3.6; // m/s: 5 km/h se kam = rukna shuru (15 sec tak rahe to halt)
+const MOVE_SPEED = 0.75;    // m/s (2.7 km/h): khadi gaadi (2.7 se neeche aa chuki) itne par chal padi maani jaati hai
 const MIN_HALT = 15;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
@@ -145,7 +146,8 @@ let route = null, routeIndex = null, edgeGraph = null, unlinked = [];
 let heading = null, headingFrom = null, lastActive = null;
 let skipIds = new Set(); // route stations the user unticked: never logged
 let viaCount = 0; // via boxes shown so far (up to 3)
-let openStop = null;  // the stop in progress: {start, moved, near, d}
+let openStop = null;  // the stop in progress: {start, moved, near, d, still}
+let leaving = false;  // moved off from a standstill at 2.7 km/h and not yet at 5 km/h
 let closed = [];      // visits that only reached a wide ring and left the zone, waiting to be compared
 let recent = [];      // decided visits {key, enter, exit, ring}, for comparing later ones against
 let loggedStops = []; // start times of the stops already written to the log
@@ -881,12 +883,13 @@ function onPos(p) {
 // A phone that sits still with its screen off stops sending fixes, so a standing train shows up as a silence: the
 // next fix comes minutes later, from almost the same spot. That silence is filled in as a stop, from just after the
 // last fix until just before this one, so the stop is noted with its real start and not from when fixes resumed.
+// It is filled in as standing still, so only when the train moved slower than 2.7 km/h on average meanwhile.
 const GAP_MS = 10000;
 let fillingGap = false;
 function fillGap(p) {
   if (fillingGap || !last) return;
   const t = p.timestamp, seconds = (t - last.t) / 1000;
-  if (t - last.t <= GAP_MS || dist(last.lat, last.lon, p.coords.latitude, p.coords.longitude) / seconds >= STOP_SPEED) return;
+  if (t - last.t <= GAP_MS || dist(last.lat, last.lon, p.coords.latitude, p.coords.longitude) / seconds >= MOVE_SPEED) return;
   const still = time => ({coords: {latitude: last.lat, longitude: last.lon, accuracy: p.coords.accuracy, speed: 0}, timestamp: time});
   const first = still(last.t + 1), second = still(t - 1);
   fillingGap = true;
@@ -928,9 +931,25 @@ function processPosition(p) {
   if (!Number.isFinite(speed)) speed = null;
   last = {lat, lon, t};
 
-  const stopped = speed != null && speed < STOP_SPEED;
-  if (speed != null && !stopped) endStop(t);
-  if (stopped && !openStop) openStop = {start: t, moved: heading != null, near: null, d: 0};
+  // Stopping: below 5 km/h; a stop of 15 seconds or more is a halt. Moving off: at 2.7 km/h once the train has stood
+  // still (below 2.7 km/h) during the stop. A train that only crawled below 5 km/h, never standing, moves off at
+  // 5 km/h: at 2.7 km/h each 15 seconds of crawling would be a halt of its own. After moving off from a standstill
+  // the train is not taken as stopping again until it is below 2.7 km/h, or has been above 5 km/h first.
+  if (speed != null) {
+    if (openStop) {
+      if (speed < MOVE_SPEED) openStop.still = true;
+      if (speed >= (openStop.still ? MOVE_SPEED : STOP_SPEED)) {
+        endStop(t);
+        leaving = speed < STOP_SPEED;
+      }
+    } else if (speed < (leaving ? MOVE_SPEED : STOP_SPEED)) {
+      openStop = {start: t, moved: heading != null, near: null, d: 0, still: speed < MOVE_SPEED};
+      leaving = false;
+    } else if (speed >= STOP_SPEED) {
+      leaving = false;
+    }
+  }
+  const stopped = openStop != null;
 
   let nearest = null;
   for (const s of active) {
@@ -1061,7 +1080,7 @@ function saveActive() {
     if (!tracking) { localStorage.removeItem(ACTIVE_KEY); return; }
     localStorage.setItem(ACTIVE_KEY, JSON.stringify({
       mode: $('mode').value, route: route ? route.map(s => s.id) : null, skip: [...skipIds], state, last, openStop, closed, recent, loggedStops,
-      lastFixTime, watcher: nativeWatcher ? nativeWatcher.id : null
+      lastFixTime, watcher: nativeWatcher ? nativeWatcher.id : null, leaving
     }));
   } catch (e) { console.warn('Tracking state save nahi hua', e); }
 }
@@ -1247,7 +1266,7 @@ function stop() {
     decideClosed(true);
   }
   watchId = null; last = null; state = {}; pending = []; latestPosition = null; routeIndex = null;
-  heading = null; headingFrom = null; lastActive = null; openStop = null;
+  heading = null; headingFrom = null; lastActive = null; openStop = null; leaving = false;
   closed = []; recent = []; loggedStops = [];
   liveStop = null; showLiveStop(0);
   try { fixBuffer?.end?.()?.catch?.(() => {}); } catch (e) { /* not native */ }
@@ -1366,6 +1385,7 @@ try {
       if (Array.isArray(saved.closed)) closed = saved.closed;
       if (Array.isArray(saved.recent)) recent = saved.recent;
       if (Array.isArray(saved.loggedStops)) loggedStops = saved.loggedStops;
+      leaving = saved.leaving === true;
       if (saved.openStop && Number.isFinite(saved.openStop.start)) {
         openStop = {moved: true, near: null, d: 0, ...saved.openStop};
         heading = 0;
