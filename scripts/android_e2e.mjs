@@ -194,10 +194,21 @@ function providerLinks() {
   return quiet(() => shell(`dumpsys activity processes ${PACKAGE}`)).split('\n').map(line => line.trim())
     .filter(line => /^- \S+->\d+:/.test(line));
 }
+// The files the app's process has open that are not its own (a font from Play services, say), to tell who holds a
+// provider connection: a file opened through a provider holds it while it is open.
+function foreignFiles() {
+  const pid = shell(`pidof ${PACKAGE}`).split(/\s+/)[0];
+  const fds = quiet(() => shell(`run-as ${PACKAGE} ls -l /proc/${pid}/fd`)).split('\n')
+    .map(line => line.replace(/^.* (\d+) -> /, '$1 -> ')).filter(line => /-> \/(data|storage|mnt)\//.test(line) && !line.includes(`/${PACKAGE}/`) && !line.includes('/app/'));
+  const maps = [...new Set(quiet(() => shell(`run-as ${PACKAGE} cat /proc/${pid}/maps`)).split('\n')
+    .map(line => line.trim().split(/\s+/).slice(5).join(' ')).filter(path => /font|\.ttf|\.otf|gms/i.test(path) && !path.startsWith('/system/')))];
+  return {fds, maps};
+}
 function checkProviderLinks(when) {
   const links = providerLinks();
   log(`provider connections (${when}):`, links.join(' | ') || '(none)');
   const tied = links.filter(line => /com\.google\.android\.gms/.test(line.split('->')[0]) && / s[1-9]\d*\//.test(line));
+  if (tied.length) log('files open that are not the app\'s own:', JSON.stringify(foreignFiles()));
   check(!tied.length, `${when}: the app's life is not tied to a Google Play services provider`, tied.join(' | '));
 }
 
@@ -245,7 +256,18 @@ async function clockCheck(page, label) {
   check(after[2] === '' && after[1] === before[1], `${label}: EXIT brings the page and the phone's bars back`, JSON.stringify(after));
 }
 
+// Whether the built app still starts EmojiCompat (its manifest names the initializer), read with aapt2.
+function emojiCompatInManifest() {
+  const sdk = process.env.ANDROID_HOME || process.env.ANDROID_SDK_ROOT;
+  if (!sdk || !fs.existsSync(`${sdk}/build-tools`)) return 'no SDK found';
+  const tools = fs.readdirSync(`${sdk}/build-tools`).sort().reverse().map(v => `${sdk}/build-tools/${v}/aapt2`).find(f => fs.existsSync(f));
+  if (!tools) return 'no aapt2 found';
+  const tree = quiet(() => execFileSync(tools, ['dump', 'xmltree', '--file', 'AndroidManifest.xml', apk], {encoding: 'utf8', maxBuffer: 64 << 20}));
+  return tree.includes('EmojiCompatInitializer') ? 'yes' : tree.includes('InitializationProvider') ? 'no (start-up provider there without it)' : 'no';
+}
+
 async function main() {
+  log('EmojiCompat started by the app:', emojiCompatInManifest());
   log('installing', apk);
   adb('wait-for-device');
   quiet(() => adb('uninstall', PACKAGE));
@@ -271,6 +293,17 @@ async function main() {
   launch();
   let page = await openPage();
   shot('home-small-font');
+
+  // Which part of the app connects to Play services' font provider: the page as it opens, then the page showing
+  // emoji it has not shown yet (the WebView may fetch an emoji font from Play services for them).
+  await sleep(4000);
+  log('fonts, page open:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
+  await page.run(`const probe = document.createElement('div'); probe.id = 'e2e-emoji';
+    probe.textContent = '\u{1F686} \u{1F689} \u{23F1}\u{FE0F} \u{1F9ED} \u{1FAE8}'; probe.style.fontSize = '40px';
+    document.body.prepend(probe);`);
+  await sleep(6000);
+  log('fonts, after emoji:', providerLinks().join(' | ') || '(none)', JSON.stringify(foreignFiles()));
+  await page.run(`document.getElementById('e2e-emoji').remove();`);
 
   const bridge = await page.run(`
     const c = window.Capacitor || {};
