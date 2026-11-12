@@ -132,7 +132,7 @@ body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18
 const ZONE = 1000, RINGS = [100, 250, 500, 750, 1000], NEAR = 250;
 const ACCURACY_LIMIT = 500; // m; a fix less accurate than this is not used
 const ring = d => RINGS.find(r => d <= r) ?? ZONE;
-const STOP_SPEED = 0.75;  // m/s (2.7 km/h) se kam = ruka hua
+const STOP_SPEED = 5 / 3.6; // m/s: 5 km/h se kam = ruki hui, 5 km/h ya zyada = chal padi
 const MIN_HALT = 15;      // sec, isse zyada ruke to "halt"
 const KEY = 'trainlog';
 let stations = [], watchId = null, nativeWatcher = null, last = null, state = {};
