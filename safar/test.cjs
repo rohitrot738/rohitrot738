@@ -113,6 +113,42 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await flush();
   assert.equal(removedNativeWatcher, true);
 
+  // The app as it really is. Capacitor's registerPlugin is not on the page (the page is not built with Capacitor's
+  // script); the native plugins are plain objects on Capacitor.Plugins, and a watcher's id comes back directly, not
+  // as a promise. The page must reach them all the same: for a long time it asked only for registerPlugin and so
+  // never used the native side at all.
+  let appCallback, appRemoved = false, appBegun = 0;
+  const appBars = [];
+  const inApp = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), null, {
+    isNativePlatform: () => true,
+    Plugins: {
+      BackgroundGeolocation: {
+        addWatcher: (_options, callback) => { appCallback = callback; return '17'; },
+        removeWatcher: async ({id}) => { assert.equal(id, '17'); appRemoved = true; }
+      },
+      SafarBuffer: {
+        drain: async () => ({fixes: []}), begin: async () => { appBegun++; }, end: async () => {},
+        status: async () => ({}), fullScreen: async ({on}) => { appBars.push(on); }
+      }
+    }
+  });
+  inApp.elements.start.onclick();
+  await flush();
+  assert.equal(appBegun, 1);
+  assert.equal(inApp.watches.length, 0); // the browser's location, which stops with the screen, is not what runs
+  appCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
+  await flush();
+  appCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 145000}, null);
+  appCallback({latitude: 28.01, longitude: 77, accuracy: 10, speed: 10, time: 160000}, null);
+  assert.equal(JSON.parse(inApp.store.get('trainlog'))[0].name, 'Native Station');
+  inApp.elements.stop.onclick();
+  await flush();
+  assert.equal(appRemoved, true);
+  // The full-screen clock hides the phone's own bars through the native side, and brings them back.
+  inApp.elements['clock-full'].onclick();
+  inApp.elements['clock-full'].onclick();
+  assert.deepEqual(appBars, [true, false]);
+
   // A slow first native fix adds browser location beside the native watcher, which alone works with the screen
   // off; it is not replaced, and its first fix takes over again.
   const realSetTimeout = global.setTimeout, timers = [];
@@ -199,8 +235,13 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.origin.value = 'SEB';
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
-  assert.match(routed.elements['route-status'].textContent, /Route bana: 2 stations/);
-  assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'DEHRI ON SONE (DOS)']);
+  // ADSR has no link of its own but lies on the line between the two, so the route takes it in.
+  assert.match(routed.elements['route-status'].textContent, /Route bana: 3 stations/);
+  assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'ADSR (ADSR)', 'DEHRI ON SONE (DOS)']);
+  // Its tick taken off, it is not logged though the train passes right over it.
+  const adsrBox = routed.elements['route-list'].children[1].children[0].children[0];
+  adsrBox.checked = false;
+  adsrBox.onchange();
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
   assert.match(routed.elements.next.textContent, /Sambhavit agla station: DEHRI ON SONE \(DOS\)/);
@@ -381,12 +422,50 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   await bundled.elements['find-route'].onclick();
   assert.ok(routeNames().includes('VARANASI JN (BSB)'));
 
+  // A link that passes stations by: the route puts them back. North is known to the timetable between Alpha and
+  // Beta, which an OSM link joins directly; Halt has no link at all but lies on the line; Twin is the same place
+  // under a second code; Aside is too far off the line, and Loop is linked but lies a long way round.
+  const passedStations = stationFetcher([['A', 'Alpha', 28, 77], ['N', 'North', 28.05, 77.002], ['B', 'Beta', 28.1, 77],
+    ['H', 'Halt', 28.13, 77.0005], ['T', 'Twin', 28.1301, 77.0005], ['S', 'Aside', 28.15, 77.02], ['L', 'Loop', 28.15, 77.08],
+    ['C', 'Gamma', 28.2, 77]]);
+  const passed = setup(async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A', 'N', 5.57], ['N', 'B', 5.57], ['B', 'C', 11.12], ['B', 'L', 9.6], ['L', 'C', 9.6]]}
+    : url === 'osm-station-routes.json'
+      ? {ok: true, json: async () => ({schema_version: 1, edges: [['A', 'B', 11100]]})}
+      : passedStations(url));
+  await flush();
+  passed.elements.origin.value = 'A';
+  passed.elements.destination.value = 'C';
+  await passed.elements['find-route'].onclick();
+  assert.deepEqual(passed.elements['route-list'].children.map(rowName),
+    ['Alpha (A)', 'North (N)', 'Beta (B)', 'Halt (H)', 'Gamma (C)']);
+
+  // The same on the real data: Patna to Mughal Sarai goes by Neora, Ara and the cabins before Mughal Sarai, which
+  // the shortest links pass by.
+  const readJson = name => JSON.parse(fs.readFileSync(require('path').join(__dirname, name), 'utf8'));
+  const realFiles = {'stations.json': database, 'osm-stations.json': readJson('osm-stations.json'),
+    'edges.json': readJson('edges.json'), 'osm-station-routes.json': readJson('osm-station-routes.json')};
+  const patna = setup(async url => ({ok: url in realFiles, json: async () => realFiles[url]}));
+  await flush();
+  patna.elements.origin.value = 'PNBE';
+  patna.elements.destination.value = 'MGS';
+  await patna.elements['find-route'].onclick();
+  const patnaCodes = patna.elements['route-list'].children.map(rowName).map(name => name.match(/\(([^)]+)\)$/)?.[1]);
+  const place = code => patnaCodes.indexOf(code);
+  for (const [before, code, after] of [['DNR', 'NEO', 'SDE'], ['JMIR', 'ARA', 'JGWL'], ['KCA', 'EOCM', 'MGS']]) {
+    assert.ok(place(before) >= 0 && place(before) < place(code) && place(code) < place(after),
+      `${code} is missing between ${before} and ${after}`);
+  }
+  assert.equal(new Set(patnaCodes).size, patnaCodes.length);
+
   // Choosing which stations are logged: an unticked route station is skipped, a ticked one is logged, and a
   // station the route missed can be added at its place.
+  // Extra stands by the line but belongs to a side line of its own (its link to Side), so the route does not take
+  // it in by itself.
   const chosenStations = stationFetcher([['A', 'Alpha', 28, 77], ['B', 'Beta', 28.1, 77], ['C', 'Gamma', 28.2, 77],
-    ['D', 'Delta', 28.3, 77], ['X', 'Extra', 28.15, 77.001], ['FAR', 'Far Away', 20, 70]]);
+    ['D', 'Delta', 28.3, 77], ['X', 'Extra', 28.15, 77.001], ['Y', 'Side', 28.15, 77.06], ['FAR', 'Far Away', 20, 70]]);
   const chosen = setup(async url => url === 'edges.json'
-    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url));
+    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11], ['X', 'Y', 6]]} : chosenStations(url));
   await flush();
   chosen.elements.origin.value = 'A';
   chosen.elements.destination.value = 'D';

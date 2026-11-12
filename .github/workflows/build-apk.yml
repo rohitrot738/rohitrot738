@@ -73,6 +73,35 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+      # The app itself, run on an emulator and checked from inside its page: that the page reaches the native side,
+      # that the full-screen clock hides the phone's bars and fills the screen at any font size, and that a journey
+      # goes on being recorded with the screen off. Done before a change is merged, on the debug build, whose page
+      # can be driven. google_apis: the location service the app uses is Google's.
+      - name: Enable KVM for the app test
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Test the app on an Android 14 emulator
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: node scripts/android_e2e.mjs android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Upload app test screenshots
+        if: always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch')
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-test-screenshots
+          path: e2e-shots
+          if-no-files-found: ignore
+
       - name: Check signing configuration
         id: signing
         env:
