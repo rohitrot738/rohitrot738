@@ -45,7 +45,7 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
    real screen and the real font, since neither vh/vw nor a font's size can be relied on inside the app. A dark
    sheet lies under the clock (body::before) so the page never shows at its edges, then the dial, then the clock's
    own parts, which alone take touches. Everything underneath keeps running. */
-body.clockmode{overflow:hidden}
+body.clockmode{overflow:hidden;touch-action:none}
 body.clockmode::before{content:"";position:fixed;top:-100px;right:-100px;bottom:-100px;left:-100px;z-index:7;background:#0f172a}
 body.clockmode .clock{position:fixed;top:0;right:0;bottom:0;left:0;z-index:10;margin:0;border-radius:0;background:transparent;
 box-sizing:border-box;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:14px 16px;pointer-events:none}
@@ -67,8 +67,14 @@ body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
 /* The bar for the sizes, opened with the gear: which part, Auto or Custom, a slider with - and +, back to the
    sizes the clock lays out by itself, and done. It sits at the top while the time is sized and at the bottom
-   otherwise, so it never hides what is being sized; that part is outlined. */
-body.clockmode .sizing{outline:2px dashed #60a5fa;outline-offset:6px}
+   otherwise, so it never hides what is being sized. That part sits in a dashed box with a round handle at each
+   corner, to be drawn larger or smaller like a picture (the handles take a finger's width, the dot is smaller). */
+#size-box,.size-handle{display:none}
+body.clockmode #size-box:not([hidden]){display:block;position:absolute;z-index:5;box-sizing:border-box;border:2px dashed #60a5fa;
+border-radius:6px;pointer-events:none}
+body.clockmode .size-handle:not([hidden]){display:block;position:absolute;z-index:6;width:44px;height:44px;margin:-22px 0 0 -22px;touch-action:none}
+.size-handle::after{content:"";position:absolute;left:11px;top:11px;width:22px;height:22px;box-sizing:border-box;border-radius:50%;
+background:#f8fafc;border:3px solid #2563eb;box-shadow:0 1px 4px rgba(0,0,0,.6)}
 body.clockmode #clock-sizes:not([hidden]){display:block;position:absolute;z-index:4;left:12px;right:12px;top:12px;padding:4px 8px;
 border-radius:12px;background:rgba(30,41,59,.97);box-shadow:0 6px 18px rgba(0,0,0,.6);touch-action:none}
 body.clockmode #clock-sizes.low{top:auto;bottom:12px}
@@ -91,7 +97,8 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 <main>
 <div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full screen ghadi"></button><button id="clock-edit" type="button" aria-label="Ghadi ke size badlein"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Samay ka rang chunein"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
 <div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Samay</button><button id="size-dial" type="button">Speed gola</button><button id="size-date" type="button">Din-tarikh</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
-<div class="size-row"><button id="size-down" type="button" aria-label="Chhota karein">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Bada karein">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Pehle jaisa</button><button id="size-done" type="button">Ho gaya</button></div></div></div>
+<div class="size-row"><button id="size-down" type="button" aria-label="Chhota karein">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Bada karein">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Pehle jaisa</button><button id="size-done" type="button">Ho gaya</button></div></div>
+<div id="size-box" hidden></div><div class="size-handle" id="size-handle-0" hidden></div><div class="size-handle" id="size-handle-1" hidden></div><div class="size-handle" id="size-handle-2" hidden></div><div class="size-handle" id="size-handle-3" hidden></div></div>
 <div class="card">
   <b>Apna route chunein</b><br>
   <label for="origin">Shuru station</label><br>
@@ -1580,19 +1587,17 @@ function sizeDial(size) {
 }
 
 // Shows the sizes bar as things stand: open only in the full-screen clock after the gear, the part being sized
-// picked and outlined, the way in use, and the slider and percentage at that part's size.
+// picked, the way in use, and the slider and percentage at that part's size.
 function showSizes(shown) {
   sizesShown = shown;
   const open = clockMode && clockEditing, bar = $('clock-sizes');
   bar.hidden = !open;
+  if (!open) fingers.clear();
   bar.className = sizePart === 'time' ? '' : 'low';
   $('clock-edit').className = open ? 'on' : '';
   for (const part of CLOCK_PARTS) $('size-' + part).className = part === sizePart ? 'on' : '';
   $('size-auto').className = clockSizes.mode === 'auto' ? 'on' : '';
   $('size-custom').className = clockSizes.mode === 'custom' ? 'on' : '';
-  $('clock-time').className = open && sizePart === 'time' ? 'sizing' : '';
-  $('clock-date').className = open && sizePart === 'date' ? 'sizing' : '';
-  $('speedo').className = open && sizePart === 'dial' ? 'speedo sizing' : 'speedo';
   const [low, high] = partLimits(), value = shown[sizePart];
   $('size-value').textContent = Math.round(value * 100) + '%';
   $('size-fill').style.width = $('size-thumb').style.left = (high > low ? (value - low) / (high - low) * 100 : 100).toFixed(1) + '%';
@@ -1611,6 +1616,7 @@ function fitClock() {
     sizeDial(null);
     sizeLimits = null;
     showSizes(sizesInUse());
+    placeSizeBox(null);
     return;
   }
   const long = Math.max(w, h), short = Math.min(w, h);
@@ -1635,6 +1641,27 @@ function fitClock() {
   const leftOfDial = laid.rects.dial[0] - CLOCK_GAP - CLOCK_EDGE;
   $('clock-sizes').style.right = sizePart === 'dial' && leftOfDial >= 300 ? long - laid.rects.dial[0] + CLOCK_GAP + 'px' : '';
   showSizes(laid.sizes);
+  placeSizeBox(laid, long, short);
+}
+
+// The dashed box round the part being sized, with a handle at each corner (top left, top right, bottom right,
+// bottom left), in the clock's own measure, while the bar is open. sizeBox: the point the part grows from, which
+// stays put as it does: the dial's top right corner, the date's top left, the middle of the time's foot.
+let sizeBox = null;
+function placeSizeBox(laid, long, short) {
+  const open = Boolean(laid && clockMode && clockEditing);
+  $('size-box').hidden = !open;
+  for (let i = 0; i < 4; i++) $('size-handle-' + i).hidden = !open;
+  sizeBox = null;
+  if (!open) return;
+  const r = laid.rects[sizePart], [left, top, right, bottom] = [r[0] - 6, r[1] - 6, r[2] + 6, r[3] + 6];
+  Object.assign($('size-box').style, {left: left + 'px', top: top + 'px', width: right - left + 'px', height: bottom - top + 'px'});
+  // A handle never goes past the screen's edge, so a finger always finds it.
+  const onScreen = (value, most) => Math.min(most - 14, Math.max(14, value)) + 'px';
+  [[left, top], [right, top], [right, bottom], [left, bottom]].forEach(([across, down], i) => {
+    Object.assign($('size-handle-' + i).style, {left: onScreen(across, long), top: onScreen(down, short)});
+  });
+  sizeBox = {stays: sizePart === 'dial' ? [r[2], r[1]] : sizePart === 'date' ? [r[0], r[1]] : [(r[0] + r[2]) / 2, r[3]]};
 }
 window.addEventListener?.('resize', fitClock);
 
@@ -1685,6 +1712,57 @@ $('size-track').onpointerup = $('size-track').onpointercancel = () => { sizeSlid
 // made while that lasts (it takes it for stopping a scroll): "Ho gaya" right after sliding did nothing, a few
 // times in ten.
 $('size-track').addEventListener?.('touchstart', event => event.preventDefault(), {passive: false});
+
+// Sizing like a picture. A point of the page in the clock's own measure: turned, the clock's left-to-right runs
+// down the page and its top-to-bottom from the page's right edge leftwards.
+const clockPoint = event => document.body.className.includes('turned')
+  ? [event.clientY, window.innerWidth - event.clientX] : [event.clientX, event.clientY];
+const apart = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const sizeNow = () => (sizesShown || sizesInUse())[sizePart];
+// A corner drawn away from where the part stands makes it larger, towards it smaller: by how much farther or
+// nearer the finger is now than where it took the handle.
+let cornerDrag = null;
+for (let i = 0; i < 4; i++) {
+  const handle = $('size-handle-' + i);
+  handle.onpointerdown = event => {
+    if (!sizeBox) return;
+    try { handle.setPointerCapture?.(event.pointerId); } catch (e) { /* the finger is followed anyway */ }
+    cornerDrag = {pointer: event.pointerId, from: clockPoint(event), stays: sizeBox.stays, size: sizeNow()};
+  };
+  handle.onpointermove = event => {
+    if (!cornerDrag || event.pointerId !== cornerDrag.pointer) return;
+    const reach = point => Math.max(30, apart(point, cornerDrag.stays));
+    setClockSize(cornerDrag.size * reach(clockPoint(event)) / reach(cornerDrag.from));
+  };
+  handle.onpointerup = handle.onpointercancel = event => { if (cornerDrag?.pointer === event.pointerId) cornerDrag = null; };
+  handle.addEventListener?.('touchstart', event => event.preventDefault(), {passive: false});
+}
+// Two fingers anywhere on the clock (not on the bar or a handle), spread or pinched, size the part the same way:
+// by how much farther apart or closer together they are than when the second one came down.
+const fingers = new Map();
+let pinch = null;
+document.body.onpointerdown = event => {
+  if (!clockMode || !clockEditing || event.target?.closest?.('#clock-sizes, .size-handle')) return;
+  fingers.set(event.pointerId, [event.clientX, event.clientY]);
+  const [a, b] = fingers.values();
+  pinch = fingers.size === 2 ? {apart: Math.max(20, apart(a, b)), size: sizeNow()} : null;
+};
+document.body.onpointermove = event => {
+  if (!fingers.has(event.pointerId)) return;
+  fingers.set(event.pointerId, [event.clientX, event.clientY]);
+  if (!pinch || fingers.size !== 2) return;
+  const [a, b] = fingers.values();
+  setClockSize(pinch.size * apart(a, b) / pinch.apart);
+};
+document.body.onpointerup = document.body.onpointercancel = event => {
+  fingers.delete(event.pointerId);
+  if (fingers.size !== 2) pinch = null;
+};
+// Two fingers on the full-screen clock are the page's own: the browser neither zooms nor makes a scroll or fling
+// of them (one would swallow the next tap, as with the slider).
+const ownTouches = event => { if (clockMode && event.touches?.length >= 2) event.preventDefault(); };
+document.addEventListener?.('touchstart', ownTouches, {passive: false});
+document.addEventListener?.('touchmove', ownTouches, {passive: false});
 
 function setClockMode(on) {
   clockMode = on;

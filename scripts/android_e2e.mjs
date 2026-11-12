@@ -288,6 +288,28 @@ async function slide(page, from, to) {
   }
   await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
 }
+// A finger drawn from one point of the page to another; two fingers on a line through a point (along the page's
+// width or height), from one distance apart to another.
+async function drag(page, from, to) {
+  const at = share => ({x: from[0] + (to[0] - from[0]) * share, y: from[1] + (to[1] - from[1]) * share});
+  await page.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: [at(0)]});
+  for (let step = 1; step <= 12; step++) {
+    await page.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: [at(step / 12)]});
+    await sleep(16);
+  }
+  await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await sleep(300);
+}
+async function pinchAt(page, [x, y], from, to, acrossWidth) {
+  const fingers = gap => acrossWidth ? [{x: x - gap / 2, y, id: 0}, {x: x + gap / 2, y, id: 1}] : [{x, y: y - gap / 2, id: 0}, {x, y: y + gap / 2, id: 1}];
+  await page.send('Input.dispatchTouchEvent', {type: 'touchStart', touchPoints: fingers(from)});
+  for (let step = 1; step <= 12; step++) {
+    await page.send('Input.dispatchTouchEvent', {type: 'touchMove', touchPoints: fingers(from + (to - from) * step / 12)});
+    await sleep(16);
+  }
+  await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
+  await sleep(300);
+}
 // A screenshot once the emulator's screen has caught up: it draws in software, and a frame can lag a second behind.
 async function settledShot(name) { await sleep(1200); shot(name); }
 // The clock's parts as they stand, with the sizes bar.
@@ -363,6 +385,25 @@ async function clockSizesCheck(page) {
   check(own.value === '120%' && dialOf(own) > dialOf(plain) + 30, 'sizes: + makes the dial larger in steps', `${own.value}, ${dialOf(own)} px`);
   check(own.font === plain.font && own.dateFont === plain.dateFont, 'sizes: in Custom the time and the date keep their sizes when the dial grows',
     `${own.font} / ${own.dateFont} against ${plain.font} / ${plain.dateFont}`);
+
+  // Like a picture: the dial's bottom left handle drawn out, away from the dial's top right corner, makes it larger;
+  // two fingers pinched to half their distance halve it; "Ho gaya" straight after the pinch still closes the bar.
+  const [hx, hy, turned, zoom] = await page.run(`const r = document.getElementById('size-handle-3').getBoundingClientRect();
+    return [r.left + r.width / 2, r.top + r.height / 2, document.body.className.includes('turned'), visualViewport.scale];`);
+  await drag(page, [hx, hy], turned ? [hx - 60, hy - 60] : [hx - 60, hy + 60]);
+  const drawnOut = await page.run(SIZES);
+  log('sizes, a corner drawn out:', drawnOut.value, dialOf(drawnOut), 'px');
+  await settledShot('clock-sizes-corner-handles');
+  check(dialOf(drawnOut) > dialOf(own) + 40, 'sizes: a corner handle drawn out makes the dial larger, like a picture', `${dialOf(own)} -> ${dialOf(drawnOut)} px, ${drawnOut.value}`);
+  // Clear of the bar, which lies along the clock's bottom (the page's left edge while turned).
+  await pinchAt(page, turned ? [width / 2 + 60, height / 2] : [width / 2, height / 2 - 60], 240, 120, !turned);
+  const pinched = await page.run(SIZES);
+  const halfOf = Math.max(0.4, Math.round(parseInt(drawnOut.value) / 2) / 100);
+  check(Math.abs(parseInt(pinched.value) / 100 - halfOf) <= 0.02, 'sizes: two fingers pinched to half their distance halve the dial', `${drawnOut.value} -> ${pinched.value}`);
+  check((await page.run(`return visualViewport.scale;`)) === zoom, 'sizes: the page itself does not zoom under two fingers');
+  await tap(page, '#size-done');
+  check(!(await page.run(SIZES)).open, 'sizes: "Ho gaya" right after a pinch closes the bar');
+  await tap(page, '#clock-edit');
 
   await tap(page, '#size-reset');
   await tap(page, '#size-auto');

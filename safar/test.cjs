@@ -5,7 +5,7 @@ const assert = require('assert');
 const html = fs.readFileSync(require('path').join(__dirname, 'index.html'), 'utf8');
 const script = html.match(/<script>([\s\S]*?)<\/script>/)[1];
 
-function setup(fetch, saved, capacitor = null) {
+function setup(fetch, saved, capacitor = null, screen = null) {
   const elements = {};
   function element() {
     return {
@@ -23,7 +23,7 @@ function setup(fetch, saved, capacitor = null) {
     watchPosition(success, error, options) { watches.push({success, error, options}); return watches.length; },
     clearWatch(id) { watches[id - 1].cleared = true; }
   };
-  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor}, fetch, AbortController, setTimeout, clearTimeout, setInterval: (fn, ms) => { (elements.intervals ||= []).push({fn, ms}); elements.clockTick = fn; return 0; }, String,
+  const context = {document, localStorage, navigator: {geolocation}, window: {Capacitor: capacitor, ...screen}, fetch, AbortController, setTimeout, clearTimeout, setInterval: (fn, ms) => { (elements.intervals ||= []).push({fn, ms}); elements.clockTick = fn; return 0; }, String,
     console, Date, Math, Number, JSON, Blob, URL, confirm: () => true};
   vm.runInNewContext(script, context);
   return {elements, store, watches, context};
@@ -897,15 +897,12 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(knob['clock-sizes'].hidden, false);
   assert.equal(knob['size-time'].className, 'on');    // the time first, in Auto
   assert.equal(knob['size-auto'].className, 'on');
-  assert.equal(knob['clock-time'].className, 'sizing');
   assert.equal(knob['size-value'].textContent, '100%');
   knob['size-down'].onclick();
   assert.equal(knob['size-value'].textContent, '95%');
   knob['size-dial'].onclick();
   assert.equal(knob['size-dial'].className, 'on');
   assert.equal(knob['size-time'].className, '');
-  assert.equal(knob.speedo.className, 'speedo sizing');
-  assert.equal(knob['clock-time'].className, '');
   assert.equal(knob['clock-sizes'].className, 'low');  // the bar keeps out of the way of what is being sized
   knob['size-up'].onclick();
   knob['size-up'].onclick();
@@ -922,7 +919,6 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: {time: 1, dial: 1, date: 1.05}});
   knob['size-done'].onclick();
   assert.equal(knob['clock-sizes'].hidden, true);
-  assert.equal(knob['clock-date'].className, '');
   // Kept for the next start; "Pehle jaisa" puts the sizes of the way in use back.
   const resized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), sized.store);
   const again = resized.elements;
@@ -940,6 +936,97 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(again['clock-sizes'].hidden, true);
   assert.equal(again.body.className, '');
   assert.equal(again.speedo.style.width, '');
+
+  // ---- Sizing like a picture. With the bar open, the part being sized sits in a dashed box with a handle at each
+  // corner (top left, top right, bottom right, bottom left, in the clock's own measure). A corner drawn away from
+  // where the part stands makes it larger, drawn towards it smaller, by how much farther or nearer the finger is; two
+  // fingers spread or pinched anywhere on the clock do the same by how much farther apart they are.
+  const fallback = {width: 305, digit: 71.1, foot: 84.5, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92};
+  const drawn = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 360, innerHeight: 735});
+  const hand = drawn.elements;
+  const keptSizes = () => JSON.parse(drawn.store.get('safar-clock-sizes'));
+  const reach = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  // The clock is turned: its left-to-right runs down the page, its top-to-bottom from the page's right edge.
+  const onPage = ([u, v]) => ({clientX: 360 - v, clientY: u});
+  hand['clock-full'].onclick();
+  assert.equal(hand.body.className, 'clockmode turned');
+  assert.equal(hand['size-box'].hidden, true);        // no box or handles until the gear is pressed
+  assert.equal(hand['size-handle-0'].hidden, true);
+  hand['clock-edit'].onclick();
+  hand['size-dial'].onclick();
+  assert.equal(hand['size-box'].hidden, false);
+  for (let i = 0; i < 4; i++) assert.equal(hand[`size-handle-${i}`].hidden, false);
+  const dialBox = drawn.context.clockLayout(735, 360, fallback, ones, true).rects.dial;
+  near(parseFloat(hand['size-box'].style.left), dialBox[0] - 6, 'box round the dial, left');
+  near(parseFloat(hand['size-box'].style.width), dialBox[2] - dialBox[0] + 12, 'box round the dial, width');
+  const lowLeft = [dialBox[0] - 6, dialBox[3] + 6], dialCorner = [dialBox[2], dialBox[1]];
+  near(parseFloat(hand['size-handle-3'].style.left), lowLeft[0], 'bottom left handle, across');
+  near(parseFloat(hand['size-handle-3'].style.top), lowLeft[1], 'bottom left handle, down');
+  // The dial stands in its top right corner: its bottom left corner drawn out makes it larger.
+  const out = [lowLeft[0] - 40, lowLeft[1] + 40];
+  hand['size-handle-3'].onpointerdown({pointerId: 7, ...onPage(lowLeft)});
+  hand['size-handle-3'].onpointermove({pointerId: 7, ...onPage(out)});
+  hand['size-handle-3'].onpointerup({pointerId: 7});
+  const drawnOut = Math.round(reach(out, dialCorner) / reach(lowLeft, dialCorner) * 100) / 100;
+  assert.ok(drawnOut > 1.2);
+  near(keptSizes().auto.dial, drawnOut, 'a corner drawn out');
+  // The handles moved with the larger dial; another finger on another handle, drawn in, makes it smaller again.
+  const grown = drawn.context.clockLayout(735, 360, fallback, {...ones, dial: drawnOut}, true).rects.dial;
+  near(parseFloat(hand['size-handle-0'].style.left), grown[0] - 6, 'top left handle follows the dial');
+  const topLeft = [grown[0] - 6, grown[1] - 6], inward = [topLeft[0] + 60, topLeft[1]];
+  hand['size-handle-0'].onpointerdown({pointerId: 8, ...onPage(topLeft)});
+  hand['size-handle-0'].onpointermove({pointerId: 9, ...onPage([0, 0])});   // another finger's move is not this drag
+  near(keptSizes().auto.dial, drawnOut, 'another finger does not drag');
+  hand['size-handle-0'].onpointermove({pointerId: 8, ...onPage(inward)});
+  hand['size-handle-0'].onpointerup({pointerId: 8});
+  const drawnIn = Math.round(drawnOut * reach(inward, [grown[2], grown[1]]) / reach(topLeft, [grown[2], grown[1]]) * 100) / 100;
+  assert.ok(drawnIn < drawnOut);
+  near(keptSizes().auto.dial, drawnIn, 'a corner drawn in');
+  // The time stands on the middle of its foot; the date in its top left corner.
+  hand['size-time'].onclick();
+  const timeBox = drawn.context.clockLayout(735, 360, fallback, {...ones, dial: drawnIn}, true).rects.time;
+  near(parseFloat(hand['size-box'].style.top), timeBox[1] - 6, 'box round the time');
+  hand['size-date'].onclick();
+  const dateBox = drawn.context.clockLayout(735, 360, fallback, {...ones, dial: drawnIn}, true).rects.date;
+  near(parseFloat(hand['size-box'].style.left), dateBox[0] - 6, 'box round the date');
+  // Two fingers on the dial's size: pinched to half their distance apart, it halves; spread to twice, it doubles.
+  // One finger alone changes nothing.
+  hand['size-dial'].onclick();
+  const body = hand.body;
+  body.onpointerdown({pointerId: 1, clientX: 100, clientY: 300, target: body});
+  body.onpointermove({pointerId: 1, clientX: 60, clientY: 300, target: body});
+  near(keptSizes().auto.dial, drawnIn, 'one finger does not pinch');
+  body.onpointerdown({pointerId: 2, clientX: 160, clientY: 300, target: body});
+  body.onpointermove({pointerId: 2, clientX: 110, clientY: 300, target: body});   // 100 apart -> 50 apart
+  body.onpointerup({pointerId: 2, target: body});
+  body.onpointerup({pointerId: 1, target: body});
+  near(keptSizes().auto.dial, Math.round(drawnIn / 2 * 100) / 100, 'pinched to half');
+  const halved = keptSizes().auto.dial;
+  body.onpointerdown({pointerId: 3, clientX: 100, clientY: 300, target: body});
+  body.onpointerdown({pointerId: 4, clientX: 150, clientY: 300, target: body});
+  body.onpointermove({pointerId: 4, clientX: 200, clientY: 300, target: body});  // 50 apart -> 100 apart
+  body.onpointerup({pointerId: 3, target: body});
+  body.onpointerup({pointerId: 4, target: body});
+  near(keptSizes().auto.dial, Math.round(halved * 2 * 100) / 100, 'spread to twice');
+  // Fingers on the bar or a handle are not a pinch.
+  const onBar = {closest: selector => selector.includes('#clock-sizes') ? {} : null};
+  body.onpointerdown({pointerId: 5, clientX: 100, clientY: 300, target: onBar});
+  body.onpointerdown({pointerId: 6, clientX: 150, clientY: 300, target: body});
+  body.onpointermove({pointerId: 6, clientX: 300, clientY: 300, target: body});
+  body.onpointerup({pointerId: 5, target: onBar});
+  body.onpointerup({pointerId: 6, target: body});
+  near(keptSizes().auto.dial, Math.round(halved * 2 * 100) / 100, 'a finger on the bar is not a pinch');
+  // With the bar closed, no box, no handles, and two fingers change nothing.
+  hand['size-done'].onclick();
+  assert.equal(hand['size-box'].hidden, true);
+  assert.equal(hand['size-handle-2'].hidden, true);
+  const closedSize = keptSizes().auto.dial;
+  body.onpointerdown({pointerId: 10, clientX: 100, clientY: 300, target: body});
+  body.onpointerdown({pointerId: 11, clientX: 150, clientY: 300, target: body});
+  body.onpointermove({pointerId: 11, clientX: 300, clientY: 300, target: body});
+  body.onpointerup({pointerId: 10, target: body});
+  body.onpointerup({pointerId: 11, target: body});
+  near(keptSizes().auto.dial, closedSize, 'no pinch with the bar closed');
 
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);

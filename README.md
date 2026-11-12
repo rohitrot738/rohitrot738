@@ -22,7 +22,7 @@ Install the file named in the release notes (`Suffer-Sathi-<version>.apk`). Once
 - **Next station:** from the route when you are on it (unticked stations are skipped), otherwise an estimate from the direction of travel.
 - **Speed:** in a round dial, in km/h.
 - **Clock:** date and time with seconds; one button turns it into a large full-screen clock that also shows the speed and hides the phone's status bar and buttons. The colour of the time can be picked from ten colours.
-- **Clock sizes:** in the full-screen clock, a small gear next to EXIT opens a bar for sizes (nothing changes until it is pressed). Pick the time (hours, minutes and seconds change together), the speed dial or the date, with its button or by tapping it, and make it larger or smaller with the slider or with − and +. There are two ways, each with sizes of its own: **Auto** keeps everything apart, so a larger dial takes room from the time and the date (a very large dial has the time beside it) and a smaller one gives it back; **Custom** gives each part its own size whatever the others do, so parts may overlap. "Pehle jaisa" brings back the clock's own layout, and the sizes are kept.
+- **Clock sizes:** in the full-screen clock, a small gear next to EXIT opens a bar for sizes (nothing changes until it is pressed). Pick the time (hours, minutes and seconds change together), the speed dial or the date, with its button or by tapping it, and resize it like a picture: it sits in a dashed box with a handle at each corner, so drawing a corner out makes it larger and drawing it in makes it smaller, and spreading or pinching two fingers does the same. The slider and − and + are there for small steps. There are two ways, each with sizes of its own: **Auto** keeps everything apart, so a larger dial takes room from the time and the date (a very large dial has the time beside it) and a smaller one gives it back; **Custom** gives each part its own size whatever the others do, so parts may overlap. "Pehle jaisa" brings back the clock's own layout, and the sizes are kept.
 - **CSV:** the whole log can be exported as a CSV file.
 
 ## Logging with the screen off
@@ -62,7 +62,7 @@ npm ci && npx cap sync android
 cd android && ./gradlew assembleDebug testDebugUnitTest
 ```
 
-Every pull request also runs the debug APK on an Android emulator (`node scripts/android_e2e.mjs path/to/app-debug.apk`): it checks that the page reaches the native side of the app, that a journey keeps being recorded with the screen off, that the full-screen clock hides the phone's bars and fills the screen at any font-size setting, that its sizes can be changed by touch from the gear (Auto and Custom), and that a route has its stations. Its screenshots are in the run's `app-test-screenshots` artifact.
+Every pull request also runs the debug APK on an Android emulator (`node scripts/android_e2e.mjs path/to/app-debug.apk`): it checks that the page reaches the native side of the app, that a journey keeps being recorded with the screen off, that the full-screen clock hides the phone's bars and fills the screen at any font-size setting, that its sizes can be changed by touch from the gear (slider, corner handles, two fingers; Auto and Custom), and that a route has its stations. Its screenshots are in the run's `app-test-screenshots` artifact.
 
 The page is not built with Capacitor's script, so `Capacitor.registerPlugin` does not exist in it; native plugins are reached through `Capacitor.Plugins` (`nativePlugin()` in `safar/index.html`).
 
