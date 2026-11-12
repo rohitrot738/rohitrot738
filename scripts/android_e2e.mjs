@@ -288,6 +288,8 @@ async function slide(page, from, to) {
   }
   await page.send('Input.dispatchTouchEvent', {type: 'touchEnd', touchPoints: []});
 }
+// A screenshot once the emulator's screen has caught up: it draws in software, and a frame can lag a second behind.
+async function settledShot(name) { await sleep(1200); shot(name); }
 // The clock's parts as they stand, with the sizes bar.
 const SIZES = CLOCK.replace(/return \{/, `const own = id => box(id).map(Math.round);
   return {open: !document.getElementById('clock-sizes').hidden, part: sizePart, mode: clockSizes.mode, saved: localStorage.getItem('safar-clock-sizes'),
@@ -326,14 +328,14 @@ async function clockSizesCheck(page) {
   await tap(page, '#clock-edit');
   const opened = await page.run(SIZES);
   check(opened.open && opened.part === 'time' && opened.mode === 'auto', 'sizes: the gear opens the bar, on the time, in Auto', JSON.stringify([opened.open, opened.part, opened.mode]));
-  shot('clock-sizes-bar');
+  await settledShot('clock-sizes-bar');
   await tap(page, '#size-dial');
   await slide(page, 0.3, 0.8);
   await sleep(150);
   await tap(page, '#size-done');   // straight after sliding, as a hand would
   const larger = await page.run(SIZES);
   log('sizes, Auto with a larger dial:', JSON.stringify(larger));
-  shot('clock-sizes-auto-larger-dial');
+  await settledShot('clock-sizes-auto-larger-dial');
   const dialOf = clock => clock.dial[2] - clock.dial[0];
   check(dialOf(larger) > dialOf(plain) + 40, 'sizes: sliding makes the dial larger', `${dialOf(plain)} -> ${dialOf(larger)} px, ${larger.value}`);
   check(!larger.open, 'sizes: "Ho gaya" right after sliding closes the bar');
@@ -357,7 +359,7 @@ async function clockSizesCheck(page) {
   for (let i = 0; i < 4; i++) await tap(page, '#size-up');
   const own = await page.run(SIZES);
   log('sizes, Custom with a larger dial:', JSON.stringify(own));
-  shot('clock-sizes-custom-larger-dial');
+  await settledShot('clock-sizes-custom-larger-dial');
   check(own.value === '120%' && dialOf(own) > dialOf(plain) + 30, 'sizes: + makes the dial larger in steps', `${own.value}, ${dialOf(own)} px`);
   check(own.font === plain.font && own.dateFont === plain.dateFont, 'sizes: in Custom the time and the date keep their sizes when the dial grows',
     `${own.font} / ${own.dateFont} against ${plain.font} / ${plain.dateFont}`);
