@@ -72,5 +72,5 @@ After every change on `main`, GitHub Actions builds a signed APK, installs it ov
 
 ## Data credits
 
-- Station catalog: derived from DataMeet (CC0).
+- Station catalog: derived from DataMeet (CC0). 20 stations that DataMeet had placed on top of a neighbouring, differently named station (Muthani on Bhabua Road, for one) stand where OpenStreetMap (ODbL) has them under the same code and name, a spot between their neighbours on the line; their links are measured again from there.
 - Track and many stations: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL 1.0.

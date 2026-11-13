@@ -223,6 +223,60 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(database.length, 8703);
   const delhi = database.find(row => row[0] === 'NDLS');
   assert.equal(delhi[1], 'NEW DELHI');
+
+  // ---- Where stations stand. The DataMeet catalog had some stations written down at the spot of a neighbouring,
+  // differently named station: Muthani (MTGE) sat 30 m from Bhabua Road (BBU), so passing Bhabua Road logged
+  // Muthani as well, and the real Muthani, 5 km on, went by. Such a station stands where OpenStreetMap has it under
+  // the same code and name, when that spot is on its line: between two of its neighbours.
+  const straight = (a, b) => {   // the catalog's own measure of a link: a straight line on a sphere of 6371 km
+    const rad = Math.PI / 180, dLat = (b[0] - a[0]) * rad, dLon = (b[1] - a[1]) * rad;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.sin(dLon / 2) ** 2;
+    return 2 * 6371 * Math.asin(Math.sqrt(h));
+  };
+  const placeOf = code => database.find(row => row[0] === code).slice(2, 4);
+  assert.ok(straight(placeOf('MTGE'), [25.1420, 83.6613]) < 0.3, 'Muthani stands at Muthani');   // as Wikipedia has it
+  assert.ok(straight(placeOf('BBU'), [25.1728, 83.6173]) < 0.3, 'Bhabua Road stays at Bhabua Road');
+  const muthaniGap = straight(placeOf('MTGE'), placeOf('BBU'));
+  assert.ok(muthaniGap > 4.5 && muthaniGap < 6.5, `Muthani is about 5 km from Bhabua Road, not ${muthaniGap}`);
+  // Every link between two stations is as long as the straight line between them, a moved station's too.
+  const links = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'edges.json'), 'utf8'));
+  const rowOf = new Map(database.map(row => [row[0], row]));
+  assert.deepEqual(links.filter(([a, b, length]) => rowOf.has(a) && rowOf.has(b)
+    && Math.abs(length - straight(rowOf.get(a).slice(2), rowOf.get(b).slice(2))) > 0.002), []);
+  // And no station is left on top of a differently named one while OpenStreetMap has it, under its code and name,
+  // more than a kilometre away and on its line.
+  const mapped = new Map();
+  for (const row of JSON.parse(fs.readFileSync(require('path').join(__dirname, 'osm-stations.json'), 'utf8')))
+    if (row[4]) mapped.set(row[4], [...(mapped.get(row[4]) || []), row]);
+  const letters = name => name.toUpperCase().replace(/JUNCTION/g, 'JN').replace(/ROAD/g, 'RD').replace(/HALT/g, '').replace(/[^A-Z]/g, '');
+  const neighbours = new Map();
+  for (const [a, b] of links) neighbours.set(a, [...(neighbours.get(a) || []), b]);
+  const byLatitude = [...database].sort((a, b) => a[2] - b[2]), onTop = [];
+  for (let i = 0; i < byLatitude.length; i++) for (let j = i + 1; j < byLatitude.length && byLatitude[j][2] - byLatitude[i][2] <= 0.002; j++) {
+    const pair = [byLatitude[i], byLatitude[j]];
+    if (straight(pair[0].slice(2), pair[1].slice(2)) >= 0.1 || letters(pair[0][1]) === letters(pair[1][1])) continue;
+    for (const [me, other] of [pair, [pair[1], pair[0]]]) for (const there of mapped.get(me[0]) || []) {
+      const spot = there.slice(2, 4);
+      if (letters(there[1]).slice(0, 5) !== letters(me[1]).slice(0, 5) || straight(me.slice(2), spot) <= 1) continue;
+      const near = (neighbours.get(me[0]) || []).filter(code => rowOf.has(code)).map(code => rowOf.get(code).slice(2));
+      if (near.some((x, n) => near.slice(n + 1).some(y => straight(x, y) > 0.5
+        && (straight(x, spot) + straight(spot, y)) / straight(x, y) <= 1.2))) onTop.push(`${me[0]} on ${other[0]}`);
+    }
+  }
+  assert.deepEqual(onTop, []);
+  // An OSM station with the catalog's code (or the code a catalog station was renamed to) within a kilometre of that
+  // catalog station is the same station: it stays in the list, without the code, marked as that station. Farther
+  // off it is only without the code; with a code the catalog lacks it keeps its code.
+  const combine = setup(stationFetcher([['TST', 'Test Station', 28, 77]])).context.combineStations;
+  assert.deepEqual(combine(
+    [{id: 'MTGE', name: 'MUTHANI', lat: 25.1420, lon: 83.6617}, {id: 'BBU', name: 'BHABUA ROAD', lat: 25.1730, lon: 83.6189},
+      {id: 'MGS', name: 'MUGHAL SARAI JN', lat: 25.2800, lon: 83.1200}],
+    [{id: 'OSM:1', name: 'Muthani', lat: 25.1425, lon: 83.6610, code: 'MTGE'},
+      {id: 'OSM:2', name: 'Bhabua Road', lat: 25.1500, lon: 83.6189, code: 'BBU'},
+      {id: 'OSM:3', name: 'Pt. Deen Dayal Upadhyaya Junction', lat: 25.2803, lon: 83.1196, code: 'DDU'},
+      {id: 'OSM:4', name: 'New Halt', lat: 25.2, lon: 83.7, code: 'NWH'}]).map(s => [s.id, s.code, s.sameAs]),
+    [['MTGE', undefined, undefined], ['BBU', undefined, undefined], ['MGS', undefined, undefined], ['OSM:1', undefined, 'MTGE'],
+      ['OSM:2', undefined, undefined], ['OSM:3', undefined, 'MGS'], ['OSM:4', 'NWH', undefined]]);
   const real = setup(stationFetcher(database));
   await flush();
   real.elements.start.onclick();
@@ -496,6 +550,36 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
       `${code} is missing between ${before} and ${after}`);
   }
   assert.equal(new Set(patnaCodes).size, patnaCodes.length);
+
+  // The journey from the report, on the real data: down the Grand Chord from before Bhabua Road to past Pusauli, a
+  // fix every 2 seconds at 90 km/h. Bhabua Road, Muthani and Pusauli are each logged once, as the train reaches
+  // them, with a route and without one. (Muthani was logged at Bhabua Road; without a route OSM's own Muthani was
+  // logged as well, and once both stood at Muthani it would have been logged twice there.)
+  const toward = (a, b, share) => [a[0] + (b[0] - a[0]) * share, a[1] + (b[1] - a[1]) * share];
+  for (const withRoute of [true, false]) {
+    const chord = setup(async url => ({ok: url in realFiles, json: async () => realFiles[url]}));
+    await flush();
+    if (withRoute) {
+      chord.elements.origin.value = 'BBU';
+      chord.elements.destination.value = 'PSE';
+      await chord.elements['find-route'].onclick();
+      assert.deepEqual(chord.elements['route-list'].children.map(rowName), ['BHABUA ROAD (BBU)', 'MUTHANI (MTGE)', 'PUSAULI (PSE)']);
+    }
+    chord.elements.start.onclick();
+    const [bhabua, muthani, pusauli] = ['BBU', 'MTGE', 'PSE'].map(placeOf);
+    let when = 1000000;
+    for (const [from, to] of [[toward(bhabua, muthani, -0.3), bhabua], [bhabua, muthani], [muthani, pusauli], [pusauli, toward(muthani, pusauli, 1.2)]]) {
+      const steps = Math.max(1, Math.round(straight(from, to) / 0.05));
+      for (let step = 0; step < steps; step++, when += 2000) {
+        const [latitude, longitude] = toward(from, to, step / steps);
+        chord.watches[0].success({coords: {latitude, longitude, accuracy: 10, speed: 25}, timestamp: when});
+      }
+    }
+    const chordLog = JSON.parse(chord.store.get('trainlog'));
+    const what = withRoute ? 'with a route' : 'without a route';
+    assert.deepEqual(chordLog.map(entry => entry.id), ['BBU', 'MTGE', 'PSE'], what);
+    assert.ok(chordLog[1].t - chordLog[0].t > 180000, `${what}: Muthani is passed minutes after Bhabua Road`);
+  }
 
   // Choosing which stations are logged: an unticked route station is skipped, a ticked one is logged, and a
   // station the route missed can be added at its place.

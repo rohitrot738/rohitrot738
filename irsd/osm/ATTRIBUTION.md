@@ -20,3 +20,6 @@ catalog used by Safar (identified by the app as CC0) and contains OSM-derived
 IDs/tags/track relationships under ODbL. Approximate fallback stations are
 identified separately in the CSV and are not represented as DataMeet records.
 No WIMT/IRSD records are included in OSM releases.
+
+20 positions in that catalog were themselves taken from OSM (stations DataMeet had placed
+on top of a neighbouring station); for those the comparison is not independent.

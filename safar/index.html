@@ -157,7 +157,7 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 <h3>Journey log</h3>
 <div class="card stop" id="live-stop" hidden></div>
 <div id="log"></div>
-<details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0). Track: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
+<details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0), with 20 positions taken from OpenStreetMap. Track and those positions: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
 <script>
 // A station is watched from ZONE away. How close the train came decides what is written: the smallest of RINGS it
@@ -184,6 +184,7 @@ let viaCount = 0; // via boxes shown so far (up to 3)
 let openStop = null;  // the stop in progress: {start, moved, near, d, still}
 let leaving = false;  // moved off from a standstill at 2.7 km/h and not yet at 5 km/h
 let closed = [];      // visits that only reached a wide ring and left the zone, waiting to be compared
+let activeKeys = new Set(); // the stations watched now, by key
 let recent = [];      // decided visits {key, enter, exit, ring}, for comparing later ones against
 let loggedStops = []; // start times of the stops already written to the log
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
@@ -213,10 +214,16 @@ function stationLabel(s) { const code = stationCode(s); return code ? `${s.name}
 
 // Both lists together. An OSM station keeps its code only when the catalog has no station of that code, nor one
 // renamed to it (DDU is the catalog's MGS), so a code names one station.
+// Within a kilometre of that catalog station it is the same station (sameAs), still offered and still on its OSM
+// routes, but not logged beside it; farther off, one of the two places is wrong, and each is watched on its own.
 function combineStations(catalog, osmCatalog) {
-  const codes = new Set(catalog.map(s => s.id));
-  for (const id of Object.keys(RENAMED)) if (codes.has(id)) codes.add(RENAMED[id][0]);
-  return [...catalog, ...osmCatalog.map(s => (s.code && codes.has(s.code) ? {...s, code: undefined} : s))];
+  const byCode = new Map(catalog.map(s => [s.id, s]));
+  for (const id of Object.keys(RENAMED)) if (byCode.has(id) && !byCode.has(RENAMED[id][0])) byCode.set(RENAMED[id][0], byCode.get(id));
+  return [...catalog, ...osmCatalog.map(s => {
+    const same = s.code && byCode.get(s.code);
+    if (!same) return s;
+    return dist(s.lat, s.lon, same.lat, same.lon) <= 1000 ? {...s, code: undefined, sameAs: same.id} : {...s, code: undefined};
+  })];
 }
 
 // Stations renamed since the catalog was made: catalog code -> [today's code, today's name], so both find them.
@@ -949,7 +956,7 @@ function processPosition(p) {
   const index = route ? routePosition(p) : null;
   const active = index != null ? route : stations;
   if (active !== lastActive) {
-    const keep = new Set(active.map(stationKey));
+    const keep = activeKeys = new Set(active.map(stationKey));
     const byKey = new Map(stations.map(s => [stationKey(s), s]));
     for (const k of Object.keys(state)) {
       if (keep.has(k)) continue;
@@ -991,6 +998,7 @@ function processPosition(p) {
     const d = dist(lat, lon, s.lat, s.lon);
     if (!nearest || d < nearest.d) nearest = {s, d};
     if (skipIds.has(s.id)) continue; // unticked in the route list
+    if (s.sameAs && activeKeys.has(s.sameAs)) continue; // the catalog's entry is watched for this station
     const k = stationKey(s);
     let v = state[k];
     if (d <= ZONE) {
