@@ -146,6 +146,28 @@ class GraphTest(unittest.TestCase):
 
 
 
+    def test_misplaced_station_nodes_stay_out(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            dbpath = os.path.join(tmp, "graph.sqlite")
+            build_graph.build(io.BytesIO(FIXTURE), dbpath, os.path.join(tmp, "coverage.json"))
+            listed = os.path.join(tmp, "misplaced.json")
+            with open(listed, "w", encoding="utf-8") as f:
+                json.dump({"nodes": [{"osm_node": 9, "ref": "NOLINK", "why": "test"}]}, f)
+            self.assertEqual(build_graph.misplaced_nodes(listed), {9})
+            self.assertEqual(build_graph.misplaced_nodes(os.path.join(tmp, "none.json")), set())
+            output = os.path.join(tmp, "osm-stations.json")
+            build_graph.export_osm_station_catalog(dbpath, [], output, skip=build_graph.misplaced_nodes(listed))
+            with open(output, encoding="utf-8") as f:
+                exported = {row[0] for row in json.load(f)}
+            self.assertNotIn("OSM:9", exported)
+            self.assertIn("OSM:7", exported)
+            routes = os.path.join(tmp, "routes.json")
+            build_graph.build_station_route_candidates(dbpath, [], routes, skip={7})
+            with open(routes, encoding="utf-8") as f:
+                self.assertFalse(any("OSM:7" in edge[:2] for edge in json.load(f)["edges"]))
+        # The project's own list is read from beside the script, and names real OSM nodes.
+        self.assertTrue(build_graph.misplaced_nodes())
+
     def test_only_places_trains_stop_are_railway_stations(self):
         self.assertTrue(build_graph.is_railway_station({"railway": "station"}))
         self.assertTrue(build_graph.is_railway_station({"railway": "halt", "public_transport": "station"}))

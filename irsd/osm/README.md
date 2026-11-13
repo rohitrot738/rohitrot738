@@ -91,6 +91,11 @@ Only places where trains stop are exported (`is_railway_station`):
 track node or a stop-area link). OSM also maps bus stands, ferry terminals,
 taxi stands and ropeways as `public_transport=station`; 3,486 of those were
 once in the catalog and are now left out, as route seeds too.
+Nodes listed in `misplaced-stations.json` are left out as well: they carry a
+station code but stand away from that station, out of the order the
+timetables give its line (or off the railway) while the project catalog has
+the station in order. Each entry says why. For example OSM has Kumahu (KMGE)
+and Khurmabad Road (KVD) on the Grand Chord swapped, 11 km apart.
 
 `station-route-candidates.json` is the route graph used by Safar. A
 multi-source shortest-path partition runs over the OSM graph. Candidate

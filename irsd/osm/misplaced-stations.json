@@ -1,0 +1,85 @@
+{
+  "about": "OpenStreetMap station nodes that carry an Indian Railways station code but stand away from that station: out of the order the timetables give the line, or off the railway, while the station list has the station in its place. The OSM export leaves them out of the app's station list (build_graph.misplaced_nodes); the station keeps its own entry. Found by comparing every station with the OSM track network; see README.md beside this file.",
+  "nodes": [
+    {
+      "osm_node": 797804991,
+      "ref": "BBK",
+      "name": "Barabanki Junction",
+      "lat": 23.7430259,
+      "lon": 87.0190123,
+      "why": "685.6 km from Barabanki Jn (BBK) in the station list; out of the line's order by 1538.3 km between RES and SFH, where the station list has it in order"
+    },
+    {
+      "osm_node": 4811590438,
+      "ref": "BFPA",
+      "name": "Bhopatpur",
+      "lat": 28.4517101,
+      "lon": 79.8123381,
+      "why": "8.5 km from Bhopatpur (BFPA) in the station list; out of the line's order by 15.9 km between BSUR and SNZ, where the station list has it in order"
+    },
+    {
+      "osm_node": 6716204990,
+      "ref": "BJRA",
+      "name": "Bhajera",
+      "lat": 27.1169309,
+      "lon": 76.7390209,
+      "why": "8.3 km from Bhajera (BJRA) in the station list; out of the line's order by 8.6 km between BKI and BW, where the station list has it in order"
+    },
+    {
+      "osm_node": 10249737147,
+      "ref": "KMGE",
+      "name": "Kumahu",
+      "lat": 25.02087,
+      "lon": 83.8491878,
+      "why": "10.9 km from Kumahu (KMGE) in the station list; out of the line's order by 10.5 km between SSG and SSM, where the station list has it in order"
+    },
+    {
+      "osm_node": 10249341955,
+      "ref": "KVD",
+      "name": "Khurmabad",
+      "lat": 24.9774377,
+      "lon": 83.9460757,
+      "why": "11.0 km from Khurmabad Road (KVD) in the station list; out of the line's order by 11.3 km between KTQ and SSG, where the station list has it in order"
+    },
+    {
+      "osm_node": 310996032,
+      "ref": "KZPR",
+      "name": "Kazipara",
+      "lat": 22.7226496,
+      "lon": 88.5083659,
+      "why": "136.0 km from Kazipara (KZPR) in the station list; out of the line's order by 385.2 km between BZLE and CWLE, where the station list has it in order"
+    },
+    {
+      "osm_node": 8999686405,
+      "ref": "PHD",
+      "name": "Phaphund",
+      "lat": 26.5152536,
+      "lon": 79.8266339,
+      "why": "30.0 km from Phaphund (PHD) in the station list; out of the line's order by 42.2 km between KNS and PATA, where the station list has it in order"
+    },
+    {
+      "osm_node": 3191826727,
+      "ref": "SPV",
+      "name": "Sivapur",
+      "lat": 13.6704657,
+      "lon": 75.9283506,
+      "why": "2.9 km from Sivapur (SPV) in the station list; out of the line's order by 1.5 km between KRNH and RRB, where the station list has it in order"
+    },
+    {
+      "osm_node": 5282980469,
+      "ref": "SVF",
+      "name": "Sri Venkataperumal Rajupuram",
+      "lat": 13.5342089,
+      "lon": 79.5325929,
+      "why": "3.2 km from Sri Venkataperu (SVF) in the station list; out of the line's order by 4.4 km between SPAM and SQZ, where the station list has it in order"
+    },
+    {
+      "osm_node": 6697717939,
+      "ref": "VSP",
+      "name": "Wasanapura",
+      "lat": 22.5868147,
+      "lon": 73.2874687,
+      "why": "694.3 km from Wasanapura (VSP) in the station list; out of the line's order by 2052.8 km between BUPH and GNVR, where the station list has it in order"
+    }
+  ]
+}

@@ -21,5 +21,6 @@ IDs/tags/track relationships under ODbL. Approximate fallback stations are
 identified separately in the CSV and are not represented as DataMeet records.
 No WIMT/IRSD records are included in OSM releases.
 
-20 positions in that catalog were themselves taken from OSM (stations DataMeet had placed
-on top of a neighbouring station); for those the comparison is not independent.
+104 positions in that catalog were themselves taken from OSM (stations DataMeet had placed
+on top of a neighbouring station, off the railway, or out of their line's order); for those
+the comparison is not independent.

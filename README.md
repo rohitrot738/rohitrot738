@@ -72,5 +72,5 @@ After every change on `main`, GitHub Actions builds a signed APK, installs it ov
 
 ## Data credits
 
-- Station catalog: derived from DataMeet (CC0). 20 stations that DataMeet had placed on top of a neighbouring, differently named station (Muthani on Bhabua Road, for one) stand where OpenStreetMap (ODbL) has them under the same code and name, a spot between their neighbours on the line; their links are measured again from there.
+- Station catalog: derived from DataMeet (CC0). Every station was checked against OpenStreetMap's track network and the order the timetables give its line. 104 stations stand where OpenStreetMap (ODbL) has them under the same code and name: ones DataMeet had placed on top of a neighbouring, differently named station (Muthani on Bhabua Road, for one), off the railway, or out of their line's order, where OpenStreetMap's spot is on the track and in order. Their links are measured again from there. Where the two sources disagree by more than a kilometre and neither check can tell which is right, the app keeps both places.
 - Track and many stations: © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), ODbL 1.0.
