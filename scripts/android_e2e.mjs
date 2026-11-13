@@ -472,7 +472,11 @@ async function main() {
   check(bridge.reach, 'the page reaches the native plugins');
   check(bridge.status && typeof bridge.status.version !== 'undefined', 'the native side answers the page', JSON.stringify(bridge.status));
 
-  await clockCheck(page, 'small-font');
+  // ---- The route comes first: the app opens on the route screen, and the clock and tracking wait for a route.
+  const firstScreen = await page.run(`return {screens: [document.getElementById('route-screen').hidden, document.getElementById('main-screen').hidden], clock: document.getElementById('clock-card').getBoundingClientRect().height};`);
+  check(firstScreen.screens[0] === false && firstScreen.screens[1] === true && firstScreen.clock === 0,
+    'the app opens on the route screen, without the clock', JSON.stringify(firstScreen));
+  shot('route-screen');
 
   // ---- A route, built in the app: the stations a link passes by are on it.
   await page.run(`
@@ -487,13 +491,16 @@ async function main() {
   log('route:', routeNames.length, 'stations;', await page.run(`return document.getElementById('route-status').textContent;`));
   const typed = await page.run(`return [document.getElementById('origin').value, document.getElementById('destination').value];`);
   check(typed[0] === 'PATNA JN (PNBE)' && typed[1] === 'MUGHAL SARAI JN (MGS)', 'a typed code is shown with its station name once the route is built', typed.join(' / '));
+  const afterRoute = await page.run(`return {screens: [document.getElementById('route-screen').hidden, document.getElementById('main-screen').hidden], note: document.getElementById('route-note').textContent};`);
+  check(afterRoute.screens[0] === true && afterRoute.screens[1] === false, 'a found route opens the main screen', afterRoute.note);
   const place = code => routeNames.findIndex(name => name.endsWith(`(${code})`));
   for (const [before, code, after] of [['DNR', 'NEO', 'SDE'], ['JMIR', 'ARA', 'JGWL'], ['KCA', 'EOCM', 'MGS']])
     check(place(before) >= 0 && place(before) < place(code) && place(code) < place(after), `the Patna to Mughal Sarai route has ${code} in its place`);
   await page.run(`document.getElementById('route-list').scrollIntoView({block: 'start'});`);
   await sleep(800);
   shot('route');
-  await page.run(`document.getElementById('route-clear').click(); window.scrollTo(0, 0);`);
+  await page.run(`window.scrollTo(0, 0);`);
+  await clockCheck(page, 'small-font');
 
   // ---- A journey: started in the app, it must be recorded natively, with the screen off as well.
   await page.run(`document.getElementById('start').click();`);
@@ -631,6 +638,15 @@ async function main() {
   page = await openPage();
   await clockCheck(page, 'normal-font');
   await clockSizesCheck(page);
+
+  // ---- Clearing the log starts over from the route screen, with empty boxes.
+  await page.run(`window.confirm = () => true; document.getElementById('clear').click();`);
+  await sleep(800);
+  const cleared = await page.run(`return {screens: [document.getElementById('route-screen').hidden, document.getElementById('main-screen').hidden], origin: document.getElementById('origin').value,
+    entries: document.getElementById('log').children.length, saved: localStorage.getItem('safar-route')};`);
+  check(cleared.screens[0] === false && cleared.screens[1] === true && cleared.origin === '' && cleared.entries === 0 && cleared.saved === null,
+    'Clear log goes back to the route screen, with empty boxes', JSON.stringify(cleared));
+  shot('route-screen-after-clear');
 
   await untilUntied('a second start of the app', 20000);
   page.close();

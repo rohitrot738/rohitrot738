@@ -95,10 +95,8 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 <body>
 <header>📍 Suffer Sathi</header>
 <main>
-<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full-screen clock"></button><button id="clock-edit" type="button" aria-label="Change the clock sizes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Choose the colour of the time"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
-<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Time</button><button id="size-dial" type="button">Speed dial</button><button id="size-date" type="button">Date</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
-<div class="size-row"><button id="size-down" type="button" aria-label="Smaller">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Larger">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Reset</button><button id="size-done" type="button">Done</button></div></div>
-<div id="size-box" hidden></div><div class="size-handle" id="size-handle-0" hidden></div><div class="size-handle" id="size-handle-1" hidden></div><div class="size-handle" id="size-handle-2" hidden></div><div class="size-handle" id="size-handle-3" hidden></div></div>
+<div class="card" id="data-status" hidden></div>
+<section id="route-screen" hidden>
 <div class="card">
   <b>Choose your route</b><br>
   <label for="origin">Start station</label><br>
@@ -124,19 +122,26 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
   <input id="destination" autocomplete="off" placeholder="Type a name or code, then pick it from the list">
   <div class="suggest" id="destination-options"></div>
   <button id="find-route" class="alt">Find route</button>
-  <div id="route-status" class="small">A route is optional; without one, the next station is worked out from the direction of travel.</div>
-  <details id="route-details" hidden><summary>Stations on the route: choose which to log</summary>
-    <div id="route-choice" class="small"></div>
-    <button id="route-all" class="alt" type="button">Select all</button><button id="route-none" class="alt" type="button">Clear all</button>
-    <ol id="route-list"></ol>
-    <label for="add-station">Add a station to this route</label><br>
-    <input id="add-station" autocomplete="off" placeholder="Type a name or code, then pick it from the list">
-    <div class="suggest" id="add-station-options"></div>
-    <button id="add-station-btn" class="alt" type="button">Add station</button>
-    <div id="add-station-status" class="small"></div>
-    <button id="route-save" type="button">Save</button><button id="route-clear" class="alt" type="button">Remove route</button>
-  </details>
+  <div id="route-status" class="small">Choose where the journey starts and ends. The clock and tracking open once the route is ready.</div>
 </div>
+</section>
+<section id="main-screen" hidden>
+<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full-screen clock"></button><button id="clock-edit" type="button" aria-label="Change the clock sizes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Choose the colour of the time"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
+<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Time</button><button id="size-dial" type="button">Speed dial</button><button id="size-date" type="button">Date</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
+<div class="size-row"><button id="size-down" type="button" aria-label="Smaller">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Larger">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Reset</button><button id="size-done" type="button">Done</button></div></div>
+<div id="size-box" hidden></div><div class="size-handle" id="size-handle-0" hidden></div><div class="size-handle" id="size-handle-1" hidden></div><div class="size-handle" id="size-handle-2" hidden></div><div class="size-handle" id="size-handle-3" hidden></div></div>
+<details class="card" id="route-details" hidden><summary>Stations on the route: choose which to log</summary>
+  <div id="route-choice" class="small"></div>
+  <button id="route-all" class="alt" type="button">Select all</button><button id="route-none" class="alt" type="button">Clear all</button>
+  <ol id="route-list"></ol>
+  <label for="add-station">Add a station to this route</label><br>
+  <input id="add-station" autocomplete="off" placeholder="Type a name or code, then pick it from the list">
+  <div class="suggest" id="add-station-options"></div>
+  <button id="add-station-btn" class="alt" type="button">Add station</button>
+  <div id="add-station-status" class="small"></div>
+  <button id="route-save" type="button">Save</button><button id="route-clear" class="alt" type="button">Remove route</button>
+  <div class="small" id="route-note" hidden></div>
+</details>
 <div>
   <select id="mode">
     <option value="auto">Auto (GPS, lower accuracy when needed)</option>
@@ -148,7 +153,6 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 </div>
 <div class="card" id="status">Status: stopped</div>
 <div class="card small" id="background-status" hidden></div>
-<div class="card" id="data-status" hidden></div>
 <div class="speedo" id="speedo" aria-label="Speed"><b id="speed">—</b><span id="speed-unit">km/h</span></div>
 <div class="card" id="now">Nearest station: —</div>
 <div class="card" id="next">Next station: press Start</div>
@@ -158,6 +162,7 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 <h3>Journey log</h3>
 <div class="card stop" id="live-stop" hidden></div>
 <div id="log"></div>
+</section>
 <details class="small"><summary>Data credits</summary>Stations: DataMeet-derived (CC0), with 201 positions taken from OpenStreetMap. Track and those positions: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" style="color:#93c5fd">OpenStreetMap contributors</a> (ODbL 1.0).</details>
 </main>
 <script>
@@ -192,6 +197,21 @@ let log = JSON.parse(localStorage.getItem(KEY) || '[]');
 const $ = id => document.getElementById(id);
 // Station-list status stays off screen unless something went wrong.
 function dataStatus(text, problem = false) { const el = $('data-status'); el.textContent = text; el.hidden = !problem; }
+// Two screens. The route screen comes first; the main screen (the clock, tracking and the log) opens once there is a
+// route, saved or just found, or a journey that was going on when the app was opened again.
+function showScreen(name) {
+  $('route-screen').hidden = name !== 'route';
+  $('main-screen').hidden = name !== 'main';
+  window.scrollTo?.(0, 0);
+}
+function hasSavedRoute() {
+  try { return Array.isArray(JSON.parse(localStorage.getItem(ROUTE_KEY) || 'null')?.route); } catch (e) { return false; }
+}
+// The note at the foot of the route's stations on the main screen.
+function routeNote(text) {
+  $('route-note').textContent = text;
+  $('route-note').hidden = !text;
+}
 const fmt = t => new Date(t).toLocaleTimeString('hi-IN', {hour12:false});
 
 function dist(a, b, c, d) {
@@ -548,8 +568,10 @@ async function selectRoute() {
     $('route-details').hidden = false;
     $('route-details').open = true;
     const viaNames = stops.slice(1, -1).map(stop => stop.name).join(', ');
-    $('route-status').textContent = `Route ready${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, about ${Math.round(metres / 1000)} km (shortest path, estimated). In the list below, untick any station you do not want logged.`;
+    routeNote(`Route ready${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, about ${Math.round(metres / 1000)} km (shortest path, estimated). In the list above, untick any station you do not want logged.`);
+    $('route-status').textContent = '';
     $('next').textContent = 'Next station: press Start and wait for the location.';
+    showScreen('main');
   } catch (e) {
     console.warn('Could not make the route', e);
     const reason = e.message === 'No route between these stations'
@@ -633,7 +655,7 @@ function restoreRoute() {
     renderRouteList();
     $('route-details').hidden = false;
     const chosen = route.filter(s => !skipIds.has(s.id)).length;
-    $('route-status').textContent = `Saved route: ${route[0].name} to ${route[route.length - 1].name}. ${chosen} / ${route.length} stations will be logged.`;
+    routeNote(`Saved route: ${route[0].name} to ${route[route.length - 1].name}. ${chosen} / ${route.length} stations will be logged.`);
   } catch (e) { console.warn('The saved route did not open', e); }
 }
 
@@ -642,16 +664,21 @@ function confirmRouteSaved() {
   saveRoute();
   $('route-details').open = false;
   const chosen = route.filter(s => !skipIds.has(s.id)).length;
-  $('route-status').textContent = `Saved: ${route[0].name} to ${route[route.length - 1].name}, ${chosen} / ${route.length} stations will be logged. It stays when the app is closed.`;
+  routeNote(`Saved: ${route[0].name} to ${route[route.length - 1].name}, ${chosen} / ${route.length} stations will be logged. It stays when the app is closed.`);
 }
 
 function clearRoute() {
-  if (tracking) { $('route-status').textContent = 'Press Stop before removing the route.'; return; }
+  if (tracking) { routeNote('Press Stop before removing the route.'); return; }
+  forgetRoute();
+  $('route-status').textContent = 'Route removed. Choose a route to start a journey; the log is kept.';
+  showScreen('route');
+}
+function forgetRoute() {
   route = null; routeIndex = null; skipIds = new Set(); state = {};
   $('route-list').replaceChildren();
   $('route-details').hidden = true;
+  routeNote('');
   saveRoute();
-  $('route-status').textContent = 'Route removed. Without a route, the next station is worked out from the direction of travel.';
 }
 
 function setAllRouteStations(logged) {
@@ -774,6 +801,7 @@ async function loadStations() {
     stationListsLoaded = true;
     edgeGraph = null;   // links were filtered by the stations known when the graph was built
     restoreRoute();
+    if (!route && !tracking) showScreen('route');
     try { localStorage.setItem('safar-stations-v2', JSON.stringify({catalog: rows, osm: osmRows})); }
     catch (e) {
       console.warn('Station list not saved for offline use', e);
@@ -1377,7 +1405,21 @@ $('add-via').onclick = () => {
   $('via-row-' + viaCount).hidden = false;
   if (viaCount === 3) $('add-via').hidden = true;
 };
-$('clear').onclick = () => { if (confirm('Delete the log?')) { log = []; localStorage.removeItem(KEY); render(); } };
+$('clear').onclick = () => {
+  if (tracking) { csvStatus('Press Stop before clearing the log.'); return; }
+  if (!confirm('Delete the log and choose a new route?')) return;
+  log = []; localStorage.removeItem(KEY); render();
+  csvStatus('');
+  forgetRoute();
+  for (const id of ['origin', 'destination']) {
+    $(id).value = '';
+    if ($(id).dataset) delete $(id).dataset.stationId;
+    $(id + '-options').replaceChildren();
+  }
+  resetVia();
+  $('route-status').textContent = 'Log cleared. Choose the route of the next journey.';
+  showScreen('route');
+};
 // The journey log as CSV. A browser downloads it from a link; Android's WebView has no downloads, so in the app the
 // native side saves it in the phone's Download folder (or, on Android 9 and older, offers the share menu).
 function logCsv() {
@@ -1477,6 +1519,7 @@ try {
   console.warn('The last tracking session could not be resumed', e);
 }
 restoreRoute();
+showScreen(route || tracking || hasSavedRoute() ? 'main' : 'route');
 
 // Clock: date and time with seconds. clockMode: whether it is the full-screen clock (below).
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
