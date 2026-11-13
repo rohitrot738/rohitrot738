@@ -59,6 +59,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SafarBufferPlugin.class);
+        registerPlugin(SafarFilesPlugin.class);
         super.onCreate(savedInstanceState);
         LocalBroadcastManager.getInstance(this).registerReceiver(fixReceiver, new IntentFilter(FIX_BROADCAST));
         keepPageAlive();

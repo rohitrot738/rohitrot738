@@ -154,6 +154,7 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 <div class="card" id="next">Next station: press Start</div>
 <button id="csv" class="alt">CSV download</button>
 <button id="clear" class="alt">Clear log</button>
+<div class="card small" id="csv-status" hidden></div>
 <h3>Journey log</h3>
 <div class="card stop" id="live-stop" hidden></div>
 <div id="log"></div>
@@ -1377,14 +1378,37 @@ $('add-via').onclick = () => {
   if (viaCount === 3) $('add-via').hidden = true;
 };
 $('clear').onclick = () => { if (confirm('Delete the log?')) { log = []; localStorage.removeItem(KEY); render(); } };
-$('csv').onclick = () => {
+// The journey log as CSV. A browser downloads it from a link; Android's WebView has no downloads, so in the app the
+// native side saves it in the phone's Download folder (or, on Android 9 and older, offers the share menu).
+function logCsv() {
   const quote = value => `"${String(value || '').replace(/"/g, '""')}"`;
-  const rows = ['station,station_id,source,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
+  return ['station,station_id,source,type,arrival,departure'].concat(log.map(e => e.type === 'halt'
     ? [quote(englishName(e.name)), quote(e.id), quote(e.source), 'halt', new Date(e.arr).toISOString(), new Date(e.dep).toISOString()].join(',')
-    : [quote(englishName(e.name)), quote(e.id), quote(e.source), 'pass', new Date(e.t).toISOString(), ''].join(',')));
+    : [quote(englishName(e.name)), quote(e.id), quote(e.source), 'pass', new Date(e.t).toISOString(), ''].join(','))).join('\n');
+}
+function csvName(now = new Date()) {
+  const two = n => String(n).padStart(2, '0');
+  return `train-log-${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())}-${two(now.getHours())}${two(now.getMinutes())}.csv`;
+}
+function csvStatus(text) {
+  $('csv-status').textContent = text;
+  $('csv-status').hidden = !text;
+}
+$('csv').onclick = async () => {
+  const text = logCsv(), name = csvName();
+  const files = nativePlugin('SafarFiles');
+  if (files) {
+    try {
+      const result = await files.saveText({name, text, mimeType: 'text/csv'});
+      csvStatus(result?.saved ? `Saved to Download: ${result.name || name}` : `Choose where to send ${result?.name || name}`);
+    } catch (e) {
+      csvStatus(`Could not save the CSV: ${e?.message || e}`);
+    }
+    return;
+  }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([rows.join('\n')], {type: 'text/csv'}));
-  a.download = 'train-log.csv'; a.click();
+  a.href = URL.createObjectURL(new Blob([text], {type: 'text/csv'}));
+  a.download = name; a.click();
 };
 render();
 try {

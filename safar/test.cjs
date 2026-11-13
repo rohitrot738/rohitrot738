@@ -136,6 +136,47 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   inApp.elements.start.onclick();
   await flush();
   assert.equal(appBegun, 1);
+
+  // CSV download. Android's WebView has no downloads, so in the app a link to the file did nothing: the native side
+  // saves it in the phone's Download folder (Android 10 and later) or opens the share menu, and the page says which.
+  const loggedTrip = JSON.stringify([
+    {name: 'Native Station', id: 'NAT', source: 'DataMeet + project fallback', near: 40, type: 'pass', t: Date.UTC(2026, 10, 13, 5, 0)},
+    {name: 'Halt "Two"', id: 'HTW', source: 'OpenStreetMap', near: 60, type: 'halt', arr: Date.UTC(2026, 10, 13, 5, 10), dep: Date.UTC(2026, 10, 13, 5, 12)}]);
+  const savedFiles = [];
+  const nativeFiles = answer => ({
+    isNativePlatform: () => true,
+    Plugins: {SafarFiles: {saveText: async options => { savedFiles.push(options); return answer(options); }}}
+  });
+  const csvApp = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), [['trainlog', loggedTrip]],
+    nativeFiles(options => ({saved: true, name: options.name, folder: 'Download'})));
+  await csvApp.elements.csv.onclick();
+  assert.equal(savedFiles.length, 1);
+  assert.match(savedFiles[0].name, /^train-log-\d{4}-\d{2}-\d{2}-\d{4}\.csv$/);
+  assert.equal(savedFiles[0].mimeType, 'text/csv');
+  assert.equal(savedFiles[0].text, 'station,station_id,source,type,arrival,departure\n'
+    + '"Native Station","NAT","DataMeet + project fallback",pass,2026-11-13T05:00:00.000Z,\n'
+    + '"Halt ""Two""","HTW","OpenStreetMap",halt,2026-11-13T05:10:00.000Z,2026-11-13T05:12:00.000Z');
+  assert.equal(csvApp.elements['csv-status'].hidden, false);
+  assert.equal(csvApp.elements['csv-status'].textContent, `Saved to Download: ${savedFiles[0].name}`);
+  // Older Android: the share menu, to send it on or keep it.
+  const sharedApp = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), [['trainlog', loggedTrip]],
+    nativeFiles(options => ({shared: true, name: options.name})));
+  await sharedApp.elements.csv.onclick();
+  assert.equal(sharedApp.elements['csv-status'].textContent, `Choose where to send ${savedFiles[1].name}`);
+  // When the phone refuses, the page says so instead of doing nothing.
+  const refusedApp = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), [['trainlog', loggedTrip]],
+    {isNativePlatform: () => true, Plugins: {SafarFiles: {saveText: async () => { throw new Error('No space left'); }}}});
+  await refusedApp.elements.csv.onclick();
+  assert.equal(refusedApp.elements['csv-status'].textContent, 'Could not save the CSV: No space left');
+  // In a browser the file is downloaded as before, under the same kind of name.
+  const browserCsv = setup(stationFetcher([['NAT', 'Native Station', 28, 77]]), [['trainlog', loggedTrip]]);
+  const made = [];
+  const makeElement = browserCsv.context.document.createElement;
+  browserCsv.context.document.createElement = tag => { const one = makeElement(tag); made.push(one); return one; };
+  await browserCsv.elements.csv.onclick();
+  assert.equal(made.length, 1);
+  assert.match(made[0].download, /^train-log-\d{4}-\d{2}-\d{2}-\d{4}\.csv$/);
+  assert.match(made[0].href, /^blob:/);
   assert.equal(inApp.watches.length, 0); // the browser's location, which stops with the screen, is not what runs
   appCallback({latitude: 28, longitude: 77, accuracy: 10, speed: 0, time: 100000}, null);
   await flush();
