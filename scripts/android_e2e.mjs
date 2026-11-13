@@ -603,6 +603,24 @@ async function main() {
   const stopped = await page.run(`return {watcher: nativeWatcher, tracking};`);
   check(!stopped.tracking && stopped.watcher == null, 'Stop ends the native watcher');
   check(!/isForeground=true/.test(quiet(() => shell(`dumpsys activity services ${PACKAGE}`))), 'Stop takes the tracking notification away');
+
+  // ---- CSV download: the journey log ends up in the phone's Download folder. (Android's WebView has no downloads,
+  // so the page's own download link did nothing in the app.)
+  quiet(() => shell('rm -f /sdcard/Download/train-log-*.csv'));
+  await page.run(`document.getElementById('csv').scrollIntoView({block: 'center'});`);
+  await sleep(600);
+  await tap(page, '#csv');
+  let csvFiles = [];
+  for (let wait = 0; wait < 10 && !csvFiles.length; wait++) {
+    await sleep(1000);
+    csvFiles = quiet(() => shell('ls /sdcard/Download')).split(/\s+/).filter(name => /^train-log-.*\.csv$/.test(name));
+  }
+  const csvNote = await page.run(`return document.getElementById('csv-status').textContent;`);
+  check(csvFiles.length === 1, "CSV download saves the log in the phone's Download folder", csvFiles.join(', ') || 'nothing there');
+  const csvHead = csvFiles.length ? quiet(() => shell(`head -n 2 /sdcard/Download/${csvFiles[0]}`)) : '';
+  check(csvHead.startsWith('station,station_id,source,type,arrival,departure'), 'the saved CSV holds the journey log', csvHead.split('\n')[1] || csvHead);
+  check(csvFiles.length === 1 && csvNote === `Saved to Download: ${csvFiles[0]}`, 'the app says where the CSV went', csvNote);
+  shot('csv-saved');
   page.close();
 
   // ---- The same clock at the phone's ordinary font size.
