@@ -364,7 +364,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   routed.elements.destination.value = 'DOS';
   await routed.elements['find-route'].onclick();
   // ADSR has no link of its own but lies on the line between the two, so the route takes it in.
-  assert.match(routed.elements['route-status'].textContent, /Route ready: 3 stations/);
+  assert.match(routed.elements['route-note'].textContent, /Route ready: 3 stations/);
   assert.deepEqual(routed.elements['route-list'].children.map(rowName), ['SON NAGAR (SEB)', 'ADSR (ADSR)', 'DEHRI ON SONE (DOS)']);
   // Its tick taken off, it is not logged though the train passes right over it.
   const adsrBox = routed.elements['route-list'].children[1].children[0].children[0];
@@ -397,7 +397,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   osmRoute.elements.origin.value = 'OSM:77';
   osmRoute.elements.destination.value = 'OSM:78';
   await osmRoute.elements['find-route'].onclick();
-  assert.match(osmRoute.elements['route-status'].textContent, /Route ready: 2 stations/);
+  assert.match(osmRoute.elements['route-note'].textContent, /Route ready: 2 stations/);
   assert.deepEqual(osmRoute.elements['route-list'].children.map(rowName),
     ['OSM Alpha', 'OSM Beta']);
 
@@ -417,6 +417,11 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const resumed = setup(stationFetcher([['A', 'A', 28, 77]]),
     [['safar-active', savedActive], ['safar-stations-v2', JSON.stringify({catalog: [['A', 'A', 28, 77]], osm: [['OSM:77', 'OSM Alpha', 28, 77], ['OSM:78', 'OSM Beta', 29, 77]]})]]);
   assert.equal(resumed.watches.length, 1);
+  // A journey that was going on opens on the main screen, even with no saved route (one started before the route came
+  // first); the route screen would hide it.
+  assert.deepEqual([resumed.elements['route-screen'].hidden, resumed.elements['main-screen'].hidden], [true, false]);
+  await flush();
+  assert.deepEqual([resumed.elements['route-screen'].hidden, resumed.elements['main-screen'].hidden], [true, false]);
   osmRoute.elements.stop.onclick();
   assert.equal(osmRoute.store.get('safar-active'), undefined);
 
@@ -457,7 +462,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   pick('origin', 'origin-options', 'Deen Dayal Upadhyaya', 'MUGHAL SARAI JN (MGS) — now Deen Dayal Upadhyaya Jn (DDU)');
   pick('destination', 'destination-options', 'ALD', 'ALLAHABAD JN (ALD) — now Prayagraj Jn (PRYJ)');
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Route ready: \d+ stations, about 1\d\d km/);
+  assert.match(bundled.elements['route-note'].textContent, /Route ready: \d+ stations, about 1\d\d km/);
   const names = bundled.elements['route-list'].children.map(rowName);
   assert.equal(names[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(names[names.length - 1], 'ALLAHABAD JN (ALD)');
@@ -485,7 +490,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   bundled.elements.destination.dataset = {};
   bundled.elements.destination.value = 'PRYJ';
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /Route ready/);
+  assert.match(bundled.elements['route-note'].textContent, /Route ready/);
   assert.doesNotMatch(html, /RailTrack|railtrack/);
 
   // A stop between stations is logged with its times once the train moves on; standing before the journey is not.
@@ -540,7 +545,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(bundled.elements['via-row-1'].hidden, false);
   pickVia(1, 'MZP', 'MIRZAPUR (MZP)');
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route ready \(via MIRZAPUR\): \d+ stations/);
+  assert.match(bundled.elements['route-note'].textContent, /^Route ready \(via MIRZAPUR\): \d+ stations/);
   const viaRoute = routeNames();
   assert.equal(viaRoute[0], 'MUGHAL SARAI JN (MGS)');
   assert.equal(viaRoute[viaRoute.length - 1], 'ALLAHABAD JN (ALD)');
@@ -562,7 +567,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     bundled.elements[id].value = code;
   }
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route ready \(via MIRZAPUR\)/);
+  assert.match(bundled.elements['route-note'].textContent, /^Route ready \(via MIRZAPUR\)/);
   assert.deepEqual(['origin', 'via-1', 'destination'].map(id => bundled.elements[id].value),
     ['MUGHAL SARAI JN (MGS)', 'MIRZAPUR (MZP)', 'ALLAHABAD JN (ALD)']);
   assert.deepEqual(JSON.parse(bundled.store.get('safar-route')).origin, {value: 'MUGHAL SARAI JN (MGS)', id: 'MGS'});
@@ -580,7 +585,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(bundled.elements['via-row-1'].hidden, true);
   assert.equal(bundled.elements['add-via'].hidden, false);
   await bundled.elements['find-route'].onclick();
-  assert.match(bundled.elements['route-status'].textContent, /^Route ready: \d+ stations/);
+  assert.match(bundled.elements['route-note'].textContent, /^Route ready: \d+ stations/);
   assert.ok(routeNames().includes('VARANASI JN (BSB)') && !routeNames().includes('MIRZAPUR (MZP)'));
   // The first via box comes back empty when asked for again.
   bundled.elements['add-via'].onclick();
@@ -713,14 +718,14 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // The route and its ticks are kept: a fresh start of the app on the same phone shows them again.
   chosen.elements.stop.onclick();
   chosen.elements['route-save'].onclick();
-  assert.match(chosen.elements['route-status'].textContent, /^Saved: Alpha to Delta, 4 \/ 5 stations/);
+  assert.match(chosen.elements['route-note'].textContent, /^Saved: Alpha to Delta, 4 \/ 5 stations/);
   assert.equal(chosen.elements['route-details'].open, false);
   const reopened = setup(async url => url === 'edges.json'
     ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url), chosen.store);
   await flush();
   assert.deepEqual(reopened.elements['route-list'].children.map(rowName), ['Alpha (A)', 'Beta (B)', 'Extra (X)', 'Gamma (C)', 'Delta (D)']);
   assert.deepEqual(reopened.elements['route-list'].children.map(li => rowBox(li).checked), [true, false, true, true, true]);
-  assert.match(reopened.elements['route-status'].textContent, /^Saved route: Alpha to Delta\. 4 \/ 5 stations/);
+  assert.match(reopened.elements['route-note'].textContent, /^Saved route: Alpha to Delta\. 4 \/ 5 stations/);
   assert.equal(reopened.elements.origin.value, 'Alpha (A)'); // typed as "A": the box shows the station found
   reopened.elements['route-clear'].onclick();
   assert.equal(reopened.store.has('safar-route'), false);
@@ -729,6 +734,68 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.match(reopened.elements['clock-sec'].textContent, /^\d\d$/);
   assert.match(reopened.elements['clock-date'].textContent, /^[A-Z][a-z]+day, \d\d [A-Z][a-z]{2} \d{4}$/);
   assert.equal(typeof reopened.elements.clockTick, 'function');
+
+  // Two screens, the route first. With no route the app opens on the route screen; the clock, tracking and log (the
+  // main screen) open once a route is found, and a saved route opens the main screen straight away.
+  const lineEdges = async url => url === 'edges.json'
+    ? {ok: true, json: async () => [['A', 'B', 11], ['B', 'C', 11], ['C', 'D', 11]]} : chosenStations(url);
+  const onScreen = page => (page.elements['route-screen'].hidden === false ? 'route' : '')
+    + (page.elements['main-screen'].hidden === false ? 'main' : '');
+  const fresh = setup(lineEdges);
+  assert.equal(onScreen(fresh), 'route');
+  await flush();
+  assert.equal(onScreen(fresh), 'route');
+  fresh.elements.origin.value = 'A';
+  fresh.elements.destination.value = 'A';
+  await fresh.elements['find-route'].onclick();
+  assert.equal(onScreen(fresh), 'route');   // no route, no main screen
+  fresh.elements.destination.value = 'D';
+  await fresh.elements['find-route'].onclick();
+  assert.equal(onScreen(fresh), 'main');
+  assert.equal(fresh.elements['route-details'].hidden, false);
+  assert.equal(fresh.elements['route-details'].open, true);
+  assert.match(fresh.elements['route-note'].textContent, /^Route ready: \d+ stations/);
+  // During a journey neither the route nor the log can be cleared away: Stop comes first.
+  fresh.elements.start.onclick();
+  const freshRun = fresh.watches[fresh.watches.length - 1];
+  for (let i = 0; i <= 80; i++) freshRun.success(fix(27.98 + i * 0.0045, 100000 + i * 10000, 30));
+  const freshLog = fresh.store.get('trainlog');
+  assert.ok(JSON.parse(freshLog).length > 0);
+  fresh.elements['route-clear'].onclick();
+  assert.equal(fresh.elements['route-note'].textContent, 'Press Stop before removing the route.');
+  fresh.elements.clear.onclick();
+  assert.equal(fresh.elements['csv-status'].textContent, 'Press Stop before clearing the log.');
+  assert.equal(onScreen(fresh), 'main');
+  assert.equal(fresh.store.get('trainlog'), freshLog);
+  fresh.elements.stop.onclick();
+  // Opened again, the app shows the main screen at once, before its station list is even in.
+  const noList = [...fresh.store].filter(([key]) => key !== 'safar-stations-v2');
+  assert.equal(onScreen(setup(async () => new Promise(() => {}), noList)), 'main');
+  // A saved route that no longer opens with the station list sends the app back to the route screen.
+  const lost = setup(stationFetcher([['Q', 'Elsewhere', 20, 80]]), noList);
+  await flush();
+  assert.equal(onScreen(lost), 'route');
+  // Removing the route goes back to the route screen and keeps the log; the boxes keep the stations, to change them.
+  fresh.elements['route-clear'].onclick();
+  assert.equal(onScreen(fresh), 'route');
+  assert.match(fresh.elements['route-status'].textContent, /^Route removed/);
+  assert.equal(fresh.store.has('safar-route'), false);
+  assert.equal(fresh.store.get('trainlog'), freshLog);
+  assert.equal(fresh.elements.origin.value, 'Alpha (A)');
+  // Clearing the log starts over: the route screen again, with empty boxes and no via stations.
+  fresh.elements['add-via'].onclick();
+  fresh.elements['via-1'].value = 'B';
+  await fresh.elements['find-route'].onclick();
+  assert.equal(onScreen(fresh), 'main');
+  fresh.elements.clear.onclick();
+  assert.equal(onScreen(fresh), 'route');
+  assert.equal(fresh.store.has('trainlog'), false);
+  assert.equal(fresh.store.has('safar-route'), false);
+  assert.deepEqual(['origin', 'via-1', 'destination'].map(id => fresh.elements[id].value), ['', '', '']);
+  assert.equal(fresh.elements['via-row-1'].hidden, true);
+  assert.equal(fresh.elements['add-via'].hidden, false);
+  assert.equal(fresh.elements['route-details'].hidden, true);
+  assert.equal(fresh.elements['route-status'].textContent, 'Log cleared. Choose the route of the next journey.');
 
   // The limits: a station counts within 250 m, the train is stopping below 5 km/h (1.39 m/s), and a stop of
   // 15 seconds or more is a halt. A train that only crawled, never below 2.7 km/h, moves off again at 5 km/h.
