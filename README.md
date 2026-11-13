@@ -25,7 +25,7 @@ Everything the app shows is in English: the page, its messages, and Android's di
 - **Speed:** in a round dial, in km/h.
 - **Clock:** date and time with seconds; one button turns it into a large full-screen clock that also shows the speed and hides the phone's status bar and buttons. The colour of the time can be picked from ten colours.
 - **Clock sizes:** in the full-screen clock, a small gear next to EXIT opens a bar for sizes (nothing changes until it is pressed). Pick the time (hours, minutes and seconds change together), the speed dial or the date, with its button or by tapping it, and resize it like a picture: it sits in a dashed box with a handle at each corner, so drawing a corner out makes it larger and drawing it in makes it smaller, and spreading or pinching two fingers does the same. The slider and − and + are there for small steps. There are two ways, each with sizes of its own: **Auto** keeps everything apart, so a larger dial takes room from the time and the date (a very large dial has the time beside it) and a smaller one gives it back; **Custom** gives each part its own size whatever the others do, so parts may overlap. "Reset" brings back the clock's own layout, and the sizes are kept.
-- **CSV:** the whole log can be exported as a CSV file.
+- **CSV:** "CSV download" saves the whole log as `train-log-<date>-<time>.csv` in the phone's Download folder (on Android 9 and older the share menu opens instead, to send the file on or keep it).
 
 ## Logging with the screen off
 
