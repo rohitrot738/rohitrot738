@@ -264,6 +264,15 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
     }
   }
   assert.deepEqual(onTop, []);
+  // OpenStreetMap's list holds only places where trains stop. OSM maps bus stands, ferry ghats, taxi stands and
+  // ropeways as public-transport stations too; 3,486 of them were in the list, and passing near one logged it as a
+  // station. A public-transport station on a track stays (OSM has some railway stations mapped only that way).
+  const osmList = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'osm-stations.json'), 'utf8'));
+  const osmIds = new Set(osmList.map(row => row[0]));
+  assert.equal(osmList.length, 3494);
+  for (const [id, what] of [['OSM:306104406', "Chennai's bus terminus"], ['OSM:6868662856', "Karimnagar's bus station"],
+    ['OSM:13280854188', 'a boat jetty in Kerala']]) assert.ok(!osmIds.has(id), `${what} is not a station`);
+  assert.ok(osmIds.has('OSM:2064788425') && osmIds.has('OSM:718549318'), 'stations mapped only as public transport on a track stay');
   // An OSM station with the catalog's code (or the code a catalog station was renamed to) within a kilometre of that
   // catalog station is the same station: it stays in the list, without the code, marked as that station. Farther
   // off it is only without the code; with a code the catalog lacks it keeps its code.

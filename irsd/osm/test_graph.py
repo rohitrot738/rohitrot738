@@ -20,6 +20,10 @@ FIXTURE = b"""<osm version="0.6">
 <node id="7" lat="25.0" lon="84.0001"><tag k="railway" v="station"/><tag k="ref" v="PT1"/></node>
 <node id="8" lat="25.0" lon="84.0002"><tag k="public_transport" v="stop_position"/></node>
 <node id="9" lat="25.0" lon="84.003"><tag k="railway" v="station"/><tag k="ref" v="NOLINK"/></node>
+<node id="30" lat="26.0" lon="85.0"><tag k="amenity" v="bus_station"/><tag k="bus" v="yes"/><tag k="public_transport" v="station"/><tag k="name" v="City Bus Stand"/></node>
+<node id="31" lat="26.0" lon="85.01"><tag k="amenity" v="ferry_terminal"/><tag k="ferry" v="yes"/><tag k="public_transport" v="station"/><tag k="name" v="Ghat Ferry"/></node>
+<node id="32" lat="26.0" lon="85.02"><tag k="public_transport" v="station"/><tag k="train" v="yes"/><tag k="name" v="Train Halt"/></node>
+<node id="33" lat="26.0" lon="85.03"><tag k="public_transport" v="station"/><tag k="name" v="Auto Stand"/></node>
 <way id="10"><nd ref="1"/><nd ref="2"/><nd ref="3"/><tag k="railway" v="rail"/></way>
 <way id="11"><nd ref="2"/><nd ref="4"/><tag k="railway" v="rail"/></way>
 <way id="12"><nd ref="3"/><nd ref="5"/><tag k="railway" v="rail"/><tag k="disused" v="yes"/></way>
@@ -43,7 +47,7 @@ class GraphTest(unittest.TestCase):
             self.assertEqual(db.execute("SELECT node_id,degree,track_way_count FROM junctions").fetchall(), [(2, 4, 3)])
             self.assertEqual(db.execute("SELECT junction_node_id,way_id FROM junction_ways ORDER BY way_id").fetchall(),
                              [(2, 10), (2, 11), (2, 15)])
-            self.assertEqual(db.execute("SELECT COUNT(*) FROM stations").fetchone()[0], 5)
+            self.assertEqual(db.execute("SELECT COUNT(*) FROM stations").fetchone()[0], 9)
             self.assertEqual(db.execute(
                 "SELECT station_node_id,track_node_id,way_id,link_type FROM station_track_links ORDER BY station_node_id"
             ).fetchall(), [(1, 1, 10, "shared_track_node"), (7, 8, 15, "public_transport_stop_area")])
@@ -112,7 +116,10 @@ class GraphTest(unittest.TestCase):
             with open(osm_stations_output, encoding="utf-8") as f:
                 osm_stations = json.load(f)
             self.assertTrue(all(row[0].startswith("OSM:") for row in osm_stations))
-            self.assertEqual(len(osm_stations), 3)
+            # The bus stand, the ferry ghat and the bare stand off the tracks are not stations a train stops at.
+            self.assertEqual(sorted(row[1] for row in osm_stations if row[0] in ("OSM:30", "OSM:31", "OSM:32", "OSM:33")),
+                             ["Train Halt"])
+            self.assertEqual(len(osm_stations), 4)
 
     def test_candidate_station_route_uses_track_segments(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -138,6 +145,22 @@ class GraphTest(unittest.TestCase):
                 build_graph.build(io.BytesIO(data), os.path.join(tmp, "db"), os.path.join(tmp, "report"))
 
 
+
+    def test_only_places_trains_stop_are_railway_stations(self):
+        self.assertTrue(build_graph.is_railway_station({"railway": "station"}))
+        self.assertTrue(build_graph.is_railway_station({"railway": "halt", "public_transport": "station"}))
+        self.assertTrue(build_graph.is_railway_station({"railway": "station", "station": "subway"}))
+        self.assertTrue(build_graph.is_railway_station({"public_transport": "station", "train": "yes"}))
+        # Mapped only as a public-transport station, on a track: a railway station all the same.
+        self.assertTrue(build_graph.is_railway_station({"public_transport": "station", "name": "LTA"}, on_track=True))
+        self.assertFalse(build_graph.is_railway_station({"public_transport": "station", "name": "Auto Stand"}))
+        for tags in ({"amenity": "bus_station", "public_transport": "station", "bus": "yes"},
+                     {"amenity": "ferry_terminal", "public_transport": "station", "ferry": "yes"},
+                     {"amenity": "taxi", "public_transport": "station"},
+                     {"public_transport": "station", "aerialway": "station"},
+                     {"public_transport": "station", "railway": "proposed", "station": "subway"},
+                     {"public_transport": "station", "disused:railway": "station"}):
+            self.assertFalse(build_graph.is_railway_station(tags, on_track=True), tags)
 
     def test_station_code_is_the_railway_ref(self):
         self.assertEqual(build_graph.station_code({"ref": "DDU"}), "DDU")

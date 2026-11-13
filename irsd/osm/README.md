@@ -85,6 +85,12 @@ station-code candidate in the project catalog. IDs use the prefix `OSM:` plus
 the OSM node ID and are kept distinct from project station codes. OSM-only
 entries can be selected as candidate-route endpoints but do not imply a
 verified identity, station-to-track connection, or complete station inventory.
+Only places where trains stop are exported (`is_railway_station`):
+`railway=station`/`halt` nodes, and `public_transport=station` nodes without a
+`railway` tag only when they say `train=yes` or sit on a track (a shared
+track node or a stop-area link). OSM also maps bus stands, ferry terminals,
+taxi stands and ropeways as `public_transport=station`; 3,486 of those were
+once in the catalog and are now left out, as route seeds too.
 
 `station-route-candidates.json` is the route graph used by Safar. A
 multi-source shortest-path partition runs over the OSM graph. Candidate
