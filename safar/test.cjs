@@ -272,6 +272,12 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   for (const [code, lat, lon] of [['DGR', 23.4949, 87.3182], ['KRTL', 28.1713, 79.2486], ['CC', 26.6450, 83.5873],
     ['SANR', 26.6741, 83.5449], ['BXT', 26.0708, 89.5869], ['JAJ', 24.7729, 86.3863]])
     assert.ok(straight(placeOf(code), [lat, lon]) < 0.05, `${code} stands where OpenStreetMap has it`);
+  // Where the catalog and OSM still disagreed by more than a kilometre, Wikidata decided 97 more: its own place for the
+  // station (not one copied from DataMeet, as most of its places are) agrees with OSM's. Khamanon stood at New
+  // Morinda, 16 km off; Kirandul 13 km off; Ling 1,108 km away.
+  for (const [code, lat, lon] of [['KMNN', 30.8079, 76.3248], ['NMDA', 30.7760, 76.4885], ['KRDL', 18.6389, 81.2599],
+    ['LING', 20.3619, 77.9616]])
+    assert.ok(straight(placeOf(code), [lat, lon]) < 0.05, `${code} stands where OpenStreetMap and Wikidata have it`);
   for (const group of [['ABW', 'DHH', 'FLM', 'NGTG', 'BXT'], ['COB', 'DWT', 'VTG']])
     for (const [n, a] of group.entries()) for (const b of group.slice(n + 1))
       assert.ok(straight(placeOf(a), placeOf(b)) > 1, `${a} and ${b} no longer share a spot`);
@@ -280,7 +286,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // station. A public-transport station on a track stays (OSM has some railway stations mapped only that way).
   const osmList = JSON.parse(fs.readFileSync(require('path').join(__dirname, 'osm-stations.json'), 'utf8'));
   const osmIds = new Set(osmList.map(row => row[0]));
-  assert.equal(osmList.length, 3484);
+  assert.equal(osmList.length, 3482);
   for (const [id, what] of [['OSM:306104406', "Chennai's bus terminus"], ['OSM:6868662856', "Karimnagar's bus station"],
     ['OSM:13280854188', 'a boat jetty in Kerala']]) assert.ok(!osmIds.has(id), `${what} is not a station`);
   assert.ok(osmIds.has('OSM:2064788425') && osmIds.has('OSM:718549318'), 'stations mapped only as public transport on a track stay');

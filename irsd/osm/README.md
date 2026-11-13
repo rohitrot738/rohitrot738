@@ -94,7 +94,8 @@ once in the catalog and are now left out, as route seeds too.
 Nodes listed in `misplaced-stations.json` are left out as well: they carry a
 station code but stand away from that station, out of the order the
 timetables give its line (or off the railway) while the project catalog has
-the station in order. Each entry says why. For example OSM has Kumahu (KMGE)
+the station in order, or where Wikidata's own position for the station (not
+a copy of DataMeet's or OSM's) agrees with the catalog. Each entry says why. For example OSM has Kumahu (KMGE)
 and Khurmabad Road (KVD) on the Grand Chord swapped, 11 km apart.
 
 `station-route-candidates.json` is the route graph used by Safar. A

@@ -1,5 +1,5 @@
 {
-  "about": "OpenStreetMap station nodes that carry an Indian Railways station code but stand away from that station: out of the order the timetables give the line, or off the railway, while the station list has the station in its place. The OSM export leaves them out of the app's station list (build_graph.misplaced_nodes); the station keeps its own entry. Found by comparing every station with the OSM track network; see README.md beside this file.",
+  "about": "OpenStreetMap station nodes that carry an Indian Railways station code but stand away from that station. Either they fall out of the order the timetables give the line (or off the railway) while the station list has the station in order, or Wikidata, where its position does not merely copy DataMeet or OSM, agrees with the station list. The OSM export leaves them out of the app's station list (build_graph.misplaced_nodes); the station keeps its own entry. See README.md beside this file.",
   "nodes": [
     {
       "osm_node": 797804991,
@@ -26,12 +26,28 @@
       "why": "8.3 km from Bhajera (BJRA) in the station list; out of the line's order by 8.6 km between BKI and BW, where the station list has it in order"
     },
     {
+      "osm_node": 2063141234,
+      "ref": "JDL",
+      "name": "Jagdevwala",
+      "lat": 28.3261892,
+      "lon": 73.4771041,
+      "why": "2.7 km from Jagdevwala (JDL) in the station list; Wikidata puts the station 0.34 km from the station list's spot and 2.39 km from this node"
+    },
+    {
       "osm_node": 10249737147,
       "ref": "KMGE",
       "name": "Kumahu",
       "lat": 25.02087,
       "lon": 83.8491878,
       "why": "10.9 km from Kumahu (KMGE) in the station list; out of the line's order by 10.5 km between SSG and SSM, where the station list has it in order"
+    },
+    {
+      "osm_node": 6747112569,
+      "ref": "KTNA",
+      "name": "Kathana",
+      "lat": 22.2994431,
+      "lon": 72.8074125,
+      "why": "9.1 km from Kathana (KTNA) in the station list; Wikidata puts the station 0.14 km from the station list's spot and 8.96 km from this node"
     },
     {
       "osm_node": 10249341955,
