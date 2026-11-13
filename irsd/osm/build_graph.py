@@ -30,6 +30,40 @@ def is_station(tags):
     return tags.get("railway") in STATIONS or tags.get("public_transport") == "station"
 
 
+# public_transport=station is also how OSM maps bus stations, ferry terminals, taxi stands and ropeways.
+NOT_TRAIN_AMENITIES = {"bus_station", "ferry_terminal", "taxi", "parking"}
+
+
+def is_railway_station(tags, on_track=False):
+    """A place where trains stop, the only kind of station the app may offer or log.
+
+    railway=station/halt always is (metro stations too). A public_transport=station with no railway tag is one only
+    when it says train=yes or sits on a track (on_track: it shares a node with one or is linked to one by a stop
+    area), and never when it is marked as a bus, ferry, taxi or ropeway station or as a disused or planned one.
+    """
+    if tags.get("railway") in STATIONS:
+        return True
+    if tags.get("public_transport") != "station" or "railway" in tags:   # railway=proposed, tram_stop, ...
+        return False
+    if any(f"{state}:railway" in tags for state in INACTIVE):
+        return False
+    if (tags.get("amenity") in NOT_TRAIN_AMENITIES or "aerialway" in tags
+            or any(tags.get(k) == "yes" for k in ("bus", "ferry", "trolleybus", "aerialway"))):
+        return False
+    return tags.get("train") == "yes" or on_track
+
+
+MISPLACED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "misplaced-stations.json")
+
+
+def misplaced_nodes(path=MISPLACED):
+    """OSM station nodes that carry a station code but stand away from that station (misplaced-stations.json)."""
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as f:
+        return {int(node["osm_node"]) for node in json.load(f)["nodes"]}
+
+
 def build(xml, database, report):
     if os.path.exists(database):
         raise FileExistsError(f"Refusing to overwrite {database}")
@@ -359,9 +393,10 @@ def station_code(tags):
     return None
 
 
-def export_osm_station_catalog(database, candidates, output):
+def export_osm_station_catalog(database, candidates, output, skip=None):
     if os.path.exists(output):
         raise FileExistsError(f"Refusing to overwrite {output}")
+    skip = misplaced_nodes() if skip is None else skip
     code_counts = {}
     node_counts = {}
     for row in candidates:
@@ -372,6 +407,7 @@ def export_osm_station_catalog(database, candidates, output):
         if code_counts[row["code"]] == 1 and node_counts[row["osm_id"]] == 1
     }
     db = sqlite3.connect(f"file:{os.path.abspath(database)}?mode=ro", uri=True)
+    linked = {node for (node,) in db.execute("SELECT DISTINCT station_node_id FROM station_track_links")}
     rows = db.execute("""
         SELECT n.id, n.lat, n.lon, n.tags
         FROM stations s JOIN nodes n ON n.id=s.osm_id
@@ -383,9 +419,11 @@ def export_osm_station_catalog(database, candidates, output):
         f.write("[")
         first = True
         for node_id, lat, lon, tags_json in rows:
-            if node_id in represented_nodes:
+            if node_id in represented_nodes or node_id in skip:
                 continue
             tags = json.loads(tags_json)
+            if not is_railway_station(tags, node_id in linked):
+                continue
             name = tags.get("name:en") or tags.get("name") or tags.get("ref") or f"Railway station {node_id}"
             if not first:
                 f.write(",")
@@ -402,7 +440,8 @@ def export_osm_station_catalog(database, candidates, output):
     return count
 
 
-def build_station_route_candidates(database, candidates, output, catalog_station_count=None):
+def build_station_route_candidates(database, candidates, output, catalog_station_count=None, skip=None):
+    skip = misplaced_nodes() if skip is None else skip
     code_counts = {}
     node_counts = {}
     for row in candidates:
@@ -424,13 +463,15 @@ def build_station_route_candidates(database, candidates, output, catalog_station
     osm_station_rows = db.execute("""
         SELECT s.osm_id,
                group_concat(DISTINCT l.way_id),
-               group_concat(DISTINCT l.track_node_id)
+               group_concat(DISTINCT l.track_node_id),
+               n.tags
         FROM stations s JOIN station_track_links l ON l.station_node_id=s.osm_id
+        JOIN nodes n ON n.id=s.osm_id
         WHERE s.osm_type='node'
         GROUP BY s.osm_id
     """)
-    for node_id, way_ids, track_node_ids in osm_station_rows:
-        if node_id in represented_nodes:
+    for node_id, way_ids, track_node_ids, tags_json in osm_station_rows:
+        if node_id in represented_nodes or node_id in skip or not is_railway_station(json.loads(tags_json), True):
             continue
         seeds[f"OSM:{node_id}"] = sorted(
             int(value) for value in re.split(r"[;,]", track_node_ids or "") if value
