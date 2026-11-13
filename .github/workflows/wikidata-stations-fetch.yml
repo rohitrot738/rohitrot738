@@ -1,0 +1,63 @@
+# One-off: fetch Indian Railways stations and their coordinates from Wikidata (CC0) for the station position check.
+# The data is printed into the job log; this branch is deleted afterwards.
+name: Wikidata stations (one-off fetch)
+on:
+  push:
+    branches: [claude/wikidata-stations-fetch]
+permissions:
+  contents: read
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Fetch from the Wikidata Query Service
+        shell: python3 {0}
+        run: |
+          import base64, collections, gzip, json, time, urllib.parse, urllib.request
+          UA = 'SufferSathi-station-check/1.0 (https://github.com/rohitrot738/rohitrot738)'
+          def sparql(q):
+              data = urllib.parse.urlencode({'query': q, 'format': 'json'}).encode()
+              for attempt in range(4):
+                  try:
+                      req = urllib.request.Request('https://query.wikidata.org/sparql', data=data,
+                                                   headers={'User-Agent': UA, 'Accept': 'application/sparql-results+json'})
+                      with urllib.request.urlopen(req, timeout=300) as r:
+                          return json.load(r)['results']['bindings']
+                  except Exception as e:
+                      print('retry after', repr(e)); time.sleep(20 * (attempt + 1))
+              raise SystemExit('Wikidata did not answer')
+          props = sparql('SELECT ?p WHERE { ?p a wikibase:Property ; rdfs:label "Indian Railways station code"@en . }')
+          print('property:', props)
+          pid = props[0]['p']['value'].rsplit('/', 1)[1]
+          q = '''SELECT ?item ?code ?lat ?lon ?from ?stated ?label WHERE {
+            ?item wdt:PID ?code .
+            OPTIONAL {
+              ?item p:P625 ?st .
+              ?st psv:P625 [ wikibase:geoLatitude ?lat ; wikibase:geoLongitude ?lon ] .
+              OPTIONAL { ?st prov:wasDerivedFrom/pr:P143 ?from . }
+              OPTIONAL { ?st prov:wasDerivedFrom/pr:P248 ?stated . }
+            }
+            OPTIONAL { ?item rdfs:label ?label FILTER(LANG(?label) = "en") }
+          }'''.replace('PID', pid)
+          rows = []
+          v = lambda b, k: b[k]['value'] if k in b else None
+          qid = lambda s: s.rsplit('/', 1)[1] if s else None
+          for b in sparql(q):
+              lat, lon = v(b, 'lat'), v(b, 'lon')
+              rows.append([qid(v(b, 'item')), v(b, 'code'), lat and float(lat), lon and float(lon),
+                           qid(v(b, 'from')), qid(v(b, 'stated')), v(b, 'label')])
+          print('rows', len(rows), 'items', len({r[0] for r in rows}), 'codes', len({r[1] for r in rows}),
+                'with coordinates', sum(1 for r in rows if r[2] is not None))
+          sources = collections.Counter(r[4] or r[5] or '-' for r in rows if r[2] is not None)
+          print('coordinate sources:', sources.most_common(15))
+          named = [s for s, _ in sources.most_common(40) if s != '-']
+          labels = {}
+          if named:
+              for b in sparql('SELECT ?s ?l WHERE { VALUES ?s { %s } ?s rdfs:label ?l FILTER(LANG(?l) = "en") }' % ' '.join('wd:' + s for s in named)):
+                  labels[qid(v(b, 's'))] = v(b, 'l')
+          print('source labels:', labels)
+          blob = base64.b64encode(gzip.compress(json.dumps({'property': pid, 'rows': rows, 'labels': labels}).encode())).decode()
+          for i in range(0, len(blob), 4000):
+              print('WD', blob[i:i + 4000])
+          print('WD END')
