@@ -66,7 +66,8 @@ body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right
 body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
 /* The next station and the journey log, a line each under the date, there only in the full-screen clock (fitClock
-   places and sizes them). A long name is cut short with "…", while the distance or time after it stays whole. A tap
+   places and sizes them). A long name is cut short with "…" first, while the distance or time after it stays
+   whole; only on a line too narrow even for that (a very large dial beside it) is that cut short too. A tap
    opens the log over the clock to its last entries, marked as in the log below the clock (halts amber, stations
    passed green), and a second tap closes it. */
 #clock-next,#clock-log{display:none}
@@ -74,7 +75,7 @@ body.clockmode #clock-next,body.clockmode #clock-log{display:block;position:abso
 line-height:1.2;color:#e2e8f0;overflow:hidden}
 body.clockmode #clock-next,#clock-log .head{display:flex;white-space:nowrap}
 #clock-next .what,#clock-log .what{overflow:hidden;text-overflow:ellipsis;min-width:0}
-#clock-next .far,#clock-log .far{flex:none;white-space:pre}
+#clock-next .far,#clock-log .far{flex:none;max-width:calc(100% - 2.5em);white-space:pre;overflow:hidden;text-overflow:ellipsis}
 #clock-log .head.stop,#clock-log .head.pass{padding-left:.3em}
 body.clockmode #clock-log.open{z-index:4;margin:-6px 0 0 -8px;padding:6px 8px;border-radius:10px;background:rgba(30,41,59,.97);
 box-shadow:0 6px 18px rgba(0,0,0,.6)}
