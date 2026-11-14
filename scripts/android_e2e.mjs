@@ -238,7 +238,9 @@ const CLOCK = `
   const metrics = clockMetrics(time);
   time.style.fontSize = font;
   return {inner: [innerWidth, innerHeight], body: document.body.className, time: box('clock-time'), hm: box('clock-hm'),
-    sec: box('clock-sec'), date: box('clock-date'), exit: box('clock-full'), dial, font, scale, metrics,
+    sec: box('clock-sec'), date: box('clock-date'), exit: box('clock-full'), next: box('clock-next'), log: box('clock-log'),
+    nextText: document.getElementById('clock-next').textContent, logText: document.getElementById('clock-log').textContent,
+    dial, font, scale, metrics,
     blank: (metrics.foot - metrics.digit) * parseFloat(font) / 100 * scale[1]};`;
 const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
 
@@ -262,6 +264,26 @@ async function clockCheck(page, label) {
   check(!overlap(ink, clock.dial), `${label}: the hours and minutes stay clear of the speed dial`, `${JSON.stringify(ink.map(Math.round))} against ${JSON.stringify(clock.dial)}`);
   check(!overlap(clock.date, clock.dial) && !overlap(clock.exit, clock.dial), `${label}: the date and EXIT stay clear of the speed dial`);
   check(!overlap(clock.date, clock.hm) && !overlap(clock.exit, clock.date), `${label}: the date, EXIT and the time do not cover one another`);
+  // The next station and the journey log, a line each under the date: on the screen, saying what they are, and
+  // clear of the dial, the date, EXIT, the digits and each other.
+  const shown = r => r[0] >= 0 && r[1] >= 0 && r[2] <= width && r[3] <= height && Math.max(r[2] - r[0], r[3] - r[1]) > 100 && Math.min(r[2] - r[0], r[3] - r[1]) > 12;
+  check(shown(clock.next) && shown(clock.log), `${label}: the next station and the journey log are on the screen`, JSON.stringify([clock.next, clock.log]));
+  check(/^(Next|Near): /.test(clock.nextText) && /^▸ /.test(clock.logText), `${label}: the two lines say what they are`, `${clock.nextText} | ${clock.logText}`);
+  const lineHits = [];
+  for (const [name, line] of [['next', clock.next], ['log', clock.log]])
+    for (const [other, box] of [['dial', clock.dial], ['date', clock.date], ['EXIT', clock.exit], ['digits', ink]])
+      if (overlap(line, box)) lineHits.push(`${name} ${JSON.stringify(line)} / ${other} ${JSON.stringify(box.map(Math.round))}`);
+  if (overlap(clock.next, clock.log)) lineHits.push(`next ${JSON.stringify(clock.next)} / log ${JSON.stringify(clock.log)}`);
+  check(!lineHits.length, `${label}: the two lines cover nothing and nothing covers them`, lineHits.join('; '));
+  // A tap opens the log over the clock to its last entries; a second tap closes it.
+  const LOG = `const el = document.getElementById('clock-log'); return {open: el.className, rows: el.children.length, text: el.textContent};`;
+  await tap(page, '#clock-log');
+  const opened = await page.run(LOG);
+  await settledShot(`clock-log-open-${label}`);
+  check(opened.open === 'open' && opened.rows >= 2 && /^▾ Journey log/.test(opened.text), `${label}: a tap opens the journey log`, JSON.stringify(opened));
+  await tap(page, '#clock-log');
+  const closed = await page.run(LOG);
+  check(closed.open === '' && closed.rows === 1, `${label}: a second tap closes the journey log`, JSON.stringify(closed));
   await page.run(`document.getElementById('clock-full').click();`);
   await sleep(2000);
   const after = await page.run(`return [innerWidth, innerHeight, document.body.className];`);
@@ -316,12 +338,12 @@ async function settledShot(name) { await sleep(1200); shot(name); }
 const SIZES = CLOCK.replace(/return \{/, `const own = id => box(id).map(Math.round);
   return {open: !document.getElementById('clock-sizes').hidden, part: sizePart, mode: clockSizes.mode, saved: localStorage.getItem('safar-clock-sizes'),
     value: document.getElementById('size-value').textContent, gear: own('clock-edit'), bar: own('clock-sizes'),
-    dateFont: parseFloat(document.getElementById('clock-date').style.fontSize),`);
+    dateFont: parseFloat(document.getElementById('clock-date').style.fontSize), logFont: parseFloat(document.getElementById('clock-log').style.fontSize),`);
 // The clock's parts that must not cover one another, the time by its digits alone (see clockCheck).
 function clearOfEachOther(clock) {
   const ink = [...clock.hm];
   if (clock.inner[1] > clock.inner[0]) ink[2] -= clock.blank; else ink[1] += clock.blank;
-  const parts = {time: ink, dial: clock.dial, date: clock.date, exit: clock.exit, gear: clock.gear};
+  const parts = {time: ink, dial: clock.dial, date: clock.date, exit: clock.exit, gear: clock.gear, next: clock.next, log: clock.log};
   const names = Object.keys(parts), touching = [];
   for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++)
     if (overlap(parts[names[i]], parts[names[j]])) touching.push(`${names[i]} ${JSON.stringify(parts[names[i]].map(Math.round))} / ${names[j]} ${JSON.stringify(parts[names[j]].map(Math.round))}`);
@@ -343,7 +365,7 @@ async function clockSizesCheck(page) {
   check(/clockmode/.test(plain.body) && !plain.open, 'sizes: the full-screen clock opens with the sizes bar closed');
   check(plain.gear[2] - plain.gear[0] >= 24 && plain.gear[3] - plain.gear[1] >= 24 && plain.gear[0] >= 0 && plain.gear[2] <= width && plain.gear[3] <= height,
     'sizes: the gear is on the screen, large enough to tap', JSON.stringify(plain.gear));
-  check(!clearOfEachOther(plain).length, 'sizes: the gear, EXIT, the date, the time and the dial do not cover one another', clearOfEachOther(plain).join('; '));
+  check(!clearOfEachOther(plain).length, 'sizes: the gear, EXIT, the date, the two lines, the time and the dial do not cover one another', clearOfEachOther(plain).join('; '));
   await tap(page, '#clock-time');
   check(!(await page.run(SIZES)).open, 'sizes: a tap on the clock changes nothing until the gear is pressed');
 
@@ -363,6 +385,17 @@ async function clockSizesCheck(page) {
   check(!larger.open, 'sizes: "Done" right after sliding closes the bar');
   check(larger.dateFont < plain.dateFont, 'sizes: in Auto the date gives the larger dial room', `${plain.dateFont} -> ${larger.dateFont}`);
   check(!clearOfEachOther(larger).length, 'sizes: in Auto nothing covers anything with the larger dial', clearOfEachOther(larger).join('; '));
+  // The journey log's line, picked with its button and made larger with +: in Auto the time makes room for it.
+  await tap(page, '#clock-edit');
+  await tap(page, '#size-log');
+  await tap(page, '#size-up');
+  await tap(page, '#size-up');
+  await tap(page, '#size-done');
+  const largerLog = await page.run(SIZES);
+  log('sizes, Auto with a larger journey log:', JSON.stringify(largerLog));
+  await settledShot('clock-sizes-auto-larger-log');
+  check(largerLog.logFont > larger.logFont * 1.05, 'sizes: + makes the journey log larger', `${larger.logFont} -> ${largerLog.logFont}`);
+  check(!clearOfEachOther(largerLog).length, 'sizes: in Auto nothing covers anything with the larger journey log', clearOfEachOther(largerLog).join('; '));
 
   await tap(page, '#clock-full');
   await sleep(2000);
