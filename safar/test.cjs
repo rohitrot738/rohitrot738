@@ -11,7 +11,7 @@ function setup(fetch, saved, capacitor = null, screen = null) {
     return {
       textContent: '', value: 'auto', children: [], style: {}, dataset: {},
       append(...items) { this.children.push(...items); },
-      replaceChildren() { this.children = []; this.textContent = ''; },
+      replaceChildren(...items) { this.children = items; this.textContent = ''; },
       click() {}
     };
   }
@@ -31,6 +31,9 @@ function setup(fetch, saved, capacitor = null, screen = null) {
 
 // A route-list row is <li><label><input type=checkbox><span>name</span></label></li>.
 const rowName = li => li.children[0].children[1].textContent;
+// A line of the full-screen clock: its parts' text together. The time as the log writes it.
+const lineText = el => el.children.map(part => part.textContent).join('');
+const clockTime = t => new Date(t).toLocaleTimeString('hi-IN', {hour12: false});
 const rowBox = li => li.children[0].children[0];
 const fix = (lat, t, speed = 10, accuracy = 10) =>
   ({coords: {latitude: lat, longitude: 77, accuracy, speed}, timestamp: t});
@@ -76,6 +79,14 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].id, 'TST');
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].source, 'DataMeet + project fallback');
   assert.equal(JSON.parse(app.store.get('trainlog'))[0].type, 'pass');
+  // The full-screen clock's log line: the latest entry in short, the station and when it was passed, marked green.
+  const passEntry = JSON.parse(app.store.get('trainlog'))[0];
+  assert.equal(lineText(app.elements['clock-log'].children[0]), `▸ Last: Test Station (TST) · ${clockTime(passEntry.t)}`);
+  assert.equal(app.elements['clock-log'].children[0].className, 'head pass');
+  // Its next-station line follows the main screen's, in short.
+  app.watches[0].success(fix(28.02, 200000, 10, 600));
+  assert.equal(app.elements.next.textContent, 'GPS accuracy is low; the next station cannot be worked out.');
+  assert.equal(lineText(app.elements['clock-next']), 'Next: GPS accuracy is low.');
 
   const halt = setup(stationFetcher([['HLT', 'Halt', 28, 77]]));
   halt.elements.start.onclick();
@@ -88,6 +99,9 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(event.type, 'halt');
   assert.equal(event.arr, 100000);
   assert.equal(event.dep, 145000);
+  // A halt in the clock's log line: from when to when it stood, marked amber.
+  assert.equal(lineText(halt.elements['clock-log'].children[0]), `▸ Last: Halt (HLT) · ${clockTime(100000)}–${clockTime(145000)}`);
+  assert.equal(halt.elements['clock-log'].children[0].className, 'head stop');
 
   let nativeCallback, removedNativeWatcher = false;
   const nativeCapacitor = {
@@ -370,16 +384,28 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const adsrBox = routed.elements['route-list'].children[1].children[0].children[0];
   adsrBox.checked = false;
   adsrBox.onchange();
+  assert.equal(lineText(routed.elements['clock-next']), 'Next: press Start and wait for the location.');
   routed.elements.start.onclick();
   routed.watches[0].success({coords: {latitude: 24.9, longitude: 84.208, accuracy: 4, speed: 10}, timestamp: 100000});
   assert.match(routed.elements.next.textContent, /Likely next station: DEHRI ON SONE \(DOS\)/);
+  // In the full-screen clock, in short: the station and how far, the same as on the main screen. The distance is a
+  // part of its own, so a long name is cut short before it is.
+  const routeKm = routed.elements.next.textContent.match(/, (\d+\.\d\d km) — estimated$/)[1];
+  assert.equal(lineText(routed.elements['clock-next']), `Next: DEHRI ON SONE (DOS) · ${routeKm}`);
+  assert.deepEqual(routed.elements['clock-next'].children.map(part => part.className), ['what', 'far']);
+  assert.equal(routed.elements['clock-next'].children[1].textContent, ` · ${routeKm}`);
   assert.equal(routed.elements.speed.textContent, '36');
   routed.watches[0].success({coords: {latitude: 24.909345, longitude: 84.192214, accuracy: 4, speed: 10}, timestamp: 160000});
   routed.watches[0].success({coords: {latitude: 24.914895, longitude: 84.185434, accuracy: 4, speed: 10}, timestamp: 220000});
   assert.doesNotMatch(routed.store.get('trainlog') || '', /ADSR/);
+  // At a station of the route the clock says the train is near it.
+  assert.equal(routed.elements.next.textContent, 'Near a station on the route: DEHRI ON SONE (DOS), 0.00 km — estimated');
+  assert.equal(lineText(routed.elements['clock-next']), 'Near: DEHRI ON SONE (DOS) · 0.00 km');
   routed.watches[0].success({coords: {latitude: 25.5, longitude: 85, accuracy: 4, speed: 10}, timestamp: 280000});
   // Off the chosen route the tracker keeps going: the next station comes from the direction of travel.
   assert.match(routed.elements.next.textContent, /Next station \(estimated from direction\): .+ km/);
+  const [, ahead, aheadKm] = routed.elements.next.textContent.match(/\): (.+), (\d+\.\d\d km)$/);
+  assert.equal(lineText(routed.elements['clock-next']), `Next: ${ahead} · ${aheadKm}`);
   await routed.elements['find-route'].onclick();
   assert.match(routed.elements['route-status'].textContent, /^Press Stop before changing the route/);
 
@@ -505,6 +531,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   outer.watches[0].success(fix(28.06, 260000, 0));
   assert.match(outer.elements['live-stop'].textContent, /^Stopped now: On the way \(6\.\d\d km from Halt\) — since .+ \(1 min\)$/);
   assert.equal(outer.elements['live-stop'].hidden, false);
+  assert.match(lineText(outer.elements['clock-log'].children[0]), /^▸ Stopped now: On the way \(6\.\d\d km from Halt\) · 1 min$/);
   outer.watches[0].success(fix(28.061, 270000, 10));
   const outerLog = JSON.parse(outer.store.get('trainlog'));
   assert.equal(outerLog.length, 1);
@@ -963,8 +990,12 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(standing.elements['live-stop'].hidden, true);  // 6 seconds: not a halt yet
   standing.watches[0].success(fix(28, 119000, 0));
   assert.match(standing.elements['live-stop'].textContent, /^Stopped now: Standing Station \(STD\) — since .+ \(0\.3 min\)$/);
+  // The clock's log line shows the stop in progress first, with how long the train has stood so far.
+  assert.equal(lineText(standing.elements['clock-log'].children[0]), '▸ Stopped now: Standing Station (STD) · 0.3 min');
+  assert.equal(standing.elements['clock-log'].children[0].className, 'head stop');
   standing.watches[0].success(fix(28.0005, 130000, 10));
   assert.equal(standing.elements['live-stop'].hidden, true);
+  assert.doesNotMatch(lineText(standing.elements['clock-log'].children[0]), /Stopped now/);
 
   // Rings. The train runs north along longitude 77 in 55 m steps; 0.001 degrees of longitude is about 98 m here.
   const drive = (app, from, to, t0, speed = 27) => {
@@ -1063,10 +1094,11 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const covers = (a, b) => a[0] < b[2] - 0.5 && b[0] < a[2] - 0.5 && a[1] < b[3] - 0.5 && b[1] < a[3] - 0.5;
   const within = (box, long, short) => box[0] >= -0.5 && box[1] >= -0.5 && box[2] <= long + 0.5 && box[3] <= short + 0.5;
   const layout = big.context.clockLayout;
-  const measures = {width: 304, digit: 72, foot: 84, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92};
-  const ones = {time: 1, dial: 1, date: 1};
+  // lineTall: how tall a line of the next station or the log is, for 100 px of font.
+  const measures = {width: 304, digit: 72, foot: 84, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92, lineTall: 120};
+  const ones = {time: 1, dial: 1, date: 1, next: 1, log: 1};
   // Untouched, either way lays the clock out exactly as before its sizes could be set.
-  const smallFont = {...measures, width: 244, digit: 57.6, foot: 67, dateWide: 920, dateTall: 94, dateTop: 55};
+  const smallFont = {...measures, width: 244, digit: 57.6, foot: 67, dateWide: 920, dateTall: 94, dateTop: 55, lineTall: 96};
   for (const [long, short, m] of [[780, 360, measures], [735, 360, smallFont], [891, 411, measures], [640, 360, measures], [1280, 800, measures]]) {
     const font = Math.max(40, Math.min((long - 24) / m.width, (short - 216) / m.digit) * 100);
     const wide = Math.max(1, Math.min(1.3, (long - 24) / (m.width * font / 100)));
@@ -1092,7 +1124,10 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   near(larger.dial, 182 * 1.4, 'larger dial');
   near(smaller.dial, 182 * 0.6, 'smaller dial');
   assert.ok(larger.date < plain.date && area(larger.rects.time) < area(plain.rects.time), 'a larger dial makes room');
-  assert.ok(smaller.date > plain.date && tallness(smaller.rects.time) > tallness(plain.rects.time), 'a smaller dial gives room back');
+  // A smaller dial gives room back to the time. The date keeps its size then: larger, it would push the next station
+  // and the log down onto the time, and the time would come out smaller for a smaller dial.
+  near(smaller.date, plain.date, 'the date with a smaller dial');
+  assert.ok(tallness(smaller.rects.time) > tallness(plain.rects.time), 'a smaller dial gives room back');
   for (const [long, short] of [[780, 360], [891, 411], [640, 360]]) {
     let before = Infinity;
     for (let dial = 0.4; dial <= 2.2; dial += 0.05) {
@@ -1109,18 +1144,23 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   near(layout(780, 360, measures, {...ones, date: 0.5}, true).date, plain.date / 2, 'half date');
   // Never past what fits: in Auto the time and the date go up to 100 %, the dial up to the screen's height.
   const most = layout(780, 360, measures, {time: 3, dial: 9, date: 3}, true);
-  assert.deepEqual(most.sizes, {time: 1, dial: most.limits.dial[1], date: 1});
+  assert.deepEqual(most.sizes, {time: 1, dial: most.limits.dial[1], date: 1, next: 1, log: 1});
   near(most.dial, 360 - 28, 'largest dial');
-  assert.deepEqual(layout(780, 360, measures, {time: 0, dial: 0, date: 0}, true).sizes, {time: 0.3, dial: 0.4, date: 0.3});
+  assert.deepEqual(layout(780, 360, measures, {time: 0, dial: 0, date: 0}, true).sizes, {time: 0.3, dial: 0.4, date: 0.3, next: 1, log: 1});
   // With the dial as tall as the screen, the time goes beside it instead of under it.
   assert.ok(most.rects.time[2] <= most.rects.dial[0] && tallness(most.rects.time) > 60, 'the time beside a tall dial');
   // Whatever the sizes, nothing covers anything else and everything stays on the screen.
   for (const [long, short] of [[780, 360], [891, 411], [640, 360], [1280, 800], [735, 360]])
-    for (const dial of [0.4, 0.7, 1, 1.3, 1.6, 2, 9]) for (const time of [0.3, 0.7, 1]) for (const date of [0.3, 1]) {
-      const got = layout(long, short, measures, {time, dial, date}, true), r = got.rects, what = `Auto ${long}x${short} ${dial}/${time}/${date}`;
+    for (const dial of [0.4, 0.7, 1, 1.3, 1.6, 2, 9]) for (const time of [0.3, 0.7, 1]) for (const date of [0.3, 1]) for (const line of [0.5, 1, 1.5]) {
+      const got = layout(long, short, measures, {time, dial, date, next: line, log: line}, true), r = got.rects;
+      const what = `Auto ${long}x${short} ${dial}/${time}/${date}/${line}`;
       for (const [name, box] of Object.entries(r)) assert.ok(within(box, long, short), `${what}: ${name} on the screen ${box}`);
-      for (const [a, b] of [['dial', 'time'], ['dial', 'date'], ['dial', 'buttons'], ['date', 'time'], ['buttons', 'time'], ['buttons', 'date']])
+      const names = ['dial', 'time', 'date', 'buttons', 'next', 'log'];
+      assert.deepEqual(Object.keys(r).sort(), names.slice().sort());
+      for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+        const [a, b] = [names[i], names[j]];
         assert.ok(!covers(r[a], r[b]), `${what}: ${a} ${r[a].map(Math.round)} clear of ${b} ${r[b].map(Math.round)}`);
+      }
     }
   // Custom: each keeps its own size; a larger dial leaves the time and the date as they were.
   const own = layout(780, 360, measures, {...ones, dial: 1.5}, false);
@@ -1136,9 +1176,43 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   near(smallerTime.time.wide, plain.time.wide, 'Custom smaller time, same shape');
   near(layout(780, 360, measures, {...ones, date: 1.3}, false).date, plain.date * 1.3, 'Custom larger date');
   const ownMost = layout(780, 360, measures, {time: 9, dial: 9, date: 9}, false);
-  assert.deepEqual(ownMost.sizes, {time: ownMost.limits.time[1], dial: ownMost.limits.dial[1], date: ownMost.limits.date[1]});
+  assert.deepEqual(ownMost.sizes, {time: ownMost.limits.time[1], dial: ownMost.limits.dial[1], date: ownMost.limits.date[1], next: 1, log: 1});
   near(ownMost.limits.time[1], 1.3, 'Custom time limit');
   for (const [name, box] of Object.entries(ownMost.rects)) assert.ok(within(box, 780, 360), `Custom largest: ${name} on the screen ${box}`);
+
+  // ---- The next station and the journey log, one line each under the date. By themselves they take the room
+  // between the date and the dial's foot, so the time keeps its size: at most 9 % of the screen's height and three
+  // fifths of the date's height each, at least 6.5 % of the screen's height (then they push the time down instead).
+  // Worked by hand for 780 x 360: the date (46.609 px of font, 117 tall per 100) ends at 59 + 54.533 = 113.533. Two
+  // lines with a gap of 8 above each would have (196 - 113.533 - 16) / 2 = 33.23 px each; 9 % of 360 is 32.4, so
+  // each line is 32.4 px tall: 27 px of font at 120 per 100. Beside the dial they end 8 px before it (584 - 8).
+  const lines = layout(780, 360, measures, ones, true);
+  near(lines.next, 27, 'next station font');
+  near(lines.log, 27, 'journey log font');
+  assert.deepEqual(lines.rects.next.map(v => Math.round(v * 100) / 100), [16, 121.53, 576, 153.93]);
+  assert.deepEqual(lines.rects.log.map(v => Math.round(v * 100) / 100), [16, 161.93, 576, 194.33]);
+  // A tablet, 1280 x 800: the date (90.087 px, ending at 164.40) leaves 7.8 px a line beside the dial, too little;
+  // each line is 6.5 % of 800 = 52 px tall. The first still starts beside the dial and ends before it; the second
+  // starts below the dial's foot (196) and reaches across. The time, which fills the width anyway, keeps its size.
+  const tablet = layout(1280, 800, measures, ones, true);
+  near(tablet.next, 52 / 1.2, 'tablet line font');
+  assert.deepEqual(tablet.rects.next.map(v => Math.round(v * 100) / 100), [16, 172.4, 1076, 224.4]);
+  assert.deepEqual(tablet.rects.log.map(v => Math.round(v * 100) / 100), [16, 232.4, 1264, 284.4]);
+  // Their own sizes: larger in Auto they push the time down (smaller) rather than cover it.
+  const bigLines = layout(780, 360, measures, {...ones, next: 1.5, log: 1.5}, true);
+  near(bigLines.next, 40.5, 'next station at 150 %');
+  near(bigLines.log, 40.5, 'journey log at 150 %');
+  near(bigLines.rects.log[3], 113.533 + 8 + 48.6 + 8 + 48.6, 'larger lines end lower');
+  assert.ok(bigLines.time.font < lines.time.font && bigLines.rects.time[1] >= bigLines.rects.log[3] + 8 - 0.01, 'larger lines push the time down');
+  near(layout(780, 360, measures, {...ones, log: 0.5}, true).log, 13.5, 'journey log at 50 %');
+  // 50 % to 150 % in Auto, 50 % to 200 % in Custom.
+  assert.deepEqual(layout(780, 360, measures, {...ones, next: 9, log: 0}, true).sizes, {...ones, next: 1.5, log: 0.5});
+  assert.deepEqual(layout(780, 360, measures, {...ones, next: 9, log: 0}, false).sizes, {...ones, next: 2, log: 0.5});
+  // Custom: each keeps its own size whatever the dial does; beside a larger dial the lines end before it.
+  const ownLines = layout(780, 360, measures, {...ones, dial: 1.5, next: 1.2}, false);
+  near(ownLines.next, 27 * 1.2, 'Custom next station');
+  near(ownLines.log, 27, 'Custom log untouched by the dial');
+  near(ownLines.rects.next[2], 780 - 14 - 273 - 8, 'Custom next ends before the larger dial');
 
   // The gear and its bar, as the user works them.
   const sized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
@@ -1171,8 +1245,20 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(knob['size-value'].textContent, '100%');
   knob['size-up'].onclick();
   assert.equal(knob['size-value'].textContent, '105%');
+  // The next station and the journey log are sized the same way, each with a button of its own; the bar keeps out
+  // of their way at the bottom.
+  knob['size-log'].onclick();
+  assert.equal(knob['size-log'].className, 'on');
+  assert.equal(knob['size-date'].className, '');
+  assert.equal(knob['clock-sizes'].className, 'low');
+  assert.equal(knob['size-value'].textContent, '100%');
+  knob['size-up'].onclick();
+  knob['size-next'].onclick();
+  assert.equal(knob['size-next'].className, 'on');
+  knob['size-down'].onclick();
+  assert.equal(knob['size-value'].textContent, '95%');
   assert.deepEqual(JSON.parse(sized.store.get('safar-clock-sizes')),
-    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: {time: 1, dial: 1, date: 1.05}});
+    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1, next: 1, log: 1}, custom: {time: 1, dial: 1, date: 1.05, next: 0.95, log: 1.05}});
   knob['size-done'].onclick();
   assert.equal(knob['clock-sizes'].hidden, true);
   // Kept for the next start; "Reset" puts the sizes of the way in use back.
@@ -1186,7 +1272,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   again['size-reset'].onclick();
   assert.equal(again['size-value'].textContent, '100%');
   assert.deepEqual(JSON.parse(resized.store.get('safar-clock-sizes')),
-    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1}, custom: ones});
+    {mode: 'custom', auto: {time: 0.95, dial: 1.1, date: 1, next: 1, log: 1}, custom: ones});
   // EXIT closes the bar with the full-screen clock, and the dial goes back to its everyday size.
   again['clock-full'].onclick();
   assert.equal(again['clock-sizes'].hidden, true);
@@ -1197,7 +1283,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // corner (top left, top right, bottom right, bottom left, in the clock's own measure). A corner drawn away from
   // where the part stands makes it larger, drawn towards it smaller, by how much farther or nearer the finger is; two
   // fingers spread or pinched anywhere on the clock do the same by how much farther apart they are.
-  const fallback = {width: 305, digit: 71.1, foot: 84.5, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92};
+  const fallback = {width: 305, digit: 71.1, foot: 84.5, dateWide: 1150, dateTall: 117, dateTop: 59, buttonsWide: 92, lineTall: 120};
   const drawn = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 360, innerHeight: 735});
   const hand = drawn.elements;
   const keptSizes = () => JSON.parse(drawn.store.get('safar-clock-sizes'));
@@ -1284,6 +1370,85 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   body.onpointerup({pointerId: 11, target: body});
   near(keptSizes().auto.dial, closedSize, 'no pinch with the bar closed');
 
+  // ---- The journey log in the full-screen clock: one line, which a tap opens to the stop in progress and the last
+  // five entries, newest first, each as the main screen's log has it (halts amber, stations passed green); a second
+  // tap closes it. The gear and EXIT close it too, and while the gear's bar is open a tap on it picks it for sizing.
+  const entries = [1, 2, 3, 4, 5, 6, 7].map(i => i % 3
+    ? {name: `Station ${i}`, id: `ST${i}`, type: 'pass', t: i * 600000, near: 20 + i}
+    : {name: `Station ${i}`, id: `ST${i}`, type: 'halt', arr: i * 600000, dep: i * 600000 + 120000, near: 30});
+  // Sizes kept by the version before these lines: the lines come at their own size.
+  const oldSizes = JSON.stringify({mode: 'auto', auto: {time: 0.9, dial: 1.2, date: 1}, custom: {time: 1, dial: 1, date: 1}});
+  const shelf = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), [['trainlog', JSON.stringify(entries)], ['safar-clock-sizes', oldSizes]]);
+  const sh = shelf.elements, logBox = sh['clock-log'], headOf = () => lineText(logBox.children[0]);
+  assert.equal(headOf(), `▸ Last: Station 7 (ST7) · ${clockTime(4200000)}`);
+  assert.equal(logBox.children.length, 1);
+  logBox.onclick();                                    // not in the full-screen clock: nothing opens
+  assert.equal(logBox.children.length, 1);
+  sh['clock-full'].onclick();
+  logBox.onclick();
+  assert.equal(logBox.className, 'open');
+  assert.equal(headOf(), '▾ Journey log');
+  assert.deepEqual(logBox.children.slice(1).map(item => [item.className, item.children[0].textContent]),
+    [['item pass', 'Station 7 (ST7)'], ['item stop', 'Station 6 (ST6)'], ['item pass', 'Station 5 (ST5)'],
+      ['item pass', 'Station 4 (ST4)'], ['item stop', 'Station 3 (ST3)']]);
+  assert.equal(logBox.children[1].children[1].textContent, ` Passed: ${clockTime(4200000)} · within 27 m`);
+  assert.equal(logBox.children[2].children[1].textContent, ` Stopped: ${clockTime(3600000)} to ${clockTime(3720000)} (2 min) · within 30 m`);
+  logBox.onclick();
+  assert.equal(logBox.className, '');
+  assert.equal(logBox.children.length, 1);
+  assert.match(headOf(), /^▸ Last: Station 7 \(ST7\)/);
+  // Open, a new entry comes in at the top and the oldest of the five goes.
+  logBox.onclick();
+  shelf.elements.start.onclick();
+  shelf.watches[0].success(fix(27.99, 5000000));
+  await flush();
+  shelf.watches[0].success(fix(28, 5010000));
+  shelf.watches[0].success(fix(28.01, 5020000));
+  assert.deepEqual(logBox.children.slice(1).map(item => item.children[0].textContent),
+    ['Test Station (TST)', 'Station 7 (ST7)', 'Station 6 (ST6)', 'Station 5 (ST5)', 'Station 4 (ST4)']);
+  // The stop in progress stands above the entries.
+  shelf.watches[0].success(fix(28.02, 5030000, 0));
+  shelf.watches[0].success(fix(28.02, 5050000, 0));
+  assert.equal(logBox.children.length, 7);
+  assert.equal(logBox.children[1].className, 'item stop');
+  assert.match(logBox.children[1].children[0].textContent, /^Stopped now: On the way \(\d\.\d\d km from Test Station\)$/);
+  assert.equal(logBox.children[1].children[1].textContent, ` since ${clockTime(5030000)} (0.3 min)`);
+  // The gear closes it, so the line can be sized: a tap on it then picks it rather than opening it, and a tap on the
+  // next station picks that. The old sizes came in whole, the new parts at 100 %.
+  sh['clock-edit'].onclick();
+  assert.equal(logBox.children.length, 1);
+  logBox.onclick();
+  assert.equal(sh['size-log'].className, 'on');
+  assert.equal(logBox.children.length, 1);
+  assert.equal(sh['size-value'].textContent, '100%');
+  sh['clock-next'].onclick();
+  assert.equal(sh['size-next'].className, 'on');
+  sh['size-up'].onclick();
+  assert.deepEqual(JSON.parse(shelf.store.get('safar-clock-sizes')).auto, {time: 0.9, dial: 1.2, date: 1, next: 1.05, log: 1});
+  sh['size-done'].onclick();
+  // EXIT closes it too.
+  logBox.onclick();
+  assert.equal(logBox.className, 'open');
+  sh['clock-full'].onclick();
+  assert.equal(logBox.className, '');
+  assert.equal(logBox.children.length, 1);
+  // The clock is laid out with EXIT already in place. The full-screen sign it replaces is taller: laid out under that
+  // sign, the date stood 12 px lower than where it comes out, and the two lines, placed after it, 12 px too low.
+  const exitFirst = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 735, innerHeight: 360});
+  Object.defineProperty(exitFirst.elements['clock-date'], 'offsetTop',
+    {get: () => /^<svg/.test(exitFirst.elements['clock-full'].innerHTML) ? 71 : 59});
+  exitFirst.elements['clock-full'].onclick();
+  const exitLaid = exitFirst.context.clockLayout(735, 360, fallback, ones, true);
+  near(parseFloat(exitFirst.elements['clock-next'].style.top), exitLaid.rects.next[1], 'the next station under the date as it stands');
+  near(parseFloat(exitFirst.elements['clock-log'].style.top), exitLaid.rects.log[1], 'the log under the next station');
+  near(parseFloat(exitFirst.elements['clock-next'].style.fontSize), exitLaid.next, 'the lines sized for where they stand');
+  // No entries yet: the line says so, and open it says so too.
+  const empty = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
+  assert.equal(lineText(empty.elements['clock-log'].children[0]), '▸ No station logged yet.');
+  empty.elements['clock-full'].onclick();
+  empty.elements['clock-log'].onclick();
+  assert.deepEqual(empty.elements['clock-log'].children.slice(1).map(item => [item.className, lineText(item)]), [['item', 'No station logged yet.']]);
+
   chosen.elements['route-none'].onclick();
   assert.match(chosen.elements['route-choice'].textContent, /^0 \/ 5 station/);
   chosen.elements['route-all'].onclick();
@@ -1317,6 +1482,7 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   const at = (lat, lon, t) => ({coords: {latitude: lat, longitude: lon, accuracy: 4, speed: 30}, timestamp: t});
   free.watches[0].success(at(25.5600, 83.9600, 100000));
   assert.match(free.elements.next.textContent, /shown once the train moves/);
+  assert.equal(lineText(free.elements['clock-next']), 'Next: shown once the train moves.');
   free.watches[0].success(at(25.5560, 83.9300, 200000));
   assert.match(free.elements.next.textContent, /Next station \(estimated from direction\): .+\), \d+\.\d\d km/);
   assert.doesNotMatch(free.elements.next.textContent, /BUXAR/);

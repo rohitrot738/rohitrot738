@@ -65,6 +65,22 @@ body.clockmode #clock-color-row{display:none}
 body.clockmode .speedo{z-index:9;width:182px;height:182px;border-width:6px;right:14px;top:14px;bottom:auto}
 body.clockmode.turned .speedo{top:auto;bottom:14px;transform:rotate(90deg)}
 body.clockmode .speedo b{font-size:66px}body.clockmode .speedo span{font-size:18px;margin-top:4px}
+/* The next station and the journey log, a line each under the date, there only in the full-screen clock (fitClock
+   places and sizes them). A long name is cut short with "…" first, while the distance or time after it stays
+   whole; only on a line too narrow even for that (a very large dial beside it) is that cut short too. A tap
+   opens the log over the clock to its last entries, marked as in the log below the clock (halts amber, stations
+   passed green), and a second tap closes it. */
+#clock-next,#clock-log{display:none}
+body.clockmode #clock-next,body.clockmode #clock-log{display:block;position:absolute;z-index:2;margin:0;text-align:left;
+line-height:1.2;color:#e2e8f0;overflow:hidden}
+body.clockmode #clock-next,#clock-log .head{display:flex;white-space:nowrap}
+#clock-next .what,#clock-log .what{overflow:hidden;text-overflow:ellipsis;min-width:0}
+#clock-next .far,#clock-log .far{flex:none;max-width:calc(100% - 2.5em);white-space:pre;overflow:hidden;text-overflow:ellipsis}
+#clock-log .head.stop,#clock-log .head.pass{padding-left:.3em}
+body.clockmode #clock-log.open{z-index:4;margin:-6px 0 0 -8px;padding:6px 8px;border-radius:10px;background:rgba(30,41,59,.97);
+box-shadow:0 6px 18px rgba(0,0,0,.6)}
+#clock-log .item{white-space:normal;font-size:.75em;line-height:1.3;margin-top:.45em;padding-left:.5em;color:#cbd5e1}
+#clock-log .item b{color:#e2e8f0}
 /* The bar for the sizes, opened with the gear: which part, Auto or Custom, a slider with - and +, back to the
    sizes the clock lays out by itself, and done. It sits at the top while the time is sized and at the bottom
    otherwise, so it never hides what is being sized. That part sits in a dashed box with a round handle at each
@@ -126,8 +142,8 @@ body.clockmode #clock-sizes.low{top:auto;bottom:12px}
 </div>
 </section>
 <section id="main-screen" hidden>
-<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full-screen clock"></button><button id="clock-edit" type="button" aria-label="Change the clock sizes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Choose the colour of the time"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
-<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Time</button><button id="size-dial" type="button">Speed dial</button><button id="size-date" type="button">Date</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
+<div class="card clock" id="clock-card"><div id="clock-time"><span id="clock-hm">--:--</span><span id="clock-sec">--</span><span id="clock-foot"></span></div><div id="clock-date"></div><div id="clock-next"><span class="what">Next: press Start</span><span class="far"></span></div><div id="clock-log" role="button"></div><div id="clock-buttons"><button id="clock-full" type="button" aria-label="Full-screen clock"></button><button id="clock-edit" type="button" aria-label="Change the clock sizes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8.6" stroke-width="3.4" stroke-dasharray="3.377 3.377"/><circle cx="12" cy="12" r="5.6" stroke-width="3"/></svg></button></div><div id="clock-color-row"><button id="clock-color" type="button" aria-label="Choose the colour of the time"><span id="clock-color-now"></span> ▾</button><div id="clock-color-menu" hidden></div></div>
+<div id="clock-sizes" hidden><div class="size-row"><button id="size-time" type="button">Time</button><button id="size-dial" type="button">Speed dial</button><button id="size-date" type="button">Date</button><button id="size-next" type="button">Next station</button><button id="size-log" type="button">Journey log</button><span id="size-modes"><button id="size-auto" type="button">Auto</button><button id="size-custom" type="button">Custom</button></span></div>
 <div class="size-row"><button id="size-down" type="button" aria-label="Smaller">−</button><div id="size-track"><div id="size-fill"></div><div id="size-thumb"></div></div><button id="size-up" type="button" aria-label="Larger">+</button><span id="size-value">100%</span><button id="size-reset" type="button">Reset</button><button id="size-done" type="button">Done</button></div></div>
 <div id="size-box" hidden></div><div class="size-handle" id="size-handle-0" hidden></div><div class="size-handle" id="size-handle-1" hidden></div><div class="size-handle" id="size-handle-2" hidden></div><div class="size-handle" id="size-handle-3" hidden></div></div>
 <details class="card" id="route-details" hidden><summary>Stations on the route: choose which to log</summary>
@@ -194,6 +210,7 @@ let activeKeys = new Set(); // the stations watched now, by key
 let recent = [];      // decided visits {key, enter, exit, ring}, for comparing later ones against
 let loggedStops = []; // start times of the stops already written to the log
 let log = JSON.parse(localStorage.getItem(KEY) || '[]');
+let clockLogOpen = false; // the full-screen clock's log line, opened to its last entries
 const $ = id => document.getElementById(id);
 // Station-list status stays off screen unless something went wrong.
 function dataStatus(text, problem = false) { const el = $('data-status'); el.textContent = text; el.hidden = !problem; }
@@ -570,7 +587,7 @@ async function selectRoute() {
     const viaNames = stops.slice(1, -1).map(stop => stop.name).join(', ');
     routeNote(`Route ready${viaNames ? ` (via ${viaNames})` : ''}: ${route.length} stations, about ${Math.round(metres / 1000)} km (shortest path, estimated). In the list above, untick any station you do not want logged.`);
     $('route-status').textContent = '';
-    $('next').textContent = 'Next station: press Start and wait for the location.';
+    showNext('Next station: press Start and wait for the location.', 'Next: press Start and wait for the location.');
     showScreen('main');
   } catch (e) {
     console.warn('Could not make the route', e);
@@ -756,9 +773,25 @@ function updateHeading(lat, lon) {
   headingFrom = {lat, lon};
 }
 
+// A line of the full-screen clock: what it says, cut short with "…" when it is too long for the line, and what
+// follows it (a distance or a time), always shown whole.
+function setLine(line, what, far = '') {
+  const said = document.createElement('span'), after = document.createElement('span');
+  said.className = 'what';
+  said.textContent = what;
+  after.className = 'far';
+  after.textContent = far;
+  line.replaceChildren(said, after);
+}
+// The next station: in full on the main screen, in short in the full-screen clock.
+function showNext(text, what, far = '') {
+  $('next').textContent = text;
+  setLine($('clock-next'), what, far);
+}
+
 // Without a route (or off it): the nearest station ahead in the direction of travel.
 function showAheadStation(lat, lon) {
-  if (heading == null) { $('next').textContent = 'Next station: shown once the train moves.'; return; }
+  if (heading == null) { showNext('Next station: shown once the train moves.', 'Next: shown once the train moves.'); return; }
   let best = null;
   for (const s of stations) {
     const d = dist(lat, lon, s.lat, s.lon);
@@ -768,17 +801,18 @@ function showAheadStation(lat, lon) {
     const score = d * (1 + turn / 40);
     if (!best || score < best.score) best = {s, d, score};
   }
-  $('next').textContent = best
-    ? `Next station (estimated from direction): ${stationLabel(best.s)}, ${(best.d / 1000).toFixed(2)} km`
-    : 'Next station: none within 80 km in this direction.';
+  if (!best) { showNext('Next station: none within 80 km in this direction.', 'Next: none within 80 km in this direction.'); return; }
+  const km = `${(best.d / 1000).toFixed(2)} km`;
+  showNext(`Next station (estimated from direction): ${stationLabel(best.s)}, ${km}`, `Next: ${stationLabel(best.s)}`, ` · ${km}`);
 }
 
 function showRoutePosition(p, index) {
   // The next station whose log is wanted: the ones with their tick taken off are passed over here too.
   while (index < route.length - 1 && skipIds.has(route[index].id)) index++;
   const s = route[index], d = dist(p.coords.latitude, p.coords.longitude, s.lat, s.lon);
-  const label = d <= NEAR ? 'Near a station on the route' : 'Likely next station';
-  $('next').textContent = `${label}: ${stationLabel(s)}, ${(d / 1000).toFixed(2)} km — estimated`;
+  const atStation = d <= NEAR, km = `${(d / 1000).toFixed(2)} km`;
+  showNext(`${atStation ? 'Near a station on the route' : 'Likely next station'}: ${stationLabel(s)}, ${km} — estimated`,
+    `${atStation ? 'Near' : 'Next'}: ${stationLabel(s)}`, ` · ${km}`);
 }
 
 async function loadStations() {
@@ -934,7 +968,7 @@ function onPos(p) {
   $('status').textContent = `Location found (±${Math.round(accuracy)} m)`;
   if (accuracy > ACCURACY_LIMIT) {
     showNearest(p);
-    $('next').textContent = 'GPS accuracy is low; the next station cannot be worked out.';
+    showNext('GPS accuracy is low; the next station cannot be worked out.', 'Next: GPS accuracy is low.');
     $('status').textContent += '. Accuracy is low; turn GPS on and try under the open sky.';
     loadStations();
     return;
@@ -968,13 +1002,19 @@ function fillGap(p) {
 }
 
 // The stop in progress, shown above the log from the moment it counts as a halt; the finished entry follows when
-// the train moves on.
-let liveStop = null; // {where, start}
+// the train moves on. It is shown in the full-screen clock's log line too. liveStopAt: the time it was last shown
+// at, which says how long the train has stood so far.
+let liveStop = null, liveStopAt = 0; // {where, start}
+const stoodFor = () => Math.round(Math.max(0, liveStopAt - liveStop.start) / 6000) / 10;   // minutes, to a tenth
 function showLiveStop(now) {
   const card = $('live-stop');
-  if (!liveStop) { card.hidden = true; return; }
-  card.textContent = `Stopped now: ${liveStop.where} — since ${fmt(liveStop.start)} (${Math.round(Math.max(0, now - liveStop.start) / 6000) / 10} min)`;
-  card.hidden = false;
+  liveStopAt = now;
+  if (!liveStop) card.hidden = true;
+  else {
+    card.textContent = `Stopped now: ${liveStop.where} — since ${fmt(liveStop.start)} (${stoodFor()} min)`;
+    card.hidden = false;
+  }
+  showClockLog();
 }
 
 function processPosition(p) {
@@ -1353,21 +1393,79 @@ function englishName(name) {
   return !old ? name : old[1] ? `On the way (${old[2]} km from ${old[1]})` : 'On the way';
 }
 
+// A log entry as the log shows it: the station, and when the train passed it or stood there.
+function entryText(e) {
+  let details = e.type === 'halt'
+    ? `Stopped: ${fmt(e.arr)} to ${fmt(e.dep)} (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
+    : `Passed: ${fmt(e.t)}`;
+  // How close the train came to the station's listed position.
+  if (Number.isFinite(e.near)) details += ` · within ${e.near} m`;
+  return {title: stationLabel({...e, name: englishName(e.name)}), details};
+}
+
 function render() {
   $('log').replaceChildren();
   if (!log.length) $('log').textContent = 'No station logged yet.';
   for (const e of log.slice().reverse()) {
     const card = document.createElement('div'), title = document.createElement('b'), details = document.createElement('div');
+    const text = entryText(e);
     card.className = 'card ' + (e.type === 'halt' ? 'stop' : 'pass');
-    title.textContent = stationLabel({...e, name: englishName(e.name)});
-    details.textContent = e.type === 'halt'
-      ? `Stopped: ${fmt(e.arr)} to ${fmt(e.dep)} (${Math.round((e.dep - e.arr)/60000*10)/10} min)`
-      : `Passed: ${fmt(e.t)}`;
-    // How close the train came to the station's listed position.
-    if (Number.isFinite(e.near)) details.textContent += ` · within ${e.near} m`;
+    title.textContent = text.title;
+    details.textContent = text.details;
     card.append(title, details);
     $('log').append(card);
   }
+  showClockLog();
+}
+
+// The journey log in the full-screen clock. Closed, it is one line: the stop in progress, or else the latest entry
+// in short (the time it was passed, or from when to when the train stood there), marked as in the log. Opened with
+// a tap (clockLogOpen), it lists the stop in progress and the last five entries, newest first, as the log has them.
+function showClockLog() {
+  const box = $('clock-log'), head = document.createElement('div');
+  box.className = clockLogOpen ? 'open' : '';
+  box.replaceChildren(head);
+  if (clockLogOpen) {
+    head.className = 'head';
+    setLine(head, '▾ Journey log');
+    const rows = [];
+    if (liveStop) rows.push(['stop', `Stopped now: ${liveStop.where}`, `since ${fmt(liveStop.start)} (${stoodFor()} min)`]);
+    for (const e of log.slice(-5).reverse()) {
+      const text = entryText(e);
+      rows.push([e.type === 'halt' ? 'stop' : 'pass', text.title, text.details]);
+    }
+    if (!rows.length) rows.push(['', '', 'No station logged yet.']);
+    for (const [type, title, details] of rows) {
+      const row = document.createElement('div'), rest = document.createElement('span');
+      row.className = type ? `item ${type}` : 'item';
+      if (title) {
+        const name = document.createElement('b');
+        name.textContent = title;
+        row.append(name);
+      }
+      rest.textContent = title ? ' ' + details : details;
+      row.append(rest);
+      box.append(row);
+    }
+    return;
+  }
+  const newest = log[log.length - 1];
+  if (liveStop) {
+    head.className = 'head stop';
+    setLine(head, `▸ Stopped now: ${liveStop.where}`, ` · ${stoodFor()} min`);
+  } else if (newest) {
+    const halt = newest.type === 'halt';
+    head.className = 'head ' + (halt ? 'stop' : 'pass');
+    setLine(head, `▸ Last: ${entryText(newest).title}`, ` · ${halt ? `${fmt(newest.arr)}–${fmt(newest.dep)}` : fmt(newest.t)}`);
+  } else {
+    head.className = 'head';
+    setLine(head, '▸ No station logged yet.');
+  }
+}
+function closeClockLog() {
+  if (!clockLogOpen) return;
+  clockLogOpen = false;
+  showClockLog();
 }
 
 $('start').onclick = () => start();
@@ -1567,18 +1665,25 @@ function clockMetrics(time) {
 
 // Where the full-screen clock's parts go on a screen `long` wide and `short` tall (the clock's own measure, turned
 // or not). m: the time's measures for 100 px of font (width, digit, foot, as clockMetrics gives them), the date's
-// (dateWide, dateTall) and where it starts (dateTop), and how wide EXIT and the gear are together (buttonsWide).
+// (dateWide, dateTall) and where it starts (dateTop), how tall a line of the next station or the log is (lineTall),
+// and how wide EXIT and the gear are together (buttonsWide).
 //
-// By itself (every size 1) the dial is 182 px in the top corner, the date runs from the left edge towards it, and
-// the time fills the room under the dial from edge to edge, stretched a little either way (up to STRETCH) if its own
-// shape would leave some of that room empty. sizes = {time, dial, date} changes that in one of two ways:
+// By itself (every size 1) the dial is 182 px in the top corner, the date runs from the left edge towards it, the
+// next station and the log follow the date a line each, and the time fills the room under the dial from edge to
+// edge, stretched a little either way (up to STRETCH) if its own shape would leave some of that room empty. The two
+// lines take the room left of the dial down to its foot where that is enough for them, so the time keeps its size;
+// where it is not (the date is tall there), they push the time down. sizes = {time, dial, date, next, log} changes
+// that in one of two ways:
 // - auto: the dial is made larger or smaller, and the time and the date fill what it leaves them, scaled down by
-//   their own sizes (1 = all of it). A larger dial takes room from both, a smaller one gives it back, and nothing
-//   covers anything. A dial too tall to leave the time room under it has the time beside it instead.
+//   their own sizes (1 = all of it; the date no larger than with the dial as it comes, or it would push the lines
+//   down onto the time). The lines keep their own sizes, and the time makes room for them. A larger dial takes room
+//   from the time and the date, a smaller one gives the time room back, and nothing covers anything. A dial too
+//   tall to leave the time room under it has the time beside it instead.
 // - otherwise (Custom): each part keeps the size it is given against that first layout, whatever the others do, and
 //   may run into another. The time, which already fills the width, grows taller once it does.
-// Gives the sizes used (held to their limits), the limits, the dial's size, the date's font size, the time's font
-// size, stretch and place, and the boxes the parts take (the time's without the empty top of its line).
+// Gives the sizes used (held to their limits), the limits, the dial's size, the font sizes of the date and of the
+// two lines (next, log), the time's font size, stretch and place, and the boxes the parts take (the time's without
+// the empty top of its line; a line's as wide as it may run: up to the dial beside it, across the screen below it).
 const CLOCK_EDGE = 12, DIAL_SIZE = 182, DIAL_EDGE = 14, CLOCK_GAP = 8, CLOCK_SIDE = 16, STRETCH = 1.3;
 function clockLayout(long, short, m, sizes, auto) {
   const fitTime = (wide, tall) => {
@@ -1594,26 +1699,38 @@ function clockLayout(long, short, m, sizes, auto) {
   const time1 = fitTime(long - 2 * CLOCK_EDGE, short - under(DIAL_SIZE) - CLOCK_EDGE);
   const timeWide1 = m.width * time1.font / 100 * time1.wide, timeTall1 = m.digit * time1.font / 100 * time1.tall;
   const widest = long - 2 * CLOCK_EDGE, grow = Math.max(1, widest / timeWide1);   // larger than this, it is too wide
+  // How tall each of the two lines is by itself: what the room between the date and the dial's foot gives it, but
+  // from 6.5 % to 9 % of the screen's height, and no more than three fifths of the date's height.
+  const dateTall1 = m.dateTall * date1 / 100;
+  const lineMost = Math.min(short * 0.09, dateTall1 * 0.6), lineLeast = Math.min(lineMost, short * 0.065);
+  const lineRoom = (DIAL_EDGE + DIAL_SIZE - m.dateTop - dateTall1 - 2 * CLOCK_GAP) / 2;
+  const line1 = Math.min(lineMost, Math.max(lineLeast, lineRoom)) / m.lineTall * 100;   // as a font size
   const limits = {
     dial: [0.4, Math.max(0.4, Math.min(short - 2 * DIAL_EDGE, long * 0.55) / DIAL_SIZE)],
     time: [0.3, auto ? 1 : Math.max(1, Math.min(grow * STRETCH / time1.tall, (short - 2 * CLOCK_EDGE) / timeTall1))],
-    date: [0.3, auto ? 1 : Math.max(1, Math.min((long - 2 * CLOCK_SIDE) / m.dateWide, short * 0.3 / m.dateTall) * 100 / date1)]
+    date: [0.3, auto ? 1 : Math.max(1, Math.min((long - 2 * CLOCK_SIDE) / m.dateWide, short * 0.3 / m.dateTall) * 100 / date1)],
+    next: [0.5, auto ? 1.5 : 2],
+    log: [0.5, auto ? 1.5 : 2]
   };
   const held = {};
-  for (const part of ['time', 'dial', 'date']) {
+  for (const part of ['time', 'dial', 'date', 'next', 'log']) {
     const value = Number(sizes?.[part]);
     held[part] = Math.min(limits[part][1], Math.max(limits[part][0], Number.isFinite(value) ? value : 1));
   }
-  const dial = DIAL_SIZE * held.dial;
-  let date, time, room;
+  const dial = DIAL_SIZE * held.dial, dialLeft = long - DIAL_EDGE - dial, dialFoot = DIAL_EDGE + dial;
+  const date = (auto ? Math.min(dateFont(dial, 0.17), date1) : date1) * held.date;
+  const nextFont = line1 * held.next, logFont = line1 * held.log;
+  // The date, then a line each for the next station and the log; a line that starts beside the dial ends before it.
+  const lineBox = (top, font) => [CLOCK_SIDE, top, top < dialFoot ? dialLeft - CLOCK_GAP : long - CLOCK_SIDE, top + m.lineTall * font / 100];
+  const nextBox = lineBox(m.dateTop + m.dateTall * date / 100 + CLOCK_GAP, nextFont);
+  const logBox = lineBox(nextBox[3] + CLOCK_GAP, logFont);
+  let time, room;
   if (auto) {
-    date = dateFont(dial, 0.17) * held.date;
-    const dateBottom = m.dateTop + m.dateTall * date / 100;
-    // The time's room: the whole width under the dial and the date, or beside the dial under the date; the one
+    // The time's room: the whole width under the dial and the lines, or beside the dial under the lines; the one
     // where it comes out larger.
     const rooms = [
-      {left: CLOCK_EDGE, wide: widest, top: Math.max(under(dial), dateBottom + CLOCK_GAP)},
-      {left: CLOCK_EDGE, wide: long - DIAL_EDGE - dial - CLOCK_GAP - CLOCK_EDGE, top: dateBottom + CLOCK_GAP}
+      {left: CLOCK_EDGE, wide: widest, top: Math.max(under(dial), logBox[3] + CLOCK_GAP)},
+      {left: CLOCK_EDGE, wide: dialLeft - CLOCK_GAP - CLOCK_EDGE, top: logBox[3] + CLOCK_GAP}
     ].map(r => ({...r, tall: short - CLOCK_EDGE - r.top})).filter(r => r.wide > 0 && r.tall > 0).map(r => {
       const fit = fitTime(r.wide, r.tall);
       return {...r, fit, area: m.width * fit.font / 100 * fit.wide * m.digit * fit.font / 100 * fit.tall};
@@ -1622,7 +1739,6 @@ function clockLayout(long, short, m, sizes, auto) {
       || {left: CLOCK_EDGE, wide: widest, fit: time1};
     time = {font: room.fit.font * held.time, wide: room.fit.wide, tall: room.fit.tall};
   } else {
-    date = date1 * held.date;
     const across = Math.min(held.time, grow);
     time = {font: time1.font * across, wide: time1.wide, tall: time1.tall * held.time / across};
     room = {left: CLOCK_EDGE, wide: widest};
@@ -1630,17 +1746,19 @@ function clockLayout(long, short, m, sizes, auto) {
   const timeWide = m.width * time.font / 100 * time.wide;
   time.left = Math.max(0, room.left + (room.wide - timeWide) / 2);
   time.top = short - CLOCK_EDGE - m.foot * time.font / 100 * time.tall;   // the digits stand near the bottom edge
-  return {sizes: held, limits, dial, date, time, rects: {
-    dial: [long - DIAL_EDGE - dial, DIAL_EDGE, long - DIAL_EDGE, DIAL_EDGE + dial],
+  return {sizes: held, limits, dial, date, next: nextFont, log: logFont, time, rects: {
+    dial: [dialLeft, DIAL_EDGE, long - DIAL_EDGE, dialFoot],
     date: [CLOCK_SIDE, m.dateTop, CLOCK_SIDE + m.dateWide * date / 100, m.dateTop + m.dateTall * date / 100],
+    next: nextBox,
+    log: logBox,
     time: [time.left, time.top + (m.foot - m.digit) * time.font / 100 * time.tall, time.left + timeWide, short - CLOCK_EDGE],
     buttons: [CLOCK_SIDE, DIAL_EDGE, CLOCK_SIDE + m.buttonsWide, m.dateTop - 10]
   }};
 }
 
 // The sizes chosen for the full-screen clock, Auto's and Custom's each, and which of the two is in use; kept.
-const CLOCK_SIZES_KEY = 'safar-clock-sizes', CLOCK_PARTS = ['time', 'dial', 'date'];
-const clockSizes = {mode: 'auto', auto: {time: 1, dial: 1, date: 1}, custom: {time: 1, dial: 1, date: 1}};
+const CLOCK_SIZES_KEY = 'safar-clock-sizes', CLOCK_PARTS = ['time', 'dial', 'date', 'next', 'log'];
+const clockSizes = {mode: 'auto', auto: {time: 1, dial: 1, date: 1, next: 1, log: 1}, custom: {time: 1, dial: 1, date: 1, next: 1, log: 1}};
 try {
   const saved = JSON.parse(localStorage.getItem(CLOCK_SIZES_KEY) || 'null');
   if (saved) {
@@ -1654,7 +1772,10 @@ try {
 // The sizes bar: whether it is open, the part being sized, and the limits and sizes of the last layout (before there
 // is one, as in a browser without a screen size, the widest limits either way allows).
 let clockEditing = false, sizePart = 'time', sizeLimits = null, sizesShown = null, sizeSliding = false;
-const SIZE_LIMITS = {auto: {time: [0.3, 1], dial: [0.4, 2], date: [0.3, 1]}, custom: {time: [0.3, 1.3], dial: [0.4, 2], date: [0.3, 1.5]}};
+const SIZE_LIMITS = {
+  auto: {time: [0.3, 1], dial: [0.4, 2], date: [0.3, 1], next: [0.5, 1.5], log: [0.5, 1.5]},
+  custom: {time: [0.3, 1.3], dial: [0.4, 2], date: [0.3, 1.5], next: [0.5, 2], log: [0.5, 2]}
+};
 const sizesInUse = () => clockSizes[clockSizes.mode];
 const partLimits = () => (sizeLimits || SIZE_LIMITS[clockSizes.mode])[sizePart];
 
@@ -1687,7 +1808,7 @@ function showSizes(shown) {
 
 // Lays the full-screen clock out for the real screen (see clockLayout), turned when the phone is upright.
 function fitClock() {
-  const card = $('clock-card'), time = $('clock-time'), date = $('clock-date');
+  const card = $('clock-card'), time = $('clock-time'), date = $('clock-date'), nextLine = $('clock-next'), logLine = $('clock-log');
   const w = window.innerWidth, h = window.innerHeight, known = Number.isFinite(w) && Number.isFinite(h);
   const turned = clockMode && known && h > w;
   document.body.className = clockMode ? (turned ? 'clockmode turned' : 'clockmode') : '';
@@ -1695,6 +1816,8 @@ function fitClock() {
   if (!clockMode || !known) {
     card.style.width = card.style.height = time.style.fontSize = date.style.fontSize = '';
     time.style.transform = time.style.left = time.style.top = '';
+    for (const line of [nextLine, logLine]) line.style.fontSize = line.style.left = line.style.top = line.style.width = '';
+    logLine.style.maxHeight = '';
     sizeDial(null);
     sizeLimits = null;
     showSizes(sizesInUse());
@@ -1711,12 +1834,18 @@ function fitClock() {
   m.dateTall = date.offsetHeight || 117;
   m.dateTop = date.offsetTop || 59;
   m.buttonsWide = $('clock-buttons').offsetWidth || 92;
+  nextLine.style.fontSize = '100px';
+  m.lineTall = nextLine.offsetHeight || 120;
   const laid = clockLayout(long, short, m, sizesInUse(), clockSizes.mode !== 'custom');
   time.style.fontSize = laid.time.font + 'px';
   time.style.transform = `scale(${laid.time.wide.toFixed(3)}, ${laid.time.tall.toFixed(3)})`;
   time.style.left = laid.time.left + 'px';
   time.style.top = laid.time.top + 'px';
   date.style.fontSize = laid.date + 'px';
+  for (const [line, font, r] of [[nextLine, laid.next, laid.rects.next], [logLine, laid.log, laid.rects.log]])
+    Object.assign(line.style, {fontSize: font + 'px', left: r[0] + 'px', top: r[1] + 'px', width: r[2] - r[0] + 'px'});
+  // Opened, the log runs down over the clock as far as the bottom edge (its panel reaches 6 px past its lines).
+  logLine.style.maxHeight = short - CLOCK_EDGE - 6 - laid.rects.log[1] + 'px';
   sizeDial(laid.dial);
   sizeLimits = laid.limits;
   // While the dial is sized, the bar keeps to its left, where there is room for it.
@@ -1728,7 +1857,8 @@ function fitClock() {
 
 // The dashed box round the part being sized, with a handle at each corner (top left, top right, bottom right,
 // bottom left), in the clock's own measure, while the bar is open. sizeBox: the point the part grows from, which
-// stays put as it does: the dial's top right corner, the date's top left, the middle of the time's foot.
+// stays put as it does: the dial's top right corner, the middle of the time's foot, and the top left of the date
+// and of each line.
 let sizeBox = null;
 function placeSizeBox(laid, long, short) {
   const open = Boolean(laid && clockMode && clockEditing);
@@ -1743,7 +1873,7 @@ function placeSizeBox(laid, long, short) {
   [[left, top], [right, top], [right, bottom], [left, bottom]].forEach(([across, down], i) => {
     Object.assign($('size-handle-' + i).style, {left: onScreen(across, long), top: onScreen(down, short)});
   });
-  sizeBox = {stays: sizePart === 'dial' ? [r[2], r[1]] : sizePart === 'date' ? [r[0], r[1]] : [(r[0] + r[2]) / 2, r[3]]};
+  sizeBox = {stays: sizePart === 'dial' ? [r[2], r[1]] : sizePart === 'time' ? [(r[0] + r[2]) / 2, r[3]] : [r[0], r[1]]};
 }
 window.addEventListener?.('resize', fitClock);
 
@@ -1759,13 +1889,27 @@ function setClockSize(value) {
 }
 function pickSizePart(part) { sizePart = part; fitClock(); }
 function setSizeMode(mode) { clockSizes.mode = mode; saveClockSizes(); }
-$('clock-edit').onclick = () => { if (!clockMode) return; clockEditing = !clockEditing; fitClock(); };
+// The gear closes the log if it was opened, so its line can be sized.
+$('clock-edit').onclick = () => {
+  if (!clockMode) return;
+  clockEditing = !clockEditing;
+  if (clockEditing) closeClockLog();
+  fitClock();
+};
 $('size-done').onclick = () => { clockEditing = false; fitClock(); };
 for (const part of CLOCK_PARTS) $('size-' + part).onclick = () => pickSizePart(part);
-// While the bar is open, a tap on the time, the dial or the date picks it too.
+// While the bar is open, a tap on the time, the dial, the date or a line picks it too. Otherwise a tap on the log
+// opens or closes it.
 $('clock-time').onclick = () => { if (clockMode && clockEditing) pickSizePart('time'); };
 $('clock-date').onclick = () => { if (clockMode && clockEditing) pickSizePart('date'); };
 $('speedo').onclick = () => { if (clockMode && clockEditing) pickSizePart('dial'); };
+$('clock-next').onclick = () => { if (clockMode && clockEditing) pickSizePart('next'); };
+$('clock-log').onclick = () => {
+  if (!clockMode) return;
+  if (clockEditing) { pickSizePart('log'); return; }
+  clockLogOpen = !clockLogOpen;
+  showClockLog();
+};
 $('size-auto').onclick = () => setSizeMode('auto');
 $('size-custom').onclick = () => setSizeMode('custom');
 $('size-down').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] - 0.05);
@@ -1848,9 +1992,14 @@ document.addEventListener?.('touchmove', ownTouches, {passive: false});
 
 function setClockMode(on) {
   clockMode = on;
-  if (!on) clockEditing = false;
-  fitClock();
+  if (!on) {
+    clockEditing = false;
+    closeClockLog();
+  }
+  // EXIT first: the clock is laid out round it (the full-screen sign is taller, and the date would come out higher
+  // than it was measured, the lines after it with it).
   $('clock-full').innerHTML = on ? 'EXIT' : FULLSCREEN_ICON;
+  fitClock();
   // In the app, the phone's own bars (status bar on top, buttons below) are hidden while the clock is up.
   const native = nativePlugin('SafarBuffer');
   try { native?.fullScreen?.({on})?.catch?.(e => console.warn('Full screen failed', e)); }
