@@ -41,7 +41,8 @@ background:#334155;box-shadow:0 6px 16px rgba(0,0,0,.6);text-align:left}
 /* Full-screen clock: the clock covers the screen, turned on its side like a video when the phone is held upright
    (body.turned). The speed dial (about 0.57 inch radius: 182 px at a phone's ~160 px per inch) sits in the top
    corner, EXIT and the small gear for sizes in the other top corner with the date under them, and the time fills
-   the width below, the small seconds level with the foot of the digits. fitClock() sets sizes and places from the
+   the width below, the small seconds level with the foot of the digits; each of these but EXIT and the gear can be
+   drawn elsewhere by hand. fitClock() sets sizes and places from the
    real screen and the real font, since neither vh/vw nor a font's size can be relied on inside the app. A dark
    sheet lies under the clock (body::before) so the page never shows at its edges, then the dial, then the clock's
    own parts, which alone take touches. Everything underneath keeps running. */
@@ -54,7 +55,7 @@ body.clockmode.turned .clock{right:auto;bottom:auto;top:50%;left:50%;transform:t
 body.clockmode #clock-time{position:absolute;z-index:1;display:flex;align-items:baseline;line-height:1;margin:0;white-space:nowrap;transform-origin:left top}
 body.clockmode #clock-sec{font-size:.34em;margin:0 0 0 .08em}
 body.clockmode #clock-sec::before{content:""}
-body.clockmode #clock-date{order:2;position:relative;z-index:2;margin:10px 0 0;white-space:nowrap}
+body.clockmode #clock-date{position:absolute;z-index:2;margin:0;white-space:nowrap}
 body.clockmode #clock-buttons{order:1;position:relative;z-index:3;display:flex;gap:10px}
 body.clockmode #clock-full{position:static;margin:0;padding:8px 14px;line-height:1.2;background:#475569;color:#fff;font-size:16px}
 #clock-edit,#clock-sizes{display:none}
@@ -1681,11 +1682,12 @@ function clockMetrics(time) {
 //   tall to leave the time room under it has the time beside it instead.
 // - otherwise (Custom): each part keeps the size it is given against that first layout, whatever the others do, and
 //   may run into another. The time, which already fills the width, grows taller once it does.
+// Either way, a part the user has put somewhere by hand (places, below) stands there instead, at the size it has.
 // Gives the sizes used (held to their limits), the limits, the dial's size, the font sizes of the date and of the
 // two lines (next, log), the time's font size, stretch and place, and the boxes the parts take (the time's without
 // the empty top of its line; a line's as wide as it may run: up to the dial beside it, across the screen below it).
 const CLOCK_EDGE = 12, DIAL_SIZE = 182, DIAL_EDGE = 14, CLOCK_GAP = 8, CLOCK_SIDE = 16, STRETCH = 1.3;
-function clockLayout(long, short, m, sizes, auto) {
+function clockLayout(long, short, m, sizes, auto, places) {
   const fitTime = (wide, tall) => {
     const font = Math.max(10, Math.min(wide / m.width, tall / m.digit) * 100);
     return {font, wide: Math.max(1, Math.min(STRETCH, wide / (m.width * font / 100))),
@@ -1746,14 +1748,42 @@ function clockLayout(long, short, m, sizes, auto) {
   const timeWide = m.width * time.font / 100 * time.wide;
   time.left = Math.max(0, room.left + (room.wide - timeWide) / 2);
   time.top = short - CLOCK_EDGE - m.foot * time.font / 100 * time.tall;   // the digits stand near the bottom edge
-  return {sizes: held, limits, dial, date, next: nextFont, log: logFont, time, rects: {
+  const rects = {
     dial: [dialLeft, DIAL_EDGE, long - DIAL_EDGE, dialFoot],
     date: [CLOCK_SIDE, m.dateTop, CLOCK_SIDE + m.dateWide * date / 100, m.dateTop + m.dateTall * date / 100],
     next: nextBox,
     log: logBox,
     time: [time.left, time.top + (m.foot - m.digit) * time.font / 100 * time.tall, time.left + timeWide, short - CLOCK_EDGE],
     buttons: [CLOCK_SIDE, DIAL_EDGE, CLOCK_SIDE + m.buttonsWide, m.dateTop - 10]
-  }};
+  };
+  // Parts put somewhere by hand (places: part -> [across, down], the point it grows from as shares of the screen):
+  // each is drawn there, and back onto the screen if it would stick out; the rest stay in their own places. A line
+  // put somewhere runs from there to 16 px short of the right edge, no wider than in its own place and no narrower
+  // than 8 times its font.
+  const spot = part => {
+    const at = places?.[part];
+    return Array.isArray(at) && at.length === 2 && at.every(Number.isFinite) ? [at[0] * long, at[1] * short] : null;
+  };
+  const onScreen = box => {
+    const across = Math.max(-box[0], Math.min(0, long - box[2])), down = Math.max(-box[1], Math.min(0, short - box[3]));
+    return [box[0] + across, box[1] + down, box[2] + across, box[3] + down];
+  };
+  const wide = r => r[2] - r[0], tall = r => r[3] - r[1];
+  let at;
+  if ((at = spot('dial'))) rects.dial = onScreen([at[0] - dial, at[1], at[0], at[1] + dial]);
+  if ((at = spot('date'))) rects.date = onScreen([at[0], at[1], at[0] + wide(rects.date), at[1] + tall(rects.date)]);
+  if ((at = spot('time'))) {
+    const w = wide(rects.time), h = tall(rects.time);
+    rects.time = onScreen([at[0] - w / 2, at[1] - h, at[0] + w / 2, at[1]]);
+    time.left = rects.time[0];
+    time.top = rects.time[3] - m.foot * time.font / 100 * time.tall;
+  }
+  for (const [part, font] of [['next', nextFont], ['log', logFont]]) {
+    if (!(at = spot(part))) continue;
+    const own = wide(rects[part]), left = Math.min(at[0], long - CLOCK_SIDE - Math.min(own, 8 * font));
+    rects[part] = onScreen([left, at[1], left + Math.min(own, long - CLOCK_SIDE - left), at[1] + tall(rects[part])]);
+  }
+  return {sizes: held, limits, dial, date, next: nextFont, log: logFont, time, rects};
 }
 
 // The sizes chosen for the full-screen clock, Auto's and Custom's each, and which of the two is in use; kept.
@@ -1772,6 +1802,22 @@ try {
 // The sizes bar: whether it is open, the part being sized, and the limits and sizes of the last layout (before there
 // is one, as in a browser without a screen size, the widest limits either way allows).
 let clockEditing = false, sizePart = 'time', sizeLimits = null, sizesShown = null, sizeSliding = false;
+// Where the parts were put by hand, Auto's and Custom's each (part -> [across, down]: the point it grows from, as
+// shares of the screen's width and height); kept. Parts not in it stand in their own places.
+const CLOCK_PLACES_KEY = 'safar-clock-places';
+const clockPlaces = {auto: {}, custom: {}};
+try {
+  const saved = JSON.parse(localStorage.getItem(CLOCK_PLACES_KEY) || 'null');
+  for (const mode of ['auto', 'custom']) for (const part of CLOCK_PARTS) {
+    const at = saved?.[mode]?.[part];
+    if (Array.isArray(at) && at.length === 2 && at.every(Number.isFinite)) clockPlaces[mode][part] = at;
+  }
+} catch (e) { console.warn('Could not read the clock places', e); }
+const placesInUse = () => clockPlaces[clockSizes.mode];
+function saveClockPlaces() {
+  try { localStorage.setItem(CLOCK_PLACES_KEY, JSON.stringify(clockPlaces)); } catch (e) { console.warn('Clock places not saved', e); }
+}
+let laidNow = null; // the last layout's boxes, and the clock's measure (long, short): what a finger lands on
 const SIZE_LIMITS = {
   auto: {time: [0.3, 1], dial: [0.4, 2], date: [0.3, 1], next: [0.5, 1.5], log: [0.5, 1.5]},
   custom: {time: [0.3, 1.3], dial: [0.4, 2], date: [0.3, 1.5], next: [0.5, 2], log: [0.5, 2]}
@@ -1788,6 +1834,16 @@ function sizeDial(size) {
   $('speed-unit').style.fontSize = size ? 18 * k + 'px' : '';
   $('speed-unit').style.marginTop = size ? 4 * k + 'px' : '';
 }
+// The speed dial, which lies outside the clock's own box, put on the page where the clock has it (box, in the
+// clock's measure): turned, the clock's left-to-right runs down the page and its top-to-bottom from the page's right
+// edge leftwards. Without a box, back to its everyday place.
+function placeDial(box, turned) {
+  const style = $('speedo').style;
+  if (!box) { style.left = style.top = style.right = style.bottom = ''; return; }
+  style.left = (turned ? window.innerWidth - box[3] : box[0]) + 'px';
+  style.top = (turned ? box[0] : box[1]) + 'px';
+  style.right = style.bottom = 'auto';
+}
 
 // Shows the sizes bar as things stand: open only in the full-screen clock after the gear, the part being sized
 // picked, the way in use, and the slider and percentage at that part's size.
@@ -1796,7 +1852,10 @@ function showSizes(shown) {
   const open = clockMode && clockEditing, bar = $('clock-sizes');
   bar.hidden = !open;
   if (!open) fingers.clear();
-  bar.className = sizePart === 'time' ? '' : 'low';
+  // The bar keeps to the half of the screen away from the part being sized (before there is a layout: at the top
+  // for the time, which stands at the bottom, and at the bottom for the rest).
+  const r = laidNow?.rects[sizePart];
+  bar.className = (r ? r[1] + r[3] > laidNow.short : sizePart === 'time') ? '' : 'low';
   $('clock-edit').className = open ? 'on' : '';
   for (const part of CLOCK_PARTS) $('size-' + part).className = part === sizePart ? 'on' : '';
   $('size-auto').className = clockSizes.mode === 'auto' ? 'on' : '';
@@ -1817,8 +1876,10 @@ function fitClock() {
     card.style.width = card.style.height = time.style.fontSize = date.style.fontSize = '';
     time.style.transform = time.style.left = time.style.top = '';
     for (const line of [nextLine, logLine]) line.style.fontSize = line.style.left = line.style.top = line.style.width = '';
-    logLine.style.maxHeight = '';
+    logLine.style.maxHeight = date.style.left = date.style.top = '';
+    laidNow = null;
     sizeDial(null);
+    placeDial(null);
     sizeLimits = null;
     showSizes(sizesInUse());
     placeSizeBox(null);
@@ -1832,11 +1893,17 @@ function fitClock() {
   date.style.fontSize = '100px';
   m.dateWide = date.offsetWidth || 1150;
   m.dateTall = date.offsetHeight || 117;
-  m.dateTop = date.offsetTop || 59;
-  m.buttonsWide = $('clock-buttons').offsetWidth || 92;
+  // The date's own place: 10 px under EXIT and the gear.
+  const buttons = $('clock-buttons');
+  m.dateTop = buttons.offsetTop + buttons.offsetHeight + 10 || 59;
+  m.buttonsWide = buttons.offsetWidth || 92;
   nextLine.style.fontSize = '100px';
   m.lineTall = nextLine.offsetHeight || 120;
-  const laid = clockLayout(long, short, m, sizesInUse(), clockSizes.mode !== 'custom');
+  const laid = clockLayout(long, short, m, sizesInUse(), clockSizes.mode !== 'custom', placesInUse());
+  laidNow = {rects: laid.rects, long, short};
+  date.style.left = laid.rects.date[0] + 'px';
+  date.style.top = laid.rects.date[1] + 'px';
+  placeDial(laid.rects.dial, turned);
   time.style.fontSize = laid.time.font + 'px';
   time.style.transform = `scale(${laid.time.wide.toFixed(3)}, ${laid.time.tall.toFixed(3)})`;
   time.style.left = laid.time.left + 'px';
@@ -1914,9 +1981,11 @@ $('size-auto').onclick = () => setSizeMode('auto');
 $('size-custom').onclick = () => setSizeMode('custom');
 $('size-down').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] - 0.05);
 $('size-up').onclick = () => setClockSize((sizesShown || sizesInUse())[sizePart] + 0.05);
-// "Reset": the way in use goes back to the sizes the clock lays out by itself.
+// "Reset": the way in use goes back to the sizes and places the clock lays out by itself.
 $('size-reset').onclick = () => {
   for (const part of CLOCK_PARTS) sizesInUse()[part] = 1;
+  clockPlaces[clockSizes.mode] = {};
+  saveClockPlaces();
   saveClockSizes();
 };
 // The slider: a touch on its track, and the finger drawn along it, set the size. The track lies across the clock,
@@ -1967,15 +2036,43 @@ for (let i = 0; i < 4; i++) {
 // by how much farther apart or closer together they are than when the second one came down.
 const fingers = new Map();
 let pinch = null;
+// One finger on a part (or in the dashed box round the part being sized), drawn more than MOVE_AFTER px, moves that
+// part with it and picks it for sizing; where it ends up is kept. Less than that is a tap. EXIT and the gear stay.
+const MOVE_AFTER = 6;
+let moving = null;
+function partAt(point) {
+  if (!laidNow) return null;
+  const inside = (r, slack) => point[0] >= r[0] - slack && point[0] <= r[2] + slack && point[1] >= r[1] - slack && point[1] <= r[3] + slack;
+  if (inside(laidNow.rects[sizePart], 6)) return sizePart;
+  return ['log', 'next', 'date', 'dial', 'time'].find(part => inside(laidNow.rects[part], 0)) || null;
+}
+// The point a part grows from, where it stands now (as in placeSizeBox).
+function anchorOf(part) {
+  const r = laidNow.rects[part];
+  return part === 'dial' ? [r[2], r[1]] : part === 'time' ? [(r[0] + r[2]) / 2, r[3]] : [r[0], r[1]];
+}
 document.body.onpointerdown = event => {
-  if (!clockMode || !clockEditing || event.target?.closest?.('#clock-sizes, .size-handle')) return;
+  if (!clockMode || !clockEditing || event.target?.closest?.('#clock-sizes, .size-handle, #clock-buttons')) return;
   fingers.set(event.pointerId, [event.clientX, event.clientY]);
   const [a, b] = fingers.values();
   pinch = fingers.size === 2 ? {apart: Math.max(20, apart(a, b)), size: sizeNow()} : null;
+  moving = null;
+  if (fingers.size !== 1) return;
+  const from = clockPoint(event), part = partAt(from);
+  if (part) moving = {pointer: event.pointerId, part, from, spot: anchorOf(part), going: false};
 };
 document.body.onpointermove = event => {
   if (!fingers.has(event.pointerId)) return;
   fingers.set(event.pointerId, [event.clientX, event.clientY]);
+  if (moving?.pointer === event.pointerId && laidNow) {
+    const to = clockPoint(event), across = to[0] - moving.from[0], down = to[1] - moving.from[1];
+    if (!moving.going && Math.hypot(across, down) < MOVE_AFTER) return;
+    moving.going = true;
+    sizePart = moving.part;
+    placesInUse()[moving.part] = [(moving.spot[0] + across) / laidNow.long, (moving.spot[1] + down) / laidNow.short];
+    fitClock();
+    return;
+  }
   if (!pinch || fingers.size !== 2) return;
   const [a, b] = fingers.values();
   setClockSize(pinch.size * apart(a, b) / pinch.apart);
@@ -1983,6 +2080,14 @@ document.body.onpointermove = event => {
 document.body.onpointerup = document.body.onpointercancel = event => {
   fingers.delete(event.pointerId);
   if (fingers.size !== 2) pinch = null;
+  if (moving?.pointer !== event.pointerId) return;
+  // Kept where it stands, which is back on the screen if the finger took it past an edge.
+  if (moving.going && laidNow) {
+    const at = anchorOf(moving.part);
+    placesInUse()[moving.part] = [at[0] / laidNow.long, at[1] / laidNow.short];
+    saveClockPlaces();
+  }
+  moving = null;
 };
 // Two fingers on the full-screen clock are the page's own: the browser neither zooms nor makes a scroll or fling
 // of them (one would swallow the next tap, as with the slider).

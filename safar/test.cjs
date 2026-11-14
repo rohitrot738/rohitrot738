@@ -1214,6 +1214,36 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   near(ownLines.log, 27, 'Custom log untouched by the dial');
   near(ownLines.rects.next[2], 780 - 14 - 273 - 8, 'Custom next ends before the larger dial');
 
+  // ---- Places. With the gear's bar open, a part drawn with one finger goes where the finger takes it. Where it was
+  // put is kept as the point it grows from (the dial's top right corner, the middle of the time's foot, the top left
+  // of the date and of each line), as a share of the screen's width and height. A part never goes past the screen's
+  // edges, and the others stay where they were.
+  const placed = (places, auto = true) => layout(780, 360, measures, ones, auto, places);
+  const r2 = box => box.map(v => Math.round(v * 100) / 100);
+  // The dial's corner put 10 % across and half way down would stick out on the left and at the bottom: it is drawn
+  // back onto the screen. The rest is where it was.
+  const dialPut = placed({dial: [0.1, 0.5]});
+  assert.deepEqual(r2(dialPut.rects.dial), [0, 178, 182, 360]);
+  for (const part of ['time', 'date', 'next', 'log']) assert.deepEqual(r2(dialPut.rects[part]), r2(lines.rects[part]), part);
+  // The date (536 px wide here) put with its corner in the middle would run off the right edge: it ends there.
+  assert.deepEqual(r2(placed({date: [0.5, 0.5]}).rects.date), [244, 180, 780, 234.53]);
+  // The time (756 x 144, the foot of its line 168 px under the line's top) with the middle of its foot 200 px down.
+  const lifted = placed({time: [0.5, 200 / 360]});
+  assert.deepEqual(r2(lifted.rects.time), [12, 56, 768, 200]);
+  near(lifted.time.top, 200 - 168, 'the line of the time goes with it');
+  near(lifted.time.left, 12, 'the time across');
+  near(lifted.time.font, lines.time.font, 'the time keeps its size');
+  // A line runs from where it is put to 16 px short of the right edge, no wider than in its own place (560 px) and
+  // no narrower than 8 times its font (216 px).
+  assert.deepEqual(r2(placed({next: [500 / 780, 300 / 360]}).rects.next), [500, 300, 764, 332.4]);
+  assert.deepEqual(r2(placed({next: [760 / 780, 340 / 360]}).rects.next), [548, 327.6, 764, 360]);
+  assert.deepEqual(r2(placed({log: [0.05, 0.9]}).rects.log), [39, 324, 599, 356.4]);
+  // Custom places the same way.
+  assert.deepEqual(r2(placed({date: [0.5, 0.5]}, false).rects.date), [244, 180, 780, 234.53]);
+  // Anything else kept there is let be: the part stays in its own place.
+  const junk = placed({dial: [NaN, 1], date: 'x', time: [0.5]});
+  for (const part of ['dial', 'date', 'time']) assert.deepEqual(r2(junk.rects[part]), r2(lines.rects[part]), part);
+
   // The gear and its bar, as the user works them.
   const sized = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
   const knob = sized.elements;
@@ -1335,13 +1365,15 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   // One finger alone changes nothing.
   hand['size-dial'].onclick();
   const body = hand.body;
+  // (The first finger is drawn less than a move: drawn farther, one finger on a part moves it, as below.)
   body.onpointerdown({pointerId: 1, clientX: 100, clientY: 300, target: body});
-  body.onpointermove({pointerId: 1, clientX: 60, clientY: 300, target: body});
+  body.onpointermove({pointerId: 1, clientX: 97, clientY: 300, target: body});
   near(keptSizes().auto.dial, drawnIn, 'one finger does not pinch');
-  body.onpointerdown({pointerId: 2, clientX: 160, clientY: 300, target: body});
-  body.onpointermove({pointerId: 2, clientX: 110, clientY: 300, target: body});   // 100 apart -> 50 apart
+  body.onpointerdown({pointerId: 2, clientX: 197, clientY: 300, target: body});
+  body.onpointermove({pointerId: 2, clientX: 147, clientY: 300, target: body});   // 100 apart -> 50 apart
   body.onpointerup({pointerId: 2, target: body});
   body.onpointerup({pointerId: 1, target: body});
+  assert.ok(!drawn.store.get('safar-clock-places'), 'nothing was moved');
   near(keptSizes().auto.dial, Math.round(drawnIn / 2 * 100) / 100, 'pinched to half');
   const halved = keptSizes().auto.dial;
   body.onpointerdown({pointerId: 3, clientX: 100, clientY: 300, target: body});
@@ -1358,6 +1390,8 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   body.onpointerup({pointerId: 5, target: onBar});
   body.onpointerup({pointerId: 6, target: body});
   near(keptSizes().auto.dial, Math.round(halved * 2 * 100) / 100, 'a finger on the bar is not a pinch');
+  // The other finger, alone, moved the part it came down on: the time, 150 px up the clock.
+  assert.ok(JSON.parse(drawn.store.get('safar-clock-places')).auto.time, 'the lone finger moved the time');
   // With the bar closed, no box, no handles, and two fingers change nothing.
   hand['size-done'].onclick();
   assert.equal(hand['size-box'].hidden, true);
@@ -1433,15 +1467,116 @@ const stationFetcher = (rows, osmRows = []) => async url => ({
   assert.equal(logBox.className, '');
   assert.equal(logBox.children.length, 1);
   // The clock is laid out with EXIT already in place. The full-screen sign it replaces is taller: laid out under that
-  // sign, the date stood 12 px lower than where it comes out, and the two lines, placed after it, 12 px too low.
+  // sign, the date stood 12 px lower than where it comes out, and the two lines, placed after it, 12 px too low. (The
+  // date stands 10 px under EXIT and the gear: 14 px from the top, then the buttons, 35 px tall with EXIT.)
   const exitFirst = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 735, innerHeight: 360});
-  Object.defineProperty(exitFirst.elements['clock-date'], 'offsetTop',
-    {get: () => /^<svg/.test(exitFirst.elements['clock-full'].innerHTML) ? 71 : 59});
+  const exitButtons = exitFirst.context.document.getElementById('clock-buttons');
+  Object.defineProperty(exitButtons, 'offsetTop', {get: () => 14});
+  Object.defineProperty(exitButtons, 'offsetHeight',
+    {get: () => /^<svg/.test(exitFirst.elements['clock-full'].innerHTML) ? 47 : 35});
   exitFirst.elements['clock-full'].onclick();
   const exitLaid = exitFirst.context.clockLayout(735, 360, fallback, ones, true);
+  near(parseFloat(exitFirst.elements['clock-date'].style.top), 59, 'the date under EXIT and the gear');
   near(parseFloat(exitFirst.elements['clock-next'].style.top), exitLaid.rects.next[1], 'the next station under the date as it stands');
   near(parseFloat(exitFirst.elements['clock-log'].style.top), exitLaid.rects.log[1], 'the log under the next station');
   near(parseFloat(exitFirst.elements['clock-next'].style.fontSize), exitLaid.next, 'the lines sized for where they stand');
+  // ---- Moving by hand, as the user works it: with the gear's bar open, one finger on a part drawn away moves it there
+  // (and picks it for sizing). EXIT and the gear stay where they are.
+  const mover = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 780, innerHeight: 360});
+  const mv = mover.elements, keptPlaces = () => JSON.parse(mover.store.get('safar-clock-places') || 'null');
+  const finger = (type, id, x, y, target = mv.body) => mv.body['onpointer' + type]({pointerId: id, clientX: x, clientY: y, target});
+  const draw = (id, from, to, target) => {
+    finger('down', id, ...from, target);
+    finger('move', id, (from[0] + to[0]) / 2, (from[1] + to[1]) / 2, target);
+    finger('move', id, ...to, target);
+    finger('up', id, ...to, target);
+  };
+  const home = mover.context.clockLayout(780, 360, fallback, ones, true).rects;
+  const inDate = [home.date[0] + 20, home.date[1] + 20];
+  // As in a browser: EXIT and the gear 35 px tall, 14 px from the top, and the date, which stands on its own, as far
+  // down as it was put.
+  const moverEl = id => mover.context.document.getElementById(id);
+  Object.defineProperty(moverEl('clock-buttons'), 'offsetTop', {get: () => 14});
+  Object.defineProperty(moverEl('clock-buttons'), 'offsetHeight', {get: () => 35});
+  Object.defineProperty(moverEl('clock-date'), 'offsetTop', {get: () => parseFloat(moverEl('clock-date').style.top) || 0});
+  mv['clock-full'].onclick();
+  const nextTop = mv['clock-next'].style.top;
+  near(parseFloat(mv['clock-date'].style.left), 16, 'the date in its own place');
+  near(parseFloat(mv['clock-date'].style.top), 59, 'the date in its own place, down');
+  near(parseFloat(mv.speedo.style.left), 780 - 14 - 182, 'the dial in its own corner');
+  near(parseFloat(mv.speedo.style.top), 14, 'the dial in its own corner, down');
+  draw(1, inDate, [inDate[0] + 100, inDate[1] + 50]);             // without the gear's bar nothing moves
+  assert.equal(keptPlaces(), null);
+  mv['clock-edit'].onclick();
+  draw(2, inDate, [inDate[0] + 3, inDate[1] + 2]);                // hardly moved: a tap, nothing moves
+  assert.equal(keptPlaces(), null);
+  const onButtons = {closest: selector => selector.includes('#clock-buttons') ? {} : null};
+  draw(3, inDate, [inDate[0] + 100, inDate[1] + 50], onButtons);  // a finger that came down on EXIT or the gear
+  assert.equal(keptPlaces(), null);
+  // The date drawn 100 across and 50 down goes there, picked for sizing, and is kept.
+  draw(4, inDate, [inDate[0] + 100, inDate[1] + 50]);
+  assert.equal(mv['size-date'].className, 'on');
+  near(parseFloat(mv['clock-date'].style.left), 116, 'the date moved across');
+  near(parseFloat(mv['clock-date'].style.top), 109, 'the date moved down');
+  near(keptPlaces().auto.date[0] * 780, 116, 'kept across');
+  near(keptPlaces().auto.date[1] * 360, 109, 'kept down');
+  assert.equal(mv['clock-next'].style.top, nextTop, 'the lines stay in their own places');
+  // The dial, outside the clock's own box, moves the same way: its top right corner from (766, 14) to (666, 64).
+  draw(5, [700, 100], [600, 150]);
+  assert.equal(mv['size-dial'].className, 'on');
+  near(parseFloat(mv.speedo.style.left), 666 - 182, 'the dial moved across');
+  near(parseFloat(mv.speedo.style.top), 64, 'the dial moved down');
+  // The time drawn to the top: the middle of its foot from (390, 348) to (390, 148). The bar keeps to the half of the
+  // screen away from the part being sized, now the bottom.
+  draw(6, [390, 300], [390, 100]);
+  assert.equal(mv['size-time'].className, 'on');
+  near(keptPlaces().auto.time[0] * 780, 390, 'the time kept across');
+  near(keptPlaces().auto.time[1] * 360, 148, 'the time kept down');
+  assert.equal(mv['clock-sizes'].className, 'low');
+  // A part drawn past the screen's edge stops at it, and is kept where it stopped (the dial now at 484..666 across).
+  draw(7, [600, 200], [800, 200]);
+  near(keptPlaces().auto.dial[0] * 780, 780, 'the dial stopped at the right edge');
+  // Two fingers size the part rather than move it.
+  const timePlace = keptPlaces().auto.time;
+  finger('down', 8, 300, 100); finger('down', 9, 400, 100);
+  finger('move', 8, 250, 100); finger('move', 9, 450, 100);     // both fingers spread, as in a real pinch
+  finger('up', 9, 450, 100); finger('up', 8, 250, 100);
+  assert.deepEqual(keptPlaces().auto.time, timePlace);
+  // "Reset" puts the way in use back: its sizes and its places.
+  mv['size-reset'].onclick();
+  assert.deepEqual(keptPlaces().auto, {});
+  near(parseFloat(mv['clock-date'].style.left), 16, 'the date back in its place');
+  near(parseFloat(mv.speedo.style.left), 780 - 14 - 182, 'the dial back in its corner');
+  // Custom has places of its own.
+  draw(10, inDate, [inDate[0] + 50, inDate[1]]);                  // Auto: the date 50 across
+  mv['size-custom'].onclick();
+  near(parseFloat(mv['clock-date'].style.left), 16, 'Custom: the date in its own place');
+  draw(11, inDate, [inDate[0], inDate[1] + 60]);                  // Custom: the date 60 down
+  assert.deepEqual(Object.keys(keptPlaces().custom), ['date']);
+  near(keptPlaces().custom.date[1] * 360, 119, 'Custom kept down');
+  near(keptPlaces().auto.date[0] * 780, 66, 'Auto kept across');
+  // Kept for the next start.
+  const moved = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), mover.store, null, {innerWidth: 780, innerHeight: 360});
+  moved.elements['clock-full'].onclick();
+  near(parseFloat(moved.elements['clock-date'].style.top), 119, 'kept for the next start');
+  // Turned, as when the phone is held upright, the dial is placed on the page as the clock is turned: the clock's
+  // left-to-right runs down the page, its top-to-bottom from the page's right edge leftwards. Its corner put at
+  // (400, 200) of the clock's 735 x 360 would take it past the clock's bottom edge, so it stands 178..360 down the
+  // clock and 218..400 along it: on the page, 0..182 across and 218..400 down.
+  const turnedPlaces = JSON.stringify({auto: {dial: [400 / 735, 200 / 360]}, custom: {}});
+  const upright = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), [['safar-clock-places', turnedPlaces]], null, {innerWidth: 360, innerHeight: 735});
+  upright.elements['clock-full'].onclick();
+  near(parseFloat(upright.elements.speedo.style.left), 0, 'turned: the dial across the page');
+  near(parseFloat(upright.elements.speedo.style.top), 218, 'turned: the dial down the page');
+  // Leaving the clock gives the dial back to the page, at its everyday place.
+  upright.elements['clock-full'].onclick();
+  assert.deepEqual([upright.elements.speedo.style.left, upright.elements.speedo.style.top], ['', '']);
+  // In its own place and turned, the dial is where it always was: the page's bottom right corner.
+  const uprightHome = setup(stationFetcher([['TST', 'Test Station', 28, 77]]), null, null, {innerWidth: 360, innerHeight: 735});
+  uprightHome.elements['clock-full'].onclick();
+  near(parseFloat(uprightHome.elements.speedo.style.left), 360 - 14 - 182, 'turned: the dial in its own corner, across');
+  near(parseFloat(uprightHome.elements.speedo.style.top), 735 - 14 - 182, 'turned: the dial in its own corner, down');
+
   // No entries yet: the line says so, and open it says so too.
   const empty = setup(stationFetcher([['TST', 'Test Station', 28, 77]]));
   assert.equal(lineText(empty.elements['clock-log'].children[0]), '▸ No station logged yet.');

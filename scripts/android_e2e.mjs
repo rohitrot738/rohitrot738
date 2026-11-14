@@ -2,7 +2,8 @@
 // Runs the debug build of the app on an Android emulator and checks, from inside its page, the things that only
 // exist on a phone and that no test on a computer can see: that the page reaches the native side at all, that the
 // full-screen clock hides the phone's bars and fills the screen whatever font size the phone is set to, that its
-// sizes can be changed by touch from its gear, and that a journey goes on being recorded natively with the screen off.
+// parts can be sized and moved by touch from its gear, and that a journey goes on being recorded natively with the
+// screen off.
 //
 // The page is driven through the WebView's own debugging socket (Chrome DevTools Protocol, open in debug builds).
 // Screenshots are saved to e2e-shots/ and also printed to the log, small, as lines of "SHOT <name> <base64>".
@@ -338,7 +339,8 @@ async function settledShot(name) { await sleep(1200); shot(name); }
 const SIZES = CLOCK.replace(/return \{/, `const own = id => box(id).map(Math.round);
   return {open: !document.getElementById('clock-sizes').hidden, part: sizePart, mode: clockSizes.mode, saved: localStorage.getItem('safar-clock-sizes'),
     value: document.getElementById('size-value').textContent, gear: own('clock-edit'), bar: own('clock-sizes'),
-    dateFont: parseFloat(document.getElementById('clock-date').style.fontSize), logFont: parseFloat(document.getElementById('clock-log').style.fontSize),`);
+    dateFont: parseFloat(document.getElementById('clock-date').style.fontSize), logFont: parseFloat(document.getElementById('clock-log').style.fontSize),
+    places: localStorage.getItem('safar-clock-places'),`);
 // The clock's parts that must not cover one another, the time by its digits alone (see clockCheck).
 function clearOfEachOther(clock) {
   const ink = [...clock.hm];
@@ -396,6 +398,24 @@ async function clockSizesCheck(page) {
   await settledShot('clock-sizes-auto-larger-log');
   check(largerLog.logFont > larger.logFont * 1.05, 'sizes: + makes the journey log larger', `${larger.logFont} -> ${largerLog.logFont}`);
   check(!clearOfEachOther(largerLog).length, 'sizes: in Auto nothing covers anything with the larger journey log', clearOfEachOther(largerLog).join('; '));
+  // Moved by hand: the date, picked with its button (the bar moves out of its way), drawn with one finger 120 px along
+  // the clock and 60 px down, goes there. EXIT and the gear stay where they are. (Turned, the clock's along runs down
+  // the page and its down from the page's right edge leftwards.)
+  await tap(page, '#clock-edit');
+  await tap(page, '#size-date');
+  const picked = await page.run(SIZES);
+  const turnedNow = height > width, [mx, my] = [(picked.date[0] + picked.date[2]) / 2, (picked.date[1] + picked.date[3]) / 2];
+  await drag(page, [mx, my], turnedNow ? [mx - 60, my + 120] : [mx + 120, my + 60]);
+  await tap(page, '#size-done');
+  const movedDate = await page.run(SIZES);
+  log('moving, the date drawn by hand:', JSON.stringify(picked.date), '->', JSON.stringify(movedDate.date), movedDate.places);
+  await settledShot('clock-moved-date');
+  const shift = turnedNow ? [movedDate.date[1] - picked.date[1], picked.date[0] - movedDate.date[0]]
+    : [movedDate.date[0] - picked.date[0], movedDate.date[1] - picked.date[1]];
+  check(Math.abs(shift[0] - 120) <= 4 && Math.abs(shift[1] - 60) <= 4, 'moving: one finger draws the date where it is taken', JSON.stringify(shift));
+  check(JSON.stringify(movedDate.exit) === JSON.stringify(plain.exit) && JSON.stringify(movedDate.gear) === JSON.stringify(plain.gear),
+    'moving: EXIT and the gear stay where they are', JSON.stringify([movedDate.exit, movedDate.gear]));
+  check(JSON.parse(movedDate.places || '{}').auto?.date?.length === 2, 'moving: where the date was put is kept', movedDate.places);
 
   await tap(page, '#clock-full');
   await sleep(2000);
@@ -443,8 +463,9 @@ async function clockSizesCheck(page) {
   await tap(page, '#size-reset');
   await tap(page, '#size-done');
   const reset = await page.run(SIZES);
-  check(dialOf(reset) === dialOf(plain) && reset.font === plain.font && reset.dateFont === plain.dateFont && !reset.open,
-    '"Reset" brings back the first layout', `${dialOf(reset)} px, ${reset.font}, ${reset.dateFont}`);
+  check(dialOf(reset) === dialOf(plain) && reset.font === plain.font && reset.dateFont === plain.dateFont && !reset.open &&
+    JSON.stringify(reset.date) === JSON.stringify(plain.date),
+    '"Reset" brings back the first layout, the date in its own place', `${dialOf(reset)} px, ${reset.font}, ${reset.dateFont}, ${JSON.stringify(reset.date)}`);
   await tap(page, '#clock-full');
   await sleep(2000);
   check((await page.run(`return document.body.className;`)) === '', 'sizes: EXIT leaves the full-screen clock');
